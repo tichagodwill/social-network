@@ -4,15 +4,24 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"social-network/api"
+	"social-network/pkg/db/sqlite"
 )
 
 func main() {
+	// Open the database connection
+	err := sqlite.OpenDB("./social-network.db")
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
+	}
+
+	defer sqlite.DB.Close()
+
 	mux := http.NewServeMux()
 
 	//NOTE: GO VERSION 1.22+ WILL BE USED IN THIS PROJECT IF YOU DON'T HAVE THAT PLEASE UDPATE YOUR GO
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Println("Home")
-	})
+	mux.HandleFunc("GET /register", api.RegisterHandler)
+	mux.HandleFunc("GET /login", api.LoginHandler)
 
 	fmt.Println("Server running on localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
