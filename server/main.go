@@ -20,7 +20,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	//NOTE: GO VERSION 1.22+ WILL BE USED IN THIS PROJECT IF YOU DON'T HAVE THAT PLEASE UDPATE YOUR GO
-	mux.HandleFunc("GET /register", api.RegisterHandler)
+	mux.HandleFunc("POST /register", api.RegisterHandler)
 	mux.HandleFunc("GET /login", api.LoginHandler)
 
 	fmt.Println("Server running on localhost:8080")
