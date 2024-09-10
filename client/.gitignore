@@ -24,6 +24,6 @@ vite.config.ts.timestamp-*
 
 # lock files (Don't ask why)
 *.lock*
-.
+
 # svelte-kit
 .svelte-kit/
