@@ -58,9 +58,56 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Write([]byte("User regsitered successfully"))
+	if _, err := w.Write([]byte("User regsitered successfully")); err != nil {
+		http.Error(w, "Something went wrong", 500)
+		log.Printf("Register: %v", err)
+	}
 }
 
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
-	log.Println("user login")
+	var user m.User
+	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+		http.Error(w, "Error reading data", 400)
+		return
+	}
+
+	// both can't be empty one has to be populated
+	if strings.TrimSpace(user.Username) == "" && strings.TrimSpace(user.Email) == "" {
+		http.Error(w, "Provide a valid identifier", 400)
+		return
+	}
+
+	// get the user from the database
+	var username, password string
+	if err := sqlite.DB.QueryRow("SELECT username, password FROM users WHERE username = ? OR email = ?", user.Username, user.Email).Scan(&username, &password); err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "User does not exist", 400)
+			return
+		}
+		http.Error(w, "Something went wrong", 500)
+		log.Printf("Login: %v", err)
+		return
+	}
+
+	// compare the passed password with the existing one
+	if err := bcrypt.CompareHashAndPassword([]byte(password), []byte(user.Password)); err != nil {
+		http.Error(w, "Username or Password incorrect", 400)
+		return
+	}
+
+	// generate the session for the user
+	util.GenerateSession(w, &user)
+
+	w.Write([]byte("Login successfull"))
+
+}
+
+func LogoutHandler(w http.ResponseWriter, r *http.Request) {
+	util.DestroySession(w, r)
+	if _, err := w.Write([]byte("User logged out successfully")); err != nil {
+		http.Error(w, "Something went wrong", 500)
+		log.Printf("Logout: %v", err)
+	}
+
+	w.Write([]byte("User logged out successfully"))
 }

@@ -85,7 +85,6 @@ func DestroySession(w http.ResponseWriter, r *http.Request) {
 
 	http.SetCookie(w, invalidCookie)
 
-	cookieValue := cookie.Value
 	// remove the cookie from the map
-	delete(UserSession, cookieValue)
+	delete(UserSession, cookie.Value)
 }

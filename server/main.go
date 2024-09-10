@@ -19,9 +19,10 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	//NOTE: GO VERSION 1.22+ WILL BE USED IN THIS PROJECT IF YOU DON'T HAVE THAT PLEASE UDPATE YOUR GO
+	//NOTE: GO VERSION 1.22+ WILL BE USED IN THIS PROJECT IF YOU DON'T HAVE THAT PLEASE UPDATE YOUR GO
 	mux.HandleFunc("POST /register", api.RegisterHandler)
-	mux.HandleFunc("GET /login", api.LoginHandler)
+	mux.HandleFunc("POST /login", api.LoginHandler)
+	mux.HandleFunc("POST /logout", api.LogoutHandler)
 
 	fmt.Println("Server running on localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
