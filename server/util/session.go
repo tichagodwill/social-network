@@ -1,7 +1,6 @@
 package util
 
 import (
-	"errors"
 	"net/http"
 	"time"
 
@@ -36,29 +35,6 @@ func GenerateSession(w http.ResponseWriter, u *m.User) error {
 
 	UserSession[sessionIDInString] = u.Username
 
-	return nil
-}
-
-func ValidateSession(r *http.Request) error {
-	// get the cookie from the browser
-	cookie, err := r.Cookie("AccessToken")
-	if err != nil {
-		// check if the cookie exists from the browser
-		if err == http.ErrNoCookie {
-			return errors.New("token does not exists")
-		}
-		return err
-	}
-
-	// get the value of the cookie
-	cookieValue := cookie.Value
-
-	// check if the cookie exists in the already active sessions
-	if _, ok := UserSession[cookieValue]; !ok {
-		return errors.New("invalid session")
-	}
-
-	// session is valid
 	return nil
 }
 

@@ -6,26 +6,13 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 
 	m "social-network/models"
 	"social-network/pkg/db/sqlite"
-	"social-network/util"
 )
 
 func CreatePost(w http.ResponseWriter, r *http.Request) {
 	var post m.Post
-
-	// check if the user is logged in
-	if err := util.ValidateSession(r); err != nil {
-		if strings.Contains(err.Error(), "invalid session") || strings.Contains(err.Error(), "token does not exists") {
-			http.Error(w, "User Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		http.Error(w, "Something went wrong", http.StatusInternalServerError)
-		log.Printf("session: %v", err)
-		return
-	}
 
 	if err := json.NewDecoder(r.Body).Decode(&post); err != nil {
 		http.Error(w, "Error reading data", http.StatusBadRequest)
@@ -50,15 +37,6 @@ func CreatePost(w http.ResponseWriter, r *http.Request) {
 // the handler that contains the logic for viewing the post
 func ViewPost(w http.ResponseWriter, r *http.Request) {
 
-	if err := util.ValidateSession(r); err != nil {
-		if strings.Contains(err.Error(), "invalid session") || strings.Contains(err.Error(), "token does not exists") {
-			http.Error(w, "User Unauthorized", http.StatusUnauthorized)
-			return
-		}
-		http.Error(w, "Something went wrong", http.StatusInternalServerError)
-		return
-	}
-
 	// get the id from the path
 	idString := r.PathValue("id")
 
@@ -81,6 +59,39 @@ func ViewPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewEncoder(w).Encode(&post); err != nil {
+		http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		return
+	}
+}
+
+func GetPosts(w http.ResponseWriter, r *http.Request) {
+	var posts []m.Post
+
+	row, err := sqlite.DB.Query("SELECT * FROM posts WHERE privacy = 1")
+	if err != nil {
+		http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		log.Printf("Error: %v", err)
+		return
+	}
+
+	// go through all the posts
+	for row.Next() {
+		var post m.Post
+
+		// get individual post and copy the values into the variable
+		if err := row.Scan(&post.ID, &post.Title, &post.Content, &post.Media, &post.Privay, &post.Author, &post.Created_at); err != nil {
+			http.Error(w, "Error getting post", http.StatusInternalServerError)
+			log.Printf("Error scanning: %v", err)
+			return
+		}
+
+		// append the post to the slice
+		posts = append(posts, post)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	// send the array of posts to the frontend
+	if err := json.NewEncoder(w).Encode(posts); err != nil {
 		http.Error(w, "Something went wrong", http.StatusInternalServerError)
 		return
 	}
