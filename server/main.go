@@ -23,8 +23,9 @@ func main() {
 	mux.HandleFunc("POST /register", api.RegisterHandler)
 	mux.HandleFunc("POST /login", api.LoginHandler)
 	mux.HandleFunc("POST /logout", api.LogoutHandler)
-	mux.HandleFunc("POST /post/create", api.CreatePost)
 
+	mux.HandleFunc("POST /post/create", api.CreatePost)
+	mux.HandleFunc("GET /post/{id}", api.ViewPost)
 	fmt.Println("Server running on localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }

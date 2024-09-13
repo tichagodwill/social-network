@@ -16,6 +16,7 @@ CREATE TABLE users (
 
 CREATE TABLE posts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
     content TEXT NOT NULL,
     media TEXT, -- Path to image or GIF
     privacy INTEGER CHECK (privacy IN (0, 1, 2)) DEFAULT 0, -- 0: public, 1: private, 2: almost private
