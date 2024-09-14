@@ -54,8 +54,9 @@ func GetComments(w http.ResponseWriter, r *http.Request) {
 
 	for rows.Next() {
 		var comment m.Comment
-		if err := rows.Scan(&comment.ID, &comment.Content, &comment.Media, &comment.Post_ID, &comment.Author, comment.Created_At); err != nil {
+		if err := rows.Scan(&comment.ID, &comment.Content, &comment.Media, &comment.Post_ID, &comment.Author, &comment.CreatedAt); err != nil {
 			http.Error(w, "Something went wrong", http.StatusInternalServerError)
+			log.Printf("Error: %v", err)
 			return
 		}
 

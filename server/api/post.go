@@ -25,7 +25,19 @@ func CreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := sqlite.DB.Exec("INSERT INTO posts (title, content, media, privacy, author) VALUES (?, ?, ?, ?, ?)", post.Title, post.Content, post.Media, post.Privay, post.Author); err != nil {
+	var query string
+	var args []interface{}
+
+	// Check if GroupID is provided
+	if post.GroupID > 0 {
+		query = "INSERT INTO posts (title, content, media, privacy, author, group_id) VALUES (?, ?, ?, ?, ?, ?)"
+		args = append(args, post.Title, post.Content, post.Media, post.Privay, post.Author, post.GroupID)
+	} else {
+		query = "INSERT INTO posts (title, content, media, privacy, author) VALUES (?, ?, ?, ?, ?)"
+		args = append(args, post.Title, post.Content, post.Media, post.Privay, post.Author)
+	}
+
+	if _, err := sqlite.DB.Exec(query, args...); err != nil {
 		http.Error(w, "Something went wrong", http.StatusInternalServerError)
 		log.Printf("create post: %v", err)
 		return
@@ -48,7 +60,7 @@ func ViewPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var post m.Post
-	if err := sqlite.DB.QueryRow("SELECT * FROM posts WHERE id = ?", id).Scan(&post.ID, &post.Title, &post.Content, &post.Media, &post.Privay, &post.Author, &post.Created_at); err != nil {
+	if err := sqlite.DB.QueryRow("SELECT * FROM posts WHERE id = ?", id).Scan(&post.ID, &post.Title, &post.Content, &post.Media, &post.Privay, &post.Author, &post.CreatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, "Post does not exists", http.StatusBadRequest)
 			return
@@ -79,7 +91,7 @@ func GetPosts(w http.ResponseWriter, r *http.Request) {
 		var post m.Post
 
 		// get individual post and copy the values into the variable
-		if err := row.Scan(&post.ID, &post.Title, &post.Content, &post.Media, &post.Privay, &post.Author, &post.Created_at); err != nil {
+		if err := row.Scan(&post.ID, &post.Title, &post.Content, &post.Media, &post.Privay, &post.Author, &post.CreatedAt); err != nil {
 			http.Error(w, "Error getting post", http.StatusInternalServerError)
 			log.Printf("Error scanning: %v", err)
 			return
