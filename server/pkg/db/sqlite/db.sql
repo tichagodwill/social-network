@@ -1,5 +1,4 @@
 PRAGMA foreign_keys = ON;
-
 CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL UNIQUE,
@@ -23,3 +22,12 @@ CREATE TABLE posts (
     author INTEGER REFERENCES users(id),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE comments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    content TEXT NOT NULL,
+    media TEXT, -- optional
+    post_id INTEGER REFERENCES posts(id),
+    author INTEGER REFERENCES users(id),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)

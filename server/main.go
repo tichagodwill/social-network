@@ -55,6 +55,8 @@ func main() {
 	mux.Handle("POST /posts/create", middleware(http.HandlerFunc(api.CreatePost)))
 	mux.Handle("GET /posts/{id}", middleware(http.HandlerFunc(api.ViewPost)))
 	mux.Handle("GET /posts", middleware(http.HandlerFunc(api.GetPosts)))
+	mux.Handle("POST /comment/create", middleware(http.HandlerFunc(api.CreateComment)))
+	mux.Handle("/GET /comment/{postID}", middleware(http.HandlerFunc(api.GetComments)))
 
 	fmt.Println("Server running on localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
