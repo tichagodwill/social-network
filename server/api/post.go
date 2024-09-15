@@ -25,19 +25,7 @@ func CreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var query string
-	var args []interface{}
-
-	// Check if GroupID is provided
-	if post.GroupID > 0 {
-		query = "INSERT INTO posts (title, content, media, privacy, author, group_id) VALUES (?, ?, ?, ?, ?, ?)"
-		args = append(args, post.Title, post.Content, post.Media, post.Privay, post.Author, post.GroupID)
-	} else {
-		query = "INSERT INTO posts (title, content, media, privacy, author) VALUES (?, ?, ?, ?, ?)"
-		args = append(args, post.Title, post.Content, post.Media, post.Privay, post.Author)
-	}
-
-	if _, err := sqlite.DB.Exec(query, args...); err != nil {
+	if _, err := sqlite.DB.Exec("INSERT INTO posts (title, content, media, privacy, author) VALUES (?, ?, ?, ?, ?)", post.Title, post.Content, post.Media, post.Privay, post.Author); err != nil {
 		http.Error(w, "Something went wrong", http.StatusInternalServerError)
 		log.Printf("create post: %v", err)
 		return
@@ -79,7 +67,7 @@ func ViewPost(w http.ResponseWriter, r *http.Request) {
 func GetPosts(w http.ResponseWriter, r *http.Request) {
 	var posts []m.Post
 
-	row, err := sqlite.DB.Query("SELECT * FROM posts WHERE privacy = 1")
+	row, err := sqlite.DB.Query("SELECT * FROM posts WHERE privacy = 1 AND group = NULL ")
 	if err != nil {
 		http.Error(w, "Something went wrong", http.StatusInternalServerError)
 		log.Printf("Error: %v", err)

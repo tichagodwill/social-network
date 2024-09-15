@@ -52,11 +52,16 @@ func main() {
 	mux.HandleFunc("POST /login", api.LoginHandler)
 	mux.HandleFunc("POST /logout", api.LogoutHandler)
 
-	mux.Handle("POST /posts/create", middleware(http.HandlerFunc(api.CreatePost)))
+	mux.Handle("POST /posts", middleware(http.HandlerFunc(api.CreatePost)))
 	mux.Handle("GET /posts/{id}", middleware(http.HandlerFunc(api.ViewPost)))
 	mux.Handle("GET /posts", middleware(http.HandlerFunc(api.GetPosts)))
-	mux.Handle("POST /comment/create", middleware(http.HandlerFunc(api.CreateComment)))
+
+	mux.Handle("POST /comment", middleware(http.HandlerFunc(api.CreateComment)))
 	mux.Handle("GET /comment/{postID}", middleware(http.HandlerFunc(api.GetComments)))
+
+	mux.Handle("POST /groups", middleware(http.HandlerFunc(api.CreateGroup)))
+	mux.Handle("POST /groups/{id}/posts", middleware(http.HandlerFunc(api.CreateGroupPost)))
+	mux.Handle("GET /groups/{id}/posts", middleware(http.HandlerFunc(api.GetGroupPost)))
 
 	fmt.Println("Server running on localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))

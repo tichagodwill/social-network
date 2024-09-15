@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"database/sql"
+	"time"
+)
 
 type User struct {
 	ID          uint      `json:"id,omitempty"`
@@ -19,4 +22,17 @@ type User struct {
 type UserResponse struct {
 	ID       int64  `json:"id,omitempty"`
 	Username string `json:"username,omitempty"`
+}
+
+func DoesUserExist(userID uint, db *sql.DB) bool {
+	var id int
+
+	if err := db.QueryRow("SELECT id FROM users WHERE id = ?", userID).Scan(&id); err != nil {
+		if err == sql.ErrNoRows {
+			return false
+		}
+		return false
+	}
+
+	return true
 }
