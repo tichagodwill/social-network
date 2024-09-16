@@ -24,15 +24,15 @@ type UserResponse struct {
 	Username string `json:"username,omitempty"`
 }
 
-func DoesUserExist(userID uint, db *sql.DB) bool {
+func DoesUserExist(userID uint, db *sql.DB) (bool, error) {
 	var id int
 
 	if err := db.QueryRow("SELECT id FROM users WHERE id = ?", userID).Scan(&id); err != nil {
 		if err == sql.ErrNoRows {
-			return false
+			return false, nil
 		}
-		return false
+		return false, err
 	}
 
-	return true
+	return true, nil
 }

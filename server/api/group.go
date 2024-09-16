@@ -26,7 +26,12 @@ func CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// check if the user exists
-	if exist := m.DoesUserExist(group.CreatorID, sqlite.DB); !exist {
+	if exist, err := m.DoesUserExist(group.CreatorID, sqlite.DB); !exist {
+		if err != nil {
+			http.Error(w, "Something went wrong", http.StatusInternalServerError)
+			log.Printf("error: %v", err)
+			return
+		}
 		http.Error(w, "User does not exists", http.StatusBadRequest)
 		return
 	}
@@ -56,6 +61,7 @@ func CreateGroupPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid number", http.StatusBadRequest)
 		return
 	}
+
 	// post will always be public for the group members
 	post.Privay = 1
 
@@ -116,5 +122,20 @@ func GetGroupPost(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(&groupPosts); err != nil {
 		http.Error(w, "Error sending json", http.StatusInternalServerError)
+	}
+}
+
+func VeiwGorups(w http.ResponseWriter, r *http.Request) {
+	var groups []m.Group
+
+	rows, err := sqlite.DB.Query("SELECT * FROM groups")
+	if err != nil {
+		http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		log.Printf("Error: %v", err)
+		return
+	}
+
+	for rows.Next() {
+		var group m.Group
 	}
 }
