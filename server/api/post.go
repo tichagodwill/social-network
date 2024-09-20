@@ -25,7 +25,7 @@ func CreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := sqlite.DB.Exec("INSERT INTO posts (title, content, media, privacy, author) VALUES (?, ?, ?, ?, ?)", post.Title, post.Content, post.Media, post.Privay, post.Author); err != nil {
+	if _, err := sqlite.DB.Exec("INSERT INTO posts (title, content, media, privacy, author, group_id) VALUES (?, ?, ?, ?, ?, ?)", post.Title, post.Content, post.Media, post.Privay, post.Author, nil); err != nil {
 		http.Error(w, "Something went wrong", http.StatusInternalServerError)
 		log.Printf("create post: %v", err)
 		return

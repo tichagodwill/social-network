@@ -48,7 +48,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := sqlite.DB.Exec("INSERT INTO users (username, email, password, firstname, lastname, date_of_birth) VALUES (?, ?, ?, ?, ?, ?)", user.Username, user.Email, string(hashedpassword), user.FirstName, user.LastName, user.DateOfBirth)
+	res, err := sqlite.DB.Exec("INSERT INTO users (username, email, password, first_name, last_name, date_of_birth) VALUES (?, ?, ?, ?, ?, ?)", user.Username, user.Email, string(hashedpassword), user.FirstName, user.LastName, user.DateOfBirth)
 	if err != nil {
 		http.Error(w, "Something went wrong, please try again later", http.StatusInternalServerError)
 		log.Printf("Hash error: %v", err)
