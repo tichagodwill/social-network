@@ -137,5 +137,19 @@ func VeiwGorups(w http.ResponseWriter, r *http.Request) {
 
 	for rows.Next() {
 		var group m.Group
+		if err := rows.Scan(&group.ID, &group.Title, &group.Description, &group.CreatorID, &group.CreatedAt); err != nil {
+			http.Error(w, "Error getting group", http.StatusInternalServerError)
+			log.Printf("Error: %v", err)
+			return
+		}
+
+		groups = append(groups, group)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(&groups); err != nil {
+		http.Error(w, "Error sending json", http.StatusInternalServerError)
+		log.Printf("Error: %v", err)
+		return
 	}
 }

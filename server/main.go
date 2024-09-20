@@ -59,6 +59,7 @@ func main() {
 	mux.Handle("POST /comments", middleware(http.HandlerFunc(api.CreateComment)))
 	mux.Handle("GET /comments/{postID}", middleware(http.HandlerFunc(api.GetComments)))
 
+	mux.Handle("GET /groups", middleware(http.HandlerFunc(api.VeiwGorups)))
 	mux.Handle("POST /groups", middleware(http.HandlerFunc(api.CreateGroup)))
 	mux.Handle("POST /groups/{id}/posts", middleware(http.HandlerFunc(api.CreateGroupPost)))
 	mux.Handle("GET /groups/{id}/posts", middleware(http.HandlerFunc(api.GetGroupPost)))
