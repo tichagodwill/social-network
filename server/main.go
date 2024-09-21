@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strings"
+
 	"social-network/api"
 	"social-network/pkg/db/sqlite"
 	"social-network/util"
@@ -44,6 +47,29 @@ func main() {
 	}
 
 	defer sqlite.DB.Close()
+
+	var arg string
+
+	// check if an argument is passed
+	if len(os.Args) > 1 {
+		arg = os.Args[1]
+	}
+
+	// check case insesitive
+	if strings.EqualFold(arg, "flush") {
+		// remove all data from the database
+		if err := sqlite.ClearDatabase(); err != nil {
+			log.Fatalf("Error flushing database: %v", err)
+		}
+	} else if strings.EqualFold(arg, "rollback") {
+		// roll back the migrations
+		if err := sqlite.RollbackMigrations(); err != nil {
+			log.Fatalf("Error rolling back: %v", err)
+		}
+
+		// exit after rolling back
+		return
+	}
 
 	mux := http.NewServeMux()
 

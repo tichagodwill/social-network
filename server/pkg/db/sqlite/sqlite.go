@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"database/sql"
+	"fmt"
 	"log"
 	"path/filepath"
 
@@ -34,6 +35,47 @@ func OpenDB(dbPath string) error {
 	return nil
 }
 
+// Flush all database tables and remove all data
+func ClearDatabase() error {
+	// Start a transaction
+	tx, err := DB.Begin()
+	if err != nil {
+		return err
+	}
+
+	// Query all table names in the database
+	rows, err := tx.Query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	defer rows.Close()
+
+	// Loop through tables and delete data
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			tx.Rollback()
+			return err
+		}
+
+		// Execute deletion for each table
+		_, err = tx.Exec(fmt.Sprintf("DELETE FROM %s", tableName))
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	log.Println("Database has been flushed")
+	return nil
+}
+
 func runMigrations() error {
 	driver, err := sqlite3.WithInstance(DB, &sqlite3.Config{})
 	if err != nil {
@@ -55,5 +97,30 @@ func runMigrations() error {
 	}
 
 	log.Println("Migration applied succesffuly")
+	return nil
+}
+
+func RollbackMigrations() error {
+	driver, err := sqlite3.WithInstance(DB, &sqlite3.Config{})
+	if err != nil {
+		return err
+	}
+
+	absPath, err := filepath.Abs("/pkg/db/migrations/sqlite")
+	if err != nil {
+		return err
+	}
+
+	m, err := migrate.NewWithDatabaseInstance("file:/"+absPath, "sqlite3", driver)
+	if err != nil {
+		return err
+	}
+
+	// roll back migrations all the way down
+	if err := m.Down(); err != nil && err == migrate.ErrNoChange {
+		return err
+	}
+
+	log.Printf("All migrations rollbacked successfully")
 	return nil
 }
