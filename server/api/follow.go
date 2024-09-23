@@ -52,8 +52,10 @@ func RequestFollowUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func AcceptOrRejectRequest(w http.ResponseWriter, r *http.Request) {
+	// get the request if from the url
 	requestIdInString := r.PathValue("requestID")
 	requestId, err := strconv.Atoi(requestIdInString)
+
 	if err != nil {
 		http.Error(w, "Invalid Id", http.StatusBadRequest)
 		return
@@ -61,7 +63,7 @@ func AcceptOrRejectRequest(w http.ResponseWriter, r *http.Request) {
 
 	var resp models.Follow
 
-	// will send the user id with the pending status and the accept or deny response
+	// will only send status
 	if err := json.NewDecoder(r.Body).Decode(&resp); err != nil {
 		http.Error(w, "Error reading json", http.StatusBadRequest)
 		return

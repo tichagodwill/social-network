@@ -91,7 +91,7 @@ func main() {
 	mux.Handle("GET /groups/{id}/posts", middleware(http.HandlerFunc(api.GetGroupPost)))
 
 	mux.Handle("POST /follow", middleware(http.HandlerFunc(api.RequestFollowUser)))
-	mux.Handle("PATCH /follow", middleware(http.HandlerFunc(api.AcceptOrRejectRequest)))
+	mux.Handle("PATCH /follow/{requestID}", middleware(http.HandlerFunc(api.AcceptOrRejectRequest)))
 
 	fmt.Println("Server running on localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
