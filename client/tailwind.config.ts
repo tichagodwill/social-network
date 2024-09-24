@@ -5,6 +5,9 @@ export default {
 	content: ['./src/**/*.{html,js,svelte,ts}', './node_modules/flowbite-svelte/**/*.{html,js,svelte,ts}'],
 	darkMode: 'selector',
 	theme: {
+		fontFamily: {
+			sans: ["Inter", '"PT Sans"', 'sans-serif']
+		},
 		extend: {
 			colors: {
 				// flowbite-svelte
