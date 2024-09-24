@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -85,4 +86,42 @@ func AcceptOrRejectRequest(w http.ResponseWriter, r *http.Request) {
 
 	successMessage := fmt.Sprintf("Successfully %ved user", resp.Status)
 	w.Write([]byte(successMessage))
+}
+
+func GetFollowers(w http.ResponseWriter, r *http.Request) {
+
+	userIdString := r.PathValue("userId")
+	userId, err := strconv.Atoi(userIdString)
+	if err != nil {
+		http.Error(w, "Invalid user id", http.StatusBadRequest)
+		return
+	}
+
+	var followers []models.Follow
+
+	rows, err := sqlite.DB.Query("SELECT * FROM followers WHERE followed_id = ?, AND status = accept", userId)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "No followers found", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		log.Printf("Error getting followers: %v", err)
+		return
+	}
+
+	for rows.Next() {
+		var follower models.Follow
+		if err := rows.Scan(&follower.ID, &follower.FollowerID, &follower.FollowedID, &follower.Status, &follower.CreatedAt); err != nil {
+			http.Error(w, "Somehting went wrong", http.StatusInternalServerError)
+			log.Printf("Error scanning follower: %v", err)
+			return
+		}
+
+		followers = append(followers, follower)
+	}
+
+	if err := json.NewEncoder(w).Encode(&followers); err != nil {
+		http.Error(w, "Error sending data", http.StatusInternalServerError)
+	}
 }
