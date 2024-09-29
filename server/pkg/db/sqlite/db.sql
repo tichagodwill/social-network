@@ -48,3 +48,49 @@ CREATE TABLE group_members (
     status TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )
+
+--- Chat Tables
+
+CREATE TABLE ChatMessages (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,          
+    sender_id     INTEGER REFERENCES users(id),           
+    recipient_id  INTEGER REFERENCES users(id),            
+    content       TEXT NOT NULL,        
+    sent_at       DATETIME DEFAULT CURRENT_TIMESTAMP 
+);
+
+CREATE TABLE GroupChatMessages (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,          
+    group_id    INTEGER REFERENCES groups(id),            
+    user_id     INTEGER REFERENCES users(id),             
+    content     TEXT NOT NULL,            
+    media TEXT, 
+    sent_at     DATETIME DEFAULT CURRENT_TIMESTAMP 
+);
+
+CREATE TABLE GroupPosts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,        
+    group_id    INTEGER REFERENCES groups(id),           
+    user_id     INTEGER REFERENCES users(id),            
+    content     TEXT NOT NULL,            
+    media TEXT, 
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP 
+);
+
+CREATE TABLE GroupEvents (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id    INTEGER REFERENCES groups(id),              
+    creator_id  INTEGER REFERENCES users(id),                  
+    title       TEXT NOT NULL,                     
+    description TEXT NOT NULL,                    
+    event_date  DATETIME NOT NULL,                
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP 
+);
+
+CREATE TABLE GroupEventRSVP (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id     INTEGER REFERENCES GroupEvents(id),                 
+    user_id      INTEGER REFERENCES users(id),                
+    rsvp_status  TEXT NOT NULL CHECK (rsvp_status IN ('going', 'not going')),
+    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP 
+);
