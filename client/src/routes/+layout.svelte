@@ -17,8 +17,8 @@
 	<NavUl>
 		<NavLi href="/">Home</NavLi>
 		<NavLi href="/about">Topics</NavLi>
-		<NavLi href="/docs/components/navbar">Chat</NavLi>
-		<NavLi href="/pricing">More</NavLi>
+		<NavLi href="/chat">Chat</NavLi>
+		<NavLi href="/more">More</NavLi>
 		{#if data.user.loggedIn}
 			<NavLi href="/profile">Profile</NavLi>
 		{:else}
