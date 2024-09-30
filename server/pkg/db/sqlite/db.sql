@@ -21,7 +21,7 @@ CREATE TABLE posts (
     privacy INTEGER CHECK (privacy IN (0, 1, 2)) DEFAULT 0, -- 0: public, 1: private, 2: almost private
     author INTEGER REFERENCES users(id),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    group_id INTEGER -- OPTIONAL
+    group_id INTEGER REFERENCES groups(id)-- OPTIONAL
 );
 
 CREATE TABLE comments (
@@ -90,7 +90,7 @@ CREATE TABLE GroupEvents (
 CREATE TABLE GroupEventRSVP (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id     INTEGER REFERENCES GroupEvents(id),                 
-    user_id      INTEGER REFERENCES users(id),                
+    user_id      INTEGER REFERENCES users(id),               
     rsvp_status  TEXT NOT NULL CHECK (rsvp_status IN ('going', 'not going')),
     created_at   DATETIME DEFAULT CURRENT_TIMESTAMP 
 );

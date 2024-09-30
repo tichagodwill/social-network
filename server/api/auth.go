@@ -117,7 +117,6 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	util.GenerateSession(w, &user)
 
 	w.Write([]byte("Login successfull"))
-
 }
 
 func LogoutHandler(w http.ResponseWriter, r *http.Request) {

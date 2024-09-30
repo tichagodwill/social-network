@@ -117,8 +117,16 @@ func RollbackMigrations() error {
 	}
 
 	// roll back migrations all the way down
-	if err := m.Down(); err != nil && err == migrate.ErrNoChange {
-		return err
+	if err := m.Down(); err != nil {
+		if err == migrate.ErrNoChange {
+			log.Println("No migrations to rollback")
+		} else {
+			// if error is encounterd force the migration into a clean state
+			if err := m.Force(0); err != nil {
+				return fmt.Errorf("Error forcing migration reset: %v", err)
+			}
+			log.Println("migrations reset to version 0")
+		}
 	}
 
 	log.Printf("All migrations rollbacked successfully")

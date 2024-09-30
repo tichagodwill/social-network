@@ -38,7 +38,6 @@ func middleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
 func main() {
 	// Open the database connection
 	err := sqlite.OpenDB("./social-network.db")
