@@ -22,7 +22,7 @@ export function getFormattedDate(inputDate: Date) {
     inputDate = tmp
   }
 
-  const diffSeconds = (now.getTime() - inputDate.getTime()) / 1000
+  const diffSeconds = (now.getTime() - inputDate.getTime()) / 1000 + 1
 
   const unit = units.find((u) => diffSeconds >= u.seconds)!
   const value = Math.round(diffSeconds / unit.seconds)

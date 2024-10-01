@@ -7,7 +7,7 @@
 <form class="pt-10">
 	<div class="mb-6">
 		<Label for="email" class="mb-2">Email address</Label>
-		<Input type="email" id="email" placeholder="john.doe@company.com" required />
+		<Input type="email" id="email" placeholder="john.doe@gmail.com" required />
 	</div>
 	<div class="mb-6">
 		<Label for="password" class="mb-2">Password</Label>
