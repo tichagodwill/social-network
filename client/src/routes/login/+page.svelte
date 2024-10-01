@@ -7,7 +7,7 @@
 
 <div class="w-1/3 m-auto pt-10">
 	{#if !register}
-		<LoginForm Register="{() => {register = true}}"></LoginForm>
+		<LoginForm RequestRegister="{() => {register = true}}"></LoginForm>
 	{:else}
 		<RegisterForm Back="{() => {register = false}}"></RegisterForm>
 	{/if}

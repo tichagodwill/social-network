@@ -1,3 +1,13 @@
 @import 'tailwindcss/base';
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
+
+@layer components {
+    .primary-text {
+        @apply text-primary-700 dark:text-primary-600;
+    }
+
+    .primary-text:after {
+        content: "*";
+    }
+}
