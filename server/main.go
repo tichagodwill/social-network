@@ -38,6 +38,7 @@ func middleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
 func main() {
 	// Open the database connection
 	err := sqlite.OpenDB("./social-network.db")
@@ -91,6 +92,8 @@ func main() {
 
 	mux.Handle("POST /follow", middleware(http.HandlerFunc(api.RequestFollowUser)))
 	mux.Handle("PATCH /follow/{requestID}", middleware(http.HandlerFunc(api.AcceptOrRejectRequest)))
+
+	mux.Handle("GET /user/{userID}", middleware(http.HandlerFunc(api.UserProfile)))
 
 	fmt.Println("Server running on localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))

@@ -51,7 +51,7 @@ CREATE TABLE group_members (
 
 --- Chat Tables
 
-CREATE TABLE ChatMessages (
+CREATE TABLE chat_messages (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,          
     sender_id     INTEGER REFERENCES users(id),           
     recipient_id  INTEGER REFERENCES users(id),            
@@ -59,7 +59,7 @@ CREATE TABLE ChatMessages (
     sent_at       DATETIME DEFAULT CURRENT_TIMESTAMP 
 );
 
-CREATE TABLE GroupChatMessages (
+CREATE TABLE group_chat_messages (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,          
     group_id    INTEGER REFERENCES groups(id),            
     user_id     INTEGER REFERENCES users(id),             
@@ -68,7 +68,7 @@ CREATE TABLE GroupChatMessages (
     sent_at     DATETIME DEFAULT CURRENT_TIMESTAMP 
 );
 
-CREATE TABLE GroupPosts (
+CREATE TABLE group_posts (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,        
     group_id    INTEGER REFERENCES groups(id),           
     user_id     INTEGER REFERENCES users(id),            
@@ -77,7 +77,7 @@ CREATE TABLE GroupPosts (
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP 
 );
 
-CREATE TABLE GroupEvents (
+CREATE TABLE group_events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     group_id    INTEGER REFERENCES groups(id),              
     creator_id  INTEGER REFERENCES users(id),                  
@@ -87,7 +87,7 @@ CREATE TABLE GroupEvents (
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP 
 );
 
-CREATE TABLE GroupEventRSVP (
+CREATE TABLE group_event_RSVP (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     event_id     INTEGER REFERENCES GroupEvents(id),                 
     user_id      INTEGER REFERENCES users(id),               

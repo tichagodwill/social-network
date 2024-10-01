@@ -89,7 +89,6 @@ func AcceptOrRejectRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetFollowers(w http.ResponseWriter, r *http.Request) {
-
 	userIdString := r.PathValue("userId")
 	userId, err := strconv.Atoi(userIdString)
 	if err != nil {

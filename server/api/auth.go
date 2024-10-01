@@ -22,7 +22,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// check if all the required fields are provided
-	if strings.TrimSpace(user.Email) == "" || strings.TrimSpace(user.Username) == "" || strings.TrimSpace(user.Password) == "" || strings.TrimSpace(user.FirstName) == "" || strings.TrimSpace(user.LastName) == "" || user.DateOfBirth.IsZero() {
+	if strings.TrimSpace(user.Email) == "" || strings.TrimSpace(user.Username) == "" || strings.TrimSpace(user.Password) == "" || strings.TrimSpace(user.FirstName) == "" || strings.TrimSpace(user.LastName) == "" || strings.TrimSpace(user.AboutMe) == "" || strings.TrimSpace(user.Avatar) == "" || user.DateOfBirth.IsZero() {
 		http.Error(w, "Please populate all required fields", http.StatusBadRequest)
 		return
 	}
@@ -48,7 +48,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := sqlite.DB.Exec("INSERT INTO users (username, email, password, first_name, last_name, date_of_birth) VALUES (?, ?, ?, ?, ?, ?)", user.Username, user.Email, string(hashedpassword), user.FirstName, user.LastName, user.DateOfBirth)
+	res, err := sqlite.DB.Exec("INSERT INTO users (username, email, password, first_name, last_name, avatar, about_me, date_of_birth) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", user.Username, user.Email, string(hashedpassword), user.FirstName, user.LastName, user.Avatar, user.AboutMe, user.DateOfBirth)
 	if err != nil {
 		http.Error(w, "Something went wrong, please try again later", http.StatusInternalServerError)
 		log.Printf("Hash error: %v", err)
