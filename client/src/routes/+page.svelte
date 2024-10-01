@@ -15,7 +15,7 @@
   ]
 </script>
 
-<Card size="xl" class="m-11">
+<Card size="xl">
   <Post {...prop}>
     {#each childs as post}
       <Post {...post} Class="mt-6" />
