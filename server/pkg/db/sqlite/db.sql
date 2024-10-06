@@ -20,8 +20,7 @@ CREATE TABLE posts (
     media TEXT, -- Path to image or GIF
     privacy INTEGER CHECK (privacy IN (0, 1, 2)) DEFAULT 0, -- 0: public, 1: private, 2: almost private
     author INTEGER REFERENCES users(id),
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    group_id INTEGER REFERENCES groups(id)-- OPTIONAL
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE comments (
@@ -56,7 +55,7 @@ CREATE TABLE chat_messages (
     sender_id     INTEGER REFERENCES users(id),           
     recipient_id  INTEGER REFERENCES users(id),            
     content       TEXT NOT NULL,        
-    sent_at       DATETIME DEFAULT CURRENT_TIMESTAMP 
+    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP 
 );
 
 CREATE TABLE group_chat_messages (
@@ -65,7 +64,7 @@ CREATE TABLE group_chat_messages (
     user_id     INTEGER REFERENCES users(id),             
     content     TEXT NOT NULL,            
     media TEXT, 
-    sent_at     DATETIME DEFAULT CURRENT_TIMESTAMP 
+    created_at     DATETIME DEFAULT CURRENT_TIMESTAMP 
 );
 
 CREATE TABLE group_posts (
@@ -93,4 +92,20 @@ CREATE TABLE group_event_RSVP (
     user_id      INTEGER REFERENCES users(id),               
     rsvp_status  TEXT NOT NULL CHECK (rsvp_status IN ('going', 'not going')),
     created_at   DATETIME DEFAULT CURRENT_TIMESTAMP 
+);
+
+CREATE TABLE post_PrivateViews (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id     INTEGER REFERENCES posts(id),            
+    user_id     INTEGER REFERENCES users(id),             
+);
+
+CREATE TABLE notifications (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    to_user_id     INTEGER REFERENCES users(id),             
+    content     TEXT NOT NULL,    
+    from_user_id INTEGER REFERENCES users(id),        
+    read        BOOLEAN DEFAULT FALSE,            
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP 
+    group_id    INTEGER REFERENCES groups(id) -- Optional
 );
