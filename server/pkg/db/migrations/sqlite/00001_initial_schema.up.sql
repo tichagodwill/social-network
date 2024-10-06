@@ -1,4 +1,5 @@
 PRAGMA foreign_keys = ON;
+
 CREATE TABLE users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL UNIQUE,
@@ -31,7 +32,7 @@ CREATE TABLE comments (
     post_id INTEGER REFERENCES posts(id),
     author INTEGER REFERENCES users(id),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)
+);
 
 CREATE TABLE groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,7 +40,7 @@ CREATE TABLE groups (
     description TEXT NOT NULL,
     creator_id INTEGER REFERENCES users(id),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)
+);
 
 CREATE TABLE group_members (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,67 +48,66 @@ CREATE TABLE group_members (
     user_id INTEGER REFERENCES users(id),
     status TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)
+);
 
 --- Chat Tables
 
 CREATE TABLE chat_messages (
-    id            INTEGER PRIMARY KEY AUTOINCREMENT,          
-    sender_id     INTEGER REFERENCES users(id),           
-    recipient_id  INTEGER REFERENCES users(id),            
-    content       TEXT NOT NULL,        
-    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP 
+    id INTEGER PRIMARY KEY AUTOINCREMENT,          
+    sender_id INTEGER REFERENCES users(id),           
+    recipient_id INTEGER REFERENCES users(id),            
+    content TEXT NOT NULL,        
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP 
 );
 
 CREATE TABLE group_chat_messages (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,          
-    group_id    INTEGER REFERENCES groups(id),            
-    user_id     INTEGER REFERENCES users(id),             
-    content     TEXT NOT NULL,            
+    id INTEGER PRIMARY KEY AUTOINCREMENT,          
+    group_id INTEGER REFERENCES groups(id),            
+    user_id INTEGER REFERENCES users(id),             
+    content TEXT NOT NULL,            
     media TEXT, 
-    created_at     DATETIME DEFAULT CURRENT_TIMESTAMP 
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP 
 );
 
-CREATE TABLE group_messsages (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,        
-    group_id    INTEGER REFERENCES groups(id),           
-    user_id     INTEGER REFERENCES users(id),            
-    content     TEXT NOT NULL,            
+CREATE TABLE group_messages ( -- Fixed from "group_messsages"
+    id INTEGER PRIMARY KEY AUTOINCREMENT,        
+    group_id INTEGER REFERENCES groups(id),           
+    user_id INTEGER REFERENCES users(id),            
+    content TEXT NOT NULL,            
     media TEXT, 
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP 
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP 
 );
 
 CREATE TABLE group_events (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    group_id    INTEGER REFERENCES groups(id),              
-    creator_id  INTEGER REFERENCES users(id),                  
-    title       TEXT NOT NULL,                     
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    group_id INTEGER REFERENCES groups(id),              
+    creator_id INTEGER REFERENCES users(id),                  
+    title TEXT NOT NULL,                     
     description TEXT NOT NULL,                    
-    event_date  DATETIME NOT NULL,                
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP 
+    event_date DATETIME NOT NULL,                
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP 
 );
 
 CREATE TABLE group_event_RSVP (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_id     INTEGER REFERENCES GroupEvents(id),                 
-    user_id      INTEGER REFERENCES users(id),               
-    rsvp_status  TEXT NOT NULL CHECK (rsvp_status IN ('going', 'not going')),
-    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP 
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER REFERENCES group_events(id), -- Fixed table reference from GroupEvents to group_events                 
+    user_id INTEGER REFERENCES users(id),               
+    rsvp_status TEXT NOT NULL CHECK (rsvp_status IN ('going', 'not going')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP 
 );
 
 CREATE TABLE post_PrivateViews (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    post_id     INTEGER REFERENCES posts(id),            
-    user_id     INTEGER REFERENCES users(id),             
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    post_id INTEGER REFERENCES posts(id),            
+    user_id INTEGER REFERENCES users(id)
 );
 
 CREATE TABLE notifications (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    to_user_id     INTEGER REFERENCES users(id),             
-    content     TEXT NOT NULL,    
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    to_user_id INTEGER REFERENCES users(id),             
+    content TEXT NOT NULL,    
     from_user_id INTEGER REFERENCES users(id),        
-    read        BOOLEAN DEFAULT FALSE,            
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP 
-    group_id    INTEGER REFERENCES groups(id) -- Optional
+    read BOOLEAN DEFAULT FALSE,            
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    group_id INTEGER REFERENCES groups(id) -- Optional
 );
-
