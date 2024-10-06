@@ -12,3 +12,5 @@
 		<RegisterForm Back="{() => {register = false}}"></RegisterForm>
 	{/if}
 </div>
+
+<div class="grow"></div>

@@ -1,17 +1,12 @@
 <script>
   import { Card } from 'flowbite-svelte'
-  import {
-    AddressBookOutline,
-    CogOutline,
-    MessageCaptionOutline,
-    MessagesOutline,
-    UsersGroupOutline,
-  } from 'flowbite-svelte-icons'
+  import {AddressBookOutline, CogOutline, MessageCaptionOutline, MessagesOutline, UsersGroupOutline,} from 'flowbite-svelte-icons'
+  import ChatEntry from '$lib/components/chat-entry.svelte';
 </script>
 
 <Card size="none" class="flex-grow flex-row" style="padding: 0px">
 
-  <div class="w-40 flex flex-col justify-center">
+  <div class="w-40 flex flex-col justify-center bg-primary-50">
     <div class="grow-[0.333]" />
 
     <button class="flex hover:bg-gray-200 dark:hover:bg-gray-400 text-black p-2 rounded-lg mx-2 mt-2">
@@ -38,6 +33,10 @@
     <div class="grow-[1]" />
   </div>
 
-  <div class="bg-teal-300 w-1/3 grow-0 shrink-[0.2]">User List</div>
+  <div class="w-1/3 grow-0 shrink-[0.2] flex flex-col justify-center gap-2">
+    <ChatEntry isSelected={true}></ChatEntry>
+    <ChatEntry></ChatEntry>
+    <ChatEntry></ChatEntry>
+  </div>
   <div class="bg-amber-400 w-ful grow shrink-[0.9]">Chat Room</div>
 </Card>
