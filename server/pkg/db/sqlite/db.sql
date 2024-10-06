@@ -20,7 +20,8 @@ CREATE TABLE posts (
     media TEXT, -- Path to image or GIF
     privacy INTEGER CHECK (privacy IN (0, 1, 2)) DEFAULT 0, -- 0: public, 1: private, 2: almost private
     author INTEGER REFERENCES users(id),
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    group_id INTEGER REFERENCES groups(id) -- Optional
 );
 
 CREATE TABLE comments (
@@ -67,7 +68,7 @@ CREATE TABLE group_chat_messages (
     created_at     DATETIME DEFAULT CURRENT_TIMESTAMP 
 );
 
-CREATE TABLE group_posts (
+CREATE TABLE group_messsages (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,        
     group_id    INTEGER REFERENCES groups(id),           
     user_id     INTEGER REFERENCES users(id),            
