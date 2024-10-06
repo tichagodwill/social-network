@@ -111,3 +111,22 @@ CREATE TABLE notifications (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     group_id INTEGER REFERENCES groups(id) -- Optional
 );
+
+--folowers table
+
+CREATE TABLE followers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    follower_id INTEGER NOT NULL,
+    followed_id INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+
+CREATE TABLE likes{
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id),
+    post_id INTEGER REFERENCES posts(id),
+    comment_id INTEGER REFERENCES comments(id),
+    is_liked BOOLEAN DEFAULT FALSE,
+}

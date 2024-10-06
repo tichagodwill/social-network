@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS post;
+DROP TABLE IF EXISTS post_PrivateViews;
+DROP TABLE IF EXISTS likes;

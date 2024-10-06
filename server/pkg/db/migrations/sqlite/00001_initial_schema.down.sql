@@ -10,3 +10,5 @@ DROP TABLE IF EXISTS group_events;
 DROP TABLE IF EXISTS group_event_RSVP;
 DROP TABLE IF EXISTS post_PrivateViews;
 DROP TABLE IF EXISTS notifications;
+DROP TABLE IF EXISTS followers;
+DROP TABLE IF EXISTS likes;
