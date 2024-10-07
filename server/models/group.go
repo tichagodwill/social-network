@@ -17,3 +17,21 @@ type GroupMemebers struct {
 	Status    string    `json:"status,omitempty"`
 	CreatedAt time.Time `json:"created_at,omitempty"`
 }
+
+type GroupEvent struct {
+    ID          int       `json:"id"`               
+    GroupID     int       `json:"group_id"`         
+    CreatorID   int       `json:"creator_id"`       
+    Title       string    `json:"title"`        
+    Description string    `json:"description"`     
+    EventDate   time.Time `json:"event_date"`       
+    CreatedAt   time.Time `json:"created_at"`       
+}
+
+type GroupEventRSVP struct {
+    ID         int       `json:"id"`                
+    EventID    int       `json:"event_id"`          
+    UserID     int       `json:"user_id"`           
+    RSVPStatus string    `json:"rsvp_status"`       
+    CreatedAt  time.Time `json:"created_at"`        
+}

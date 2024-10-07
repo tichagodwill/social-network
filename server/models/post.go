@@ -12,3 +12,9 @@ type Post struct {
 	Author    uint      `json:"author,omitempty"`
 	GroupID   uint      `json:"group_id,omitempty"`
 }
+
+type PostPrivateView struct {
+    ID     int `json:"id"`      
+    PostID int `json:"post_id"`  
+    UserID int `json:"user_id"`  
+}
