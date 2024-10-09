@@ -194,8 +194,108 @@ func GroupInvitation(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Error: %v", err)
 		return
 	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Group invitation sent successfully"})
+
 }
 
+func GroupAccept(w http.ResponseWriter, r *http.Request) {
+    var inviteRequest m.GroupInvaitation
 
+    if err := json.NewDecoder(r.Body).Decode(&inviteRequest); err != nil {
+        http.Error(w, "Invalid JSON data", http.StatusBadRequest)
+        return
+    }
 
+    // Validate input
+    if inviteRequest.GroupID <= 0 || inviteRequest.ReciverID <= 0 {
+        http.Error(w, "Invalid group ID or receiver ID", http.StatusBadRequest)
+        return
+    }
 
+    // Check if the invitation exists and is pending
+    var status string
+    err := sqlite.DB.QueryRow("SELECT status FROM group_members WHERE group_id = ? AND user_id = ?", inviteRequest.GroupID, inviteRequest.ReciverID).Scan(&status)
+    if err != nil {
+        if err == sql.ErrNoRows {
+            http.Error(w, "Invitation not found", http.StatusNotFound)
+        } else {
+            http.Error(w, "Error checking invitation status", http.StatusInternalServerError)
+            log.Printf("Error: %v", err)
+        }
+        return
+    }
+
+    if status != "pending" {
+        http.Error(w, "Invitation is not pending", http.StatusBadRequest)
+        return
+    }
+
+    // Update the status to "accepted"
+    result, err := sqlite.DB.Exec("UPDATE group_members SET status = 'accepted' WHERE group_id = ? AND user_id = ?", inviteRequest.GroupID, inviteRequest.ReciverID)
+    if err != nil {
+        http.Error(w, "Error updating invitation status", http.StatusInternalServerError)
+        log.Printf("Error: %v", err)
+        return
+    }
+
+    rowsAffected, _ := result.RowsAffected()
+    if rowsAffected == 0 {
+        http.Error(w, "No invitation updated", http.StatusNotFound)
+        return
+    }
+
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(map[string]string{"message": "Group invitation accepted successfully"})
+}
+
+func GroupReject(w http.ResponseWriter, r *http.Request) {
+    var inviteRequest m.GroupInvaitation
+
+    if err := json.NewDecoder(r.Body).Decode(&inviteRequest); err != nil {
+        http.Error(w, "Invalid JSON data", http.StatusBadRequest)
+        return
+    }
+
+    // Validate input
+    if inviteRequest.GroupID <= 0 || inviteRequest.ReciverID <= 0 {
+        http.Error(w, "Invalid group ID or receiver ID", http.StatusBadRequest)
+        return
+    }
+
+    // Check if the invitation exists and is pending
+    var status string
+    err := sqlite.DB.QueryRow("SELECT status FROM group_members WHERE group_id = ? AND user_id = ?", inviteRequest.GroupID, inviteRequest.ReciverID).Scan(&status)
+    if err != nil {
+        if err == sql.ErrNoRows {
+            http.Error(w, "Invitation not found", http.StatusNotFound)
+        } else {
+            http.Error(w, "Error checking invitation status", http.StatusInternalServerError)
+            log.Printf("Error: %v", err)
+        }
+        return
+    }
+
+    if status != "pending" {
+        http.Error(w, "Invitation is not pending", http.StatusBadRequest)
+        return
+    }
+
+    // Update the status to "accepted"
+    result, err := sqlite.DB.Exec("UPDATE group_members SET status = 'rejected' WHERE group_id = ? AND user_id = ?", inviteRequest.GroupID, inviteRequest.ReciverID)
+    if err != nil {
+        http.Error(w, "Error updating invitation status", http.StatusInternalServerError)
+        log.Printf("Error: %v", err)
+        return
+    }
+
+    rowsAffected, _ := result.RowsAffected()
+    if rowsAffected == 0 {
+        http.Error(w, "No invitation updated", http.StatusNotFound)
+        return
+    }
+
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(map[string]string{"message": "Group invitation accepted successfully"})
+}
