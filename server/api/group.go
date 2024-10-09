@@ -153,3 +153,49 @@ func VeiwGorups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+func GroupInvitation(w http.ResponseWriter, r *http.Request) {
+	var inviteRequest m.GroupInvaitation
+	var group m.Group
+	var groubMembers m.GroupMemebers
+
+	if err := json.NewDecoder(r.Body).Decode(&inviteRequest); err != nil {
+		http.Error(w, "Invalid JSON data", http.StatusBadRequest)
+		return
+	}
+
+	// check if the user exists
+	err := sqlite.DB.QueryRow("SELECT * FROM groups WHERE id = ?", inviteRequest.GroupID).Scan(&group.ID, &group.Title, &group.Description, &group.CreatorID, &group.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "Group does not exist", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		log.Printf("Error: %v", err)
+		return
+	}
+
+	// check if the user is already a member of the group
+	err = sqlite.DB.QueryRow("SELECT * FROM group_members WHERE group_id = ? AND user_id = ?", inviteRequest.GroupID, inviteRequest.InviterID).Scan(&groubMembers.ID, &groubMembers.GroupID, &groubMembers.UserID, &groubMembers.Status, &groubMembers.CreatedAt)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "User is not a member of the group", http.StatusBadRequest)
+			return
+		}
+		http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		log.Printf("Error: %v", err)
+		return
+	}
+
+	// insert the new member to the group
+	if _, err := sqlite.DB.Exec("INSERT INTO group_members (group_id, user_id, status) VALUES (?, ?, ?)", inviteRequest.GroupID, inviteRequest.ReciverID, "pending"); err != nil {
+		http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		log.Printf("Error: %v", err)
+		return
+	}
+}
+
+
+
+

@@ -35,3 +35,9 @@ type GroupEventRSVP struct {
     RSVPStatus string    `json:"rsvp_status"`       
     CreatedAt  time.Time `json:"created_at"`        
 }
+
+type GroupInvaitation struct {
+    GroupID   uint `json:"group_id"`
+	InviterID uint `json:"inviter_id"`
+	ReciverID uint `json:"Reciver_id"`
+}
