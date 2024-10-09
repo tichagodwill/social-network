@@ -2,9 +2,10 @@
   import { Card } from 'flowbite-svelte'
   import {AddressBookOutline, CogOutline, MessageCaptionOutline, MessagesOutline, UsersGroupOutline,} from 'flowbite-svelte-icons'
   import ChatEntry from '$lib/components/chat-entry.svelte';
+  import ChatRoom from '$lib/components/chat-room.svelte';
 </script>
 
-<Card size="none" class="flex-grow flex-row" style="padding: 0px">
+<Card size="none" class="flex-grow flex-row h-full" style="padding: 0px">
 
   <div class="w-40 flex flex-col justify-center bg-primary-50">
     <div class="grow-[0.333]" />
@@ -38,5 +39,7 @@
     <ChatEntry></ChatEntry>
     <ChatEntry></ChatEntry>
   </div>
-  <div class="bg-amber-400 w-ful grow shrink-[0.9]">Chat Room</div>
+  <div class="bg-gray-100 w-ful grow shrink-[0.9]">
+    <ChatRoom></ChatRoom>
+  </div>
 </Card>

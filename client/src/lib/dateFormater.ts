@@ -34,7 +34,6 @@ export function getFormattedDate(inputDate: Date) {
 export function getLastDate(input: Date) {
   const now = new Date()
   const diff = (now.getTime() - input.getTime()) / 1000 + 1
-  console.log(input)
 
   if (diff < 3)
     return 'now'

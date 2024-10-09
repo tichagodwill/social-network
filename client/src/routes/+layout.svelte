@@ -27,7 +27,7 @@
     </NavUl>
   </Navbar>
 
-  <div class="flex flex-col h-[calc(100vh-9rem)] justify-between m-9">
+  <div class="flex flex-col h-[calc(100vh-12rem)] justify-between m-9">
     <slot></slot>
 
     <Footer>
