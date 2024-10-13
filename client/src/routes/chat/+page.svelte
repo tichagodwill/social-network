@@ -1,8 +1,17 @@
-<script>
+<script lang="ts">
   import { Card } from 'flowbite-svelte'
-  import {AddressBookOutline, CogOutline, MessageCaptionOutline, MessagesOutline, UsersGroupOutline,} from 'flowbite-svelte-icons'
-  import ChatEntry from '$lib/components/chat-entry.svelte';
-  import ChatRoom from '$lib/components/chat-room.svelte';
+  import {AddressBookOutline, CogOutline, MessageCaptionOutline, MessagesOutline, UsersGroupOutline} from 'flowbite-svelte-icons'
+  import ChatEntry from '$lib/components/chat-entry.svelte'
+  import ChatRoom from '$lib/components/chat-room.svelte'
+
+  let selectedOption = 'general'
+
+  $: makeOptionSelected = (option: string) => {
+    if (option == selectedOption)
+      return 'bg-gray-200 dark:bg-gray-400'
+
+    return ''
+  }
 </script>
 
 <Card size="none" class="flex-grow flex-row h-full" style="padding: 0px">
@@ -10,23 +19,23 @@
   <div class="w-40 flex flex-col justify-center bg-primary-50">
     <div class="grow-[0.333]" />
 
-    <button class="flex hover:bg-gray-200 dark:hover:bg-gray-400 text-black p-2 rounded-lg mx-2 mt-2">
+    <button class="flex hover:bg-gray-200 dark:hover:bg-gray-400 text-black p-2 rounded-lg mx-2 mt-2 {makeOptionSelected('general')}" on:click={() => { selectedOption = 'general'}}>
       <MessagesOutline class="w-6 h-6 mr-2" />
       General
     </button>
-    <button class="flex hover:bg-gray-200 dark:hover:bg-gray-400 text-black p-2 rounded-lg mx-2 mt-2">
+    <button class="flex hover:bg-gray-200 dark:hover:bg-gray-400 text-black p-2 rounded-lg mx-2 mt-2 {makeOptionSelected('chat')}" on:click={() => { selectedOption = 'chat'}}>
       <MessageCaptionOutline class="w-6 h-6 mr-2" />
       Chat
     </button>
-    <button class="flex hover:bg-gray-200 dark:hover:bg-gray-400 text-black p-2 rounded-lg mx-2 mt-2">
+    <button class="flex hover:bg-gray-200 dark:hover:bg-gray-400 text-black p-2 rounded-lg mx-2 mt-2 {makeOptionSelected('groups')}" on:click={() => { selectedOption = 'groups'}}>
       <UsersGroupOutline class="w-6 h-6 mr-2" />
       Groups
     </button>
-    <button class="flex hover:bg-gray-200 dark:hover:bg-gray-400 text-black p-2 rounded-lg mx-2 mt-2">
+    <button class="flex hover:bg-gray-200 dark:hover:bg-gray-400 text-black p-2 rounded-lg mx-2 mt-2 {makeOptionSelected('contacts')}" on:click={() => { selectedOption = 'contacts'}}>
       <AddressBookOutline class="w-6 h-6 mr-2" />
       Contacts
     </button>
-    <button class="flex hover:bg-gray-200 dark:hover:bg-gray-400 text-black p-2 rounded-lg mx-2 mt-2">
+    <button class="flex hover:bg-gray-200 dark:hover:bg-gray-400 text-black p-2 rounded-lg mx-2 mt-2 {makeOptionSelected('settings')}" on:click={() => { selectedOption = 'settings'}}>
       <CogOutline class="w-6 h-6 mr-2" />
       Settings
     </button>
