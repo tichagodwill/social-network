@@ -7,6 +7,7 @@ type Chat_message struct {
 	SenderID int `json:"sender_id"`
 	RecipientID int `json:"recipient_id"`
 	Content string `json:"content,omitempty"`
+	UserName string `json:"user_name,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
