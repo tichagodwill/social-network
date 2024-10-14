@@ -1,19 +1,23 @@
 package api
 
 import (
-    "log"
-    "net/http"
-    m "social-network/models"
-    "strconv"
-    "sync/atomic"
+	// "database/sql"
+	"encoding/json"
+	"log"
+	"net/http"
+	m "social-network/models"
+	"strconv"
+	"sync/atomic"
+	"time"
 
-    "github.com/gorilla/websocket"
+	"github.com/gorilla/websocket"
 )
 
 var upgrader = websocket.Upgrader{
     ReadBufferSize:  1024,
     WriteBufferSize: 1024,
 }
+
 
 // Create a socket manager
 func makeSocketManager() *m.SocketManager {
@@ -43,12 +47,70 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 
     AddConnection(socketManager, uint64(userID), conn)
 
-    go HandelMessages()
+    go func() {
+        defer RemoveConnection(socketManager, uint64(userID)) // Ensure cleanup
+        HandelMessages(conn, uint64(userID))
+    }()
 }
 
 // Handle messages for example like, notfiction, chat or groupChat and so on.
-func HandelMessages() {
+func HandelMessages(conn *websocket.Conn, userID uint64) {
+    
+    defer conn.Close()
+
+    for{
+        var ConnectionType m.ConnectionType
+        
+        _, Message, err := conn.ReadMessage()
+        if err != nil {
+            log.Println("Error reading message:", err)
+            break
+        }
+        // Handle the message here
+        if err := json.Unmarshal(Message, &ConnectionType); err != nil {
+            log.Println("Error unmarshalling message:", err)
+            continue
+        }
+
+        switch ConnectionType.Type {
+        case "notification":
+            // Handle notification message
+        case "chat":
+            // Handle chat message
+            SendMessage(conn, Message)
+        case "groupChat":
+            // Handle group chat message
+        default:
+            // Handle other message types
+            log.Printf("Unknown message type: %s", ConnectionType.Type)
+        }
+    }
 }
+
+func SendMessage(conn *websocket.Conn, message []byte) {
+    var ChatMessage m.Chat_message
+    if err := json.Unmarshal(message, &ChatMessage); err != nil {
+        log.Println("Error unmarshalling message:", err)
+        return
+    }
+
+    ChatMessage.SenderID = 1  // ! need to change the way
+    ChatMessage.UserName = "sss"  // ! need to change the way 
+    ChatMessage.CreatedAt = time.Now()
+    ChatMessage.RecipientID = 2  // ! need to change the way
+
+    // ? query to insert the message to the database
+    /*query := `INSERT INTO chat_messages (sender_id, recipient_id, content, created_at) VALUES (?, ?, ?, ?)`
+
+    err := sql.DB.Exec(query, ChatMessage.SenderID, ChatMessage.RecipientID, ChatMessage.Content, ChatMessage.CreatedAt)
+    if err != nil {
+        log.Println("Error inserting message into database:", err)
+        return
+    }*/
+
+
+}
+
 
 func AddConnection(sm *m.SocketManager, userID uint64, conn *websocket.Conn) {
     sm.Mu.Lock()

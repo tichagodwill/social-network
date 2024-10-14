@@ -17,3 +17,7 @@ type SocketManager struct {
     Sockets       map[uint64]*websocket.Conn
     Mu            sync.Mutex
 }
+
+type ConnectionType struct {
+	Type string `json:"type"`
+}
