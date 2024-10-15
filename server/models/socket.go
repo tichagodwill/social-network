@@ -2,7 +2,6 @@ package models
 
 import (
 	"sync"
-	"sync/atomic"
 
 	"github.com/gorilla/websocket"
 )
@@ -13,9 +12,8 @@ type Connection struct {
 }
 
 type SocketManager struct {
-    SocketCounter atomic.Uint64
-    Sockets       map[uint64]*websocket.Conn
-    Mu            sync.Mutex
+	Sockets map[uint64]*websocket.Conn
+	Mu      sync.Mutex
 }
 
 type ConnectionType struct {

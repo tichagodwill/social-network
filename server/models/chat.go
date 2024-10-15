@@ -3,7 +3,6 @@ package models
 import "time"
 
 type Chat_message struct {
-	ID int `json:"id"`
 	SenderID int `json:"sender_id"`
 	RecipientID int `json:"recipient_id"`
 	Content string `json:"content,omitempty"`
