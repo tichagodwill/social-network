@@ -12,6 +12,9 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// Create a global SocketManager instance
+var socketManager = makeSocketManager()
+
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
@@ -25,8 +28,6 @@ func makeSocketManager() *m.SocketManager {
 }
 
 func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
-	socketManager := makeSocketManager()
-
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		http.Error(w, "Could not upgrade to WebSocket", http.StatusInternalServerError)
@@ -50,7 +51,7 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 	}()
 }
 
-// Handle messages for example like, notfiction, chat or groupChat and so on.
+// Handle messages for example like, notification, chat, or groupChat, and so on.
 func HandleMessages(conn *websocket.Conn, userID uint64) {
 	defer conn.Close()
 
@@ -74,18 +75,83 @@ func HandleMessages(conn *websocket.Conn, userID uint64) {
 			// Handle notification message
 		case "chat":
 			// Handle chat message
-			SendMessage(&m.SocketManager{} ,message)
+			SendMessage(socketManager, message)
 		case "groupChat":
 			// Handle group chat message
 		case "like":
 			// Handle like message
-			
-
+			MakeLikeDeslike(socketManager, message)
 		default:
 			log.Printf("Unknown message type: %s", connectionType.Type)
 		}
 	}
 }
+
+//function to like and deslike 
+func MakeLikeDeslike(sm *m.SocketManager, message []byte) {
+	var like m.Likes
+	if err := json.Unmarshal(message, &like); err != nil {
+		log.Println("Error unmarshalling message:", err)
+		return
+	}
+
+	if like.PostID != 0 {
+		if like.Like {
+
+			_, err := sqlite.DB.Exec("INSERT INTO likes (user_id, post_id, like) VALUES (?, ?, ?)", like.UserID, like.PostID, like.Like)
+			if err != nil {
+				log.Println("Error inserting like:", err)
+				return
+			}
+
+		} else {
+			
+			_, err := sqlite.DB.Exec("DELETE FROM likes WHERE user_id = ? AND post_id = ?", like.UserID, like.PostID)
+			if err != nil {
+				log.Println("Error removing like:", err)
+				return
+			}
+		}
+
+		broadcastMsgJSON, err := json.Marshal(like)
+		if err != nil {
+			log.Println("Error marshalling like for broadcast:", err)
+			return
+		}
+
+		Broadcast(sm, broadcastMsgJSON)
+
+	} else if like.CommentID != 0 {
+		if like.Like {
+
+			_, err := sqlite.DB.Exec("INSERT INTO likes (user_id, comment_id, like) VALUES (?, ?, ?)", like.UserID, like.CommentID, like.Like)
+			if err != nil {
+				log.Println("Error inserting like:", err)
+				return
+			}
+
+		} else {
+
+			_, err := sqlite.DB.Exec("DELETE FROM likes WHERE user_id = ? AND comment_id = ?", like.UserID, like.CommentID)
+			if err != nil {
+				log.Println("Error removing like:", err)
+				return
+			}
+		}
+
+		BroadcastMsg, err := json.Marshal(like)
+		if err != nil {
+			log.Println("Error marshalling like for broadcast:", err)
+			return
+		}
+
+		Broadcast(sm, BroadcastMsg)
+	} else {
+		log.Println("Invalid like request")
+		return
+	}
+}
+
 
 func SendMessage(sm *m.SocketManager, message []byte) {
 	var chatMessage m.Chat_message
@@ -98,7 +164,7 @@ func SendMessage(sm *m.SocketManager, message []byte) {
 	chatMessage.UserName = "sss"  // ! need to change the way
 	chatMessage.CreatedAt = time.Now()
 	chatMessage.RecipientID = 2  // ! need to change the way
-    
+
 	// Insert the message into the database
 	query := `INSERT INTO chat_messages (sender_id, recipient_id, content, created_at) VALUES (?, ?, ?, ?)`
 	_, err := sqlite.DB.Exec(query, chatMessage.SenderID, chatMessage.RecipientID, chatMessage.Content, chatMessage.CreatedAt)
@@ -107,8 +173,8 @@ func SendMessage(sm *m.SocketManager, message []byte) {
 		return
 	}
 
-    //send the message to the client using userid
-    responseMessage, err := json.Marshal(chatMessage)
+	// Send the message to the client using userID
+	responseMessage, err := json.Marshal(chatMessage)
 	if err != nil {
 		log.Println("Error marshalling chat message for sending:", err)
 		return
@@ -122,30 +188,28 @@ func SendMessage(sm *m.SocketManager, message []byte) {
 	if conn, exists := sm.Sockets[uint64(chatMessage.RecipientID)]; exists {
 		if err := conn.WriteMessage(websocket.TextMessage, responseMessage); err != nil {
 			log.Printf("Error sending message to user %d: %v", uint64(chatMessage.RecipientID), err)
-			RemoveConnection(sm, uint64(chatMessage.RecipientID)) 
+			RemoveConnection(sm, uint64(chatMessage.RecipientID))
 		}
 	} else {
 		log.Printf("No active connection for recipient ID %d", uint64(chatMessage.RecipientID))
 	}
 }
 
-
-
 func AddConnection(sm *m.SocketManager, userID uint64, conn *websocket.Conn) {
 	sm.Mu.Lock()
 	defer sm.Mu.Unlock()
 
-	sm.Sockets[userID] = conn  
-	log.Printf("Added new connection for user ID %d ", userID)
+	sm.Sockets[userID] = conn
+	log.Printf("Added new connection for user ID %d", userID)
 }
 
-func RemoveConnection(sm *m.SocketManager, userID uint64) { 
+func RemoveConnection(sm *m.SocketManager, userID uint64) {
 	sm.Mu.Lock()
 	defer sm.Mu.Unlock()
 
 	if conn, exists := sm.Sockets[userID]; exists {
 		conn.Close()
-		delete(sm.Sockets, userID) 
+		delete(sm.Sockets, userID)
 		log.Printf("Removed connection for user ID %d", userID)
 	}
 }
@@ -158,7 +222,7 @@ func Broadcast(sm *m.SocketManager, message []byte) {
 		err := conn.WriteMessage(websocket.TextMessage, message)
 		if err != nil {
 			log.Printf("Error broadcasting to user ID %d: %v", userID, err)
-			RemoveConnection(sm, userID) 
+			RemoveConnection(sm, userID)
 		}
 	}
 }
