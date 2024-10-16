@@ -41,3 +41,8 @@ type GroupInvaitation struct {
 	InviterID uint `json:"inviter_id"`
 	ReciverID uint `json:"Reciver_id"`
 }
+
+type GroupLeave struct {
+    GroupID uint `json:"group_id"`
+    UserID  uint `json:"user_id"`
+}

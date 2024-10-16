@@ -299,3 +299,44 @@ func GroupReject(w http.ResponseWriter, r *http.Request) {
     w.WriteHeader(http.StatusOK)
     json.NewEncoder(w).Encode(map[string]string{"message": "Group invitation accepted successfully"})
 }
+
+func GroupLeave(w http.ResponseWriter, r *http.Request) {
+    // neded Get the group 
+	var Leave m.GroupLeave
+
+	if err := json.NewDecoder(r.Body).Decode(&Leave); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	var exists bool
+	err := sqlite.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?)", Leave.GroupID, Leave.UserID).
+		Scan(&exists)
+
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	if !exists {
+		http.Error(w, "User is not a member of the group", http.StatusNotFound)
+		return
+	}
+
+	// leave logic
+	result, err := sqlite.DB.Exec("DELETE FROM group_members WHERE group_id = ? AND user_id = ?", Leave.GroupID, Leave.UserID)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		http.Error(w, "User is not a member of the group", http.StatusNotFound)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode([]byte("User successfully removed from the group"))
+
+}

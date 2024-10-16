@@ -77,6 +77,10 @@ func HandleMessages(conn *websocket.Conn, userID uint64) {
 			SendMessage(&m.SocketManager{} ,message)
 		case "groupChat":
 			// Handle group chat message
+		case "like":
+			// Handle like message
+			
+
 		default:
 			log.Printf("Unknown message type: %s", connectionType.Type)
 		}
@@ -124,6 +128,8 @@ func SendMessage(sm *m.SocketManager, message []byte) {
 		log.Printf("No active connection for recipient ID %d", uint64(chatMessage.RecipientID))
 	}
 }
+
+
 
 func AddConnection(sm *m.SocketManager, userID uint64, conn *websocket.Conn) {
 	sm.Mu.Lock()
