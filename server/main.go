@@ -95,6 +95,8 @@ func main() {
 
 	mux.Handle("GET /user/{userID}", middleware(http.HandlerFunc(api.UserProfile)))
 
+	mux.Handle("/ws", middleware(http.HandlerFunc(api.WebSocketHandler)))
+
 	fmt.Println("Server running on localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }

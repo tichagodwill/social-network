@@ -6,7 +6,7 @@ import (
 	"net/http"
 	m "social-network/models"
 	"social-network/pkg/db/sqlite"
-	"strconv"
+	"social-network/util"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -28,63 +28,82 @@ func makeSocketManager() *m.SocketManager {
 }
 
 func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		http.Error(w, "Could not upgrade to WebSocket", http.StatusInternalServerError)
-		return
-	}
-	defer conn.Close()
 
-	userIDStr := "0" // ! should change to good way 
-	userID, err := strconv.Atoi(userIDStr)
-	if err != nil {
-		http.Error(w, "Invalid user ID", http.StatusBadRequest)
-		return
-	}
-	log.Println(userID)
+    username, err := util.GetUsernameFromSession(r)
+    if err != nil {
+        http.Error(w, "Unauthorized: no session cookie", http.StatusUnauthorized)
+        return
+    }
 
-	AddConnection(socketManager, uint64(userID), conn)
+    var userID uint64
+    err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+    if err != nil {
+        http.Error(w, "Unauthorized: user not found", http.StatusUnauthorized)
+        return
+    }
 
-	go func() {
-		defer RemoveConnection(socketManager, uint64(userID)) // Ensure cleanup
-		HandleMessages(conn, uint64(userID))
-	}()
+    conn, err := upgrader.Upgrade(w, r, nil)
+    if err != nil {
+        http.Error(w, "Could not upgrade to WebSocket", http.StatusInternalServerError)
+        return
+    }
+
+    log.Println("User ID:", userID)
+
+    AddConnection(socketManager, userID, conn)
+
+    go func() {
+        HandleMessages(conn, userID)
+        RemoveConnection(socketManager, userID)
+    }()
 }
 
-// Handle messages for example like, notification, chat, or groupChat, and so on.
 func HandleMessages(conn *websocket.Conn, userID uint64) {
-	defer conn.Close()
+    for {
+        var connectionType m.ConnectionType
 
-	for {
-		var connectionType m.ConnectionType
+        _, message, err := conn.ReadMessage()
+        if err != nil {
+            log.Println("Error reading message:", err)
+            break
+        }
 
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			log.Println("Error reading message:", err)
-			break
-		}
+        // Handle the message here
+        if err := json.Unmarshal(message, &connectionType); err != nil {
+            log.Println("Error unmarshalling message:", err)
+            continue
+        }
 
-		// Handle the message here
-		if err := json.Unmarshal(message, &connectionType); err != nil {
-			log.Println("Error unmarshalling message:", err)
-			continue
-		}
+        switch connectionType.Type {
+        case "notification":
+            // Handle notification message
+        case "chat":
+            // Handle chat message
+            SendMessage(socketManager, message)
+        case "groupChat":
+            // Handle group chat message
+        case "like":
+            // Handle like message
+            MakeLikeDeslike(socketManager, message)
+        default:
+            log.Printf("Unknown message type: %s", connectionType.Type)
+        }
+    }
+    // Ensure the connection is closed when the loop exits
+    RemoveConnection(socketManager, userID)
+}
 
-		switch connectionType.Type {
-		case "notification":
-			// Handle notification message
-		case "chat":
-			// Handle chat message
-			SendMessage(socketManager, message)
-		case "groupChat":
-			// Handle group chat message
-		case "like":
-			// Handle like message
-			MakeLikeDeslike(socketManager, message)
-		default:
-			log.Printf("Unknown message type: %s", connectionType.Type)
-		}
+
+// all functions about notification
+
+//notfication for one user
+func SendNotificationOne(sm *m.SocketManager, message []byte) {
+	var notification m.Notification
+	if err := json.Unmarshal(message, &notification); err != nil {
+		log.Println("Error unmarshalling message:", err)
+		return
 	}
+	
 }
 
 //function to like and deslike 
@@ -152,7 +171,7 @@ func MakeLikeDeslike(sm *m.SocketManager, message []byte) {
 	}
 }
 
-
+// function to send message chat 
 func SendMessage(sm *m.SocketManager, message []byte) {
 	var chatMessage m.Chat_message
 	if err := json.Unmarshal(message, &chatMessage); err != nil {
@@ -160,10 +179,7 @@ func SendMessage(sm *m.SocketManager, message []byte) {
 		return
 	}
 
-	chatMessage.SenderID = 1  // ! need to change the way
-	chatMessage.UserName = "sss"  // ! need to change the way
 	chatMessage.CreatedAt = time.Now()
-	chatMessage.RecipientID = 2  // ! need to change the way
 
 	// Insert the message into the database
 	query := `INSERT INTO chat_messages (sender_id, recipient_id, content, created_at) VALUES (?, ?, ?, ?)`

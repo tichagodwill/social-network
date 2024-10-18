@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid"
-
+	"fmt"
 	m "social-network/models"
 )
 
@@ -64,3 +64,18 @@ func DestroySession(w http.ResponseWriter, r *http.Request) {
 	// remove the cookie from the map
 	delete(UserSession, cookie.Value)
 }
+
+func GetUsernameFromSession(r *http.Request) (string, error) {
+    cookie, err := r.Cookie("AccessToken")
+    if err != nil {
+        return "", err
+    }
+
+    username, ok := UserSession[cookie.Value]
+    if !ok {
+        return "", fmt.Errorf("session not found")
+    }
+
+    return username, nil
+}
+
