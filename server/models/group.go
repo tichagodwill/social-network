@@ -39,7 +39,7 @@ type GroupEventRSVP struct {
 type GroupInvaitation struct {
     GroupID   uint `json:"group_id"`
 	InviterID uint `json:"inviter_id"`
-	ReciverID uint `json:"Reciver_id"`
+	ReciverID uint `json:"reciver_id"`
 }
 
 type GroupLeave struct {
