@@ -34,7 +34,7 @@ func CreatePost(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Post created successfully"))
 }
 
-// the handler that contains the logic for viewing the post
+// the handler that contains the logic for viewing the post 
 func ViewPost(w http.ResponseWriter, r *http.Request) {
 
 	// get the id from the path
@@ -48,7 +48,7 @@ func ViewPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var post m.Post
-	if err := sqlite.DB.QueryRow("SELECT * FROM posts WHERE id = ?", id).Scan(&post.ID, &post.Title, &post.Content, &post.Media, &post.Privay, &post.Author, &post.CreatedAt); err != nil {
+	if err := sqlite.DB.QueryRow("SELECT id, title, content, media, privacy, author, created_at FROM posts WHERE id = ?", id).Scan(&post.ID, &post.Title, &post.Content, &post.Media, &post.Privay, &post.Author, &post.CreatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, "Post does not exists", http.StatusBadRequest)
 			return
@@ -65,34 +65,43 @@ func ViewPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetPosts(w http.ResponseWriter, r *http.Request) {
-	var posts []m.Post
+    var posts []m.Post
 
-	row, err := sqlite.DB.Query("SELECT * FROM posts WHERE privacy = 1 AND group = NULL ")
-	if err != nil {
-		http.Error(w, "Something went wrong", http.StatusInternalServerError)
-		log.Printf("Error: %v", err)
-		return
-	}
+    row, err := sqlite.DB.Query("SELECT id, title, content, media, privacy, author, created_at FROM posts WHERE privacy = 1 AND group_id IS NULL")
+    if err != nil {
+        http.Error(w, "Something went wrong", http.StatusInternalServerError)
+        log.Printf("Error: %v", err)
+        return
+    }
+    defer row.Close() 
 
 	// go through all the posts
-	for row.Next() {
-		var post m.Post
+    for row.Next() {
+        var post m.Post
 
 		// get individual post and copy the values into the variable
-		if err := row.Scan(&post.ID, &post.Title, &post.Content, &post.Media, &post.Privay, &post.Author, &post.CreatedAt); err != nil {
-			http.Error(w, "Error getting post", http.StatusInternalServerError)
-			log.Printf("Error scanning: %v", err)
-			return
-		}
+        if err := row.Scan(&post.ID, &post.Title, &post.Content, &post.Media, &post.Privay, &post.Author, &post.CreatedAt); err != nil {
+            http.Error(w, "Error getting post", http.StatusInternalServerError)
+            log.Printf("Error scanning: %v", err)
+            return
+        }
 
 		// append the post to the slice
-		posts = append(posts, post)
-	}
+        posts = append(posts, post)
+    }
 
-	w.Header().Set("Content-Type", "application/json")
+		// get individual post and copy the values into the variable
+		if err := row.Err(); err != nil {
+        http.Error(w, "Something went wrong", http.StatusInternalServerError)
+        log.Printf("Row iteration error: %v", err)
+        return
+    }
+
+    w.Header().Set("Content-Type", "application/json")
 	// send the array of posts to the frontend
-	if err := json.NewEncoder(w).Encode(posts); err != nil {
-		http.Error(w, "Something went wrong", http.StatusInternalServerError)
-		return
-	}
+    if err := json.NewEncoder(w).Encode(posts); err != nil {
+        http.Error(w, "Something went wrong", http.StatusInternalServerError)
+        log.Printf("Error encoding response: %v", err)
+        return
+    }
 }
