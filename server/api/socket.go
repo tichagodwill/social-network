@@ -108,67 +108,61 @@ func SendNotificationOne(sm *m.SocketManager, message []byte) {
 
 //function to like and deslike 
 func MakeLikeDeslike(sm *m.SocketManager, message []byte) {
-	var like m.Likes
-	if err := json.Unmarshal(message, &like); err != nil {
-		log.Println("Error unmarshalling message:", err)
-		return
-	}
+    var like m.Likes
+    if err := json.Unmarshal(message, &like); err != nil {
+        log.Println("Error unmarshalling message:", err)
+        return
+    }
 
-	if like.PostID != 0 {
-		if like.Like {
+    if like.PostID != 0 {
+        if like.Like {
+            _, err := sqlite.DB.Exec("INSERT INTO likes (user_id, post_id, is_like) VALUES (?, ?, ?)", like.UserID, like.PostID, like.Like)
+            if err != nil {
+                log.Println("Error inserting like:", err)
+                return
+            }
+        } else {
+            _, err := sqlite.DB.Exec("DELETE FROM likes WHERE user_id = ? AND post_id = ?", like.UserID, like.PostID)
+            if err != nil {
+                log.Println("Error removing like:", err)
+                return
+            }
+        }
 
-			_, err := sqlite.DB.Exec("INSERT INTO likes (user_id, post_id, like) VALUES (?, ?, ?)", like.UserID, like.PostID, like.Like)
-			if err != nil {
-				log.Println("Error inserting like:", err)
-				return
-			}
+        broadcastMsgJSON, err := json.Marshal(like)
+        if err != nil {
+            log.Println("Error marshalling like for broadcast:", err)
+            return
+        }
 
-		} else {
-			
-			_, err := sqlite.DB.Exec("DELETE FROM likes WHERE user_id = ? AND post_id = ?", like.UserID, like.PostID)
-			if err != nil {
-				log.Println("Error removing like:", err)
-				return
-			}
-		}
+        Broadcast(sm, broadcastMsgJSON)
 
-		broadcastMsgJSON, err := json.Marshal(like)
-		if err != nil {
-			log.Println("Error marshalling like for broadcast:", err)
-			return
-		}
+    } else if like.CommentID != 0 {
+        if like.Like {
+            _, err := sqlite.DB.Exec("INSERT INTO likes (user_id, comment_id, is_like) VALUES (?, ?, ?)", like.UserID, like.CommentID, like.Like)
+            if err != nil {
+                log.Println("Error inserting like:", err)
+                return
+            }
+        } else {
+            _, err := sqlite.DB.Exec("DELETE FROM likes WHERE user_id = ? AND comment_id = ?", like.UserID, like.CommentID)
+            if err != nil {
+                log.Println("Error removing like:", err)
+                return
+            }
+        }
 
-		Broadcast(sm, broadcastMsgJSON)
+        BroadcastMsg, err := json.Marshal(like)
+        if err != nil {
+            log.Println("Error marshalling like for broadcast:", err)
+            return
+        }
 
-	} else if like.CommentID != 0 {
-		if like.Like {
-
-			_, err := sqlite.DB.Exec("INSERT INTO likes (user_id, comment_id, like) VALUES (?, ?, ?)", like.UserID, like.CommentID, like.Like)
-			if err != nil {
-				log.Println("Error inserting like:", err)
-				return
-			}
-
-		} else {
-
-			_, err := sqlite.DB.Exec("DELETE FROM likes WHERE user_id = ? AND comment_id = ?", like.UserID, like.CommentID)
-			if err != nil {
-				log.Println("Error removing like:", err)
-				return
-			}
-		}
-
-		BroadcastMsg, err := json.Marshal(like)
-		if err != nil {
-			log.Println("Error marshalling like for broadcast:", err)
-			return
-		}
-
-		Broadcast(sm, BroadcastMsg)
-	} else {
-		log.Println("Invalid like request")
-		return
-	}
+        Broadcast(sm, BroadcastMsg)
+    } else {
+        log.Println("Invalid like request")
+        return
+    }
 }
 
 // function to send message chat 
