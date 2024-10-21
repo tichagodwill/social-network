@@ -97,6 +97,7 @@ func main() {
 
 	mux.Handle("POST /follow", middleware(http.HandlerFunc(api.RequestFollowUser)))
 	mux.Handle("PATCH /follow/{requestID}", middleware(http.HandlerFunc(api.AcceptOrRejectRequest)))
+	mux.Handle("GET /follower/{userID}", middleware(http.HandlerFunc(api.GetFollowers)))
 
 	mux.Handle("GET /user/{userID}", middleware(http.HandlerFunc(api.UserProfile)))
 

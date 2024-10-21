@@ -89,7 +89,7 @@ func AcceptOrRejectRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetFollowers(w http.ResponseWriter, r *http.Request) {
-	userIdString := r.PathValue("userId")
+	userIdString := r.PathValue("userID")
 	userId, err := strconv.Atoi(userIdString)
 	if err != nil {
 		http.Error(w, "Invalid user id", http.StatusBadRequest)
@@ -98,7 +98,7 @@ func GetFollowers(w http.ResponseWriter, r *http.Request) {
 
 	var followers []models.Follow
 
-	rows, err := sqlite.DB.Query("SELECT * FROM followers WHERE followed_id = ?, AND status = accept", userId)
+	rows, err := sqlite.DB.Query("SELECT * FROM followers WHERE followed_id = ? AND status = 'accept'", userId)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, "No followers found", http.StatusBadRequest)
@@ -112,7 +112,7 @@ func GetFollowers(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var follower models.Follow
 		if err := rows.Scan(&follower.ID, &follower.FollowerID, &follower.FollowedID, &follower.Status, &follower.CreatedAt); err != nil {
-			http.Error(w, "Somehting went wrong", http.StatusInternalServerError)
+			http.Error(w, "Something went wrong", http.StatusInternalServerError)
 			log.Printf("Error scanning follower: %v", err)
 			return
 		}
@@ -124,3 +124,4 @@ func GetFollowers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error sending data", http.StatusInternalServerError)
 	}
 }
+

@@ -213,6 +213,21 @@ func AddConnection(sm *m.SocketManager, userID uint64, conn *websocket.Conn) {
 	log.Printf("Added new connection for user ID %d", userID)
 }
 
+func GroupChat(sm *m.SocketManager, message []byte) {
+	var GroupChat m.Group_chat_messages
+	if err := json.Unmarshal(message, &GroupChat); err != nil {
+		log.Println("Error unmarshalling message:", err)
+		return
+	}
+
+    GroupChat.CreatedAt = time.Now();
+
+    // Insert the message into the database
+    // query := `INSERT INTO group_chat_messages (group_id, sender_id, content, created_at) VALUES (?, ?, ?, ?)`
+}
+
+
+// connection functions
 func RemoveConnection(sm *m.SocketManager, userID uint64) {
 	sm.Mu.Lock()
 	defer sm.Mu.Unlock()
