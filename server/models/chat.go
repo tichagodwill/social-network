@@ -10,15 +10,6 @@ type Chat_message struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-type Group_chat_messages struct {
-	ID int `json:"id"`
-	GroupID int `json:"group_id"`
-	SenderID int `json:"sender_id"`
-	Content string `json:"content,omitempty"`
-	Media string `json:"media,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 type Group_messages struct {
 	ID int `json:"id"`
 	GroupID int `json:"group_id"`

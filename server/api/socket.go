@@ -214,7 +214,7 @@ func AddConnection(sm *m.SocketManager, userID uint64, conn *websocket.Conn) {
 }
 
 func GroupChat(sm *m.SocketManager, message []byte) {
-	var GroupChat m.Group_chat_messages
+	var GroupChat m.Group_messages
 	if err := json.Unmarshal(message, &GroupChat); err != nil {
 		log.Println("Error unmarshalling message:", err)
 		return
