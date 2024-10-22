@@ -9,6 +9,7 @@ import (
 
 	m "social-network/models"
 	"social-network/pkg/db/sqlite"
+	"social-network/util"
 )
 
 func CreatePost(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +36,7 @@ func CreatePost(w http.ResponseWriter, r *http.Request) {
 }
 
 // the handler that contains the logic for viewing the post 
+// ! need to add the logic to private
 func ViewPost(w http.ResponseWriter, r *http.Request) {
 
 	// get the id from the path
@@ -44,6 +46,18 @@ func ViewPost(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.Atoi(idString)
 	if err != nil {
 		http.Error(w, "Invalid number", http.StatusBadRequest)
+		return
+	}
+
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		http.Error(w, "Unauthorized user", http.StatusUnauthorized)
+		return
+	}
+
+	var userID uint64
+	if err := sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID); err != nil {
+		http.Error(w, "Unauthorized user", http.StatusUnauthorized)
 		return
 	}
 
@@ -58,11 +72,36 @@ func ViewPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := json.NewEncoder(w).Encode(&post); err != nil {
-		http.Error(w, "Something went wrong", http.StatusInternalServerError)
-		return
+	if post.Privay == 1 { // ? if it's public 
+		
+		if err := json.NewEncoder(w).Encode(&post); err != nil {
+			http.Error(w, "Something went wrong", http.StatusInternalServerError)
+			return
+		}
+
+	} else if post.Privay == 2 { //? if it's partial private 
+		query := "SELECT follower_id FROM followers WHERE followed_id = ? AND status = 'accept' AND follower_id = ?"
+		var followerID uint64
+		if err := sqlite.DB.QueryRow(query, post.Author, userID).Scan(&followerID); err != nil {
+			if err == sql.ErrNoRows {
+				http.Error(w, "Post is not visible to you", http.StatusForbidden)
+				return
+			}
+			http.Error(w, "Something went wrong", http.StatusInternalServerError)
+			log.Printf("Error: %v", err)
+			return
+		}
+
+		if err := json.NewEncoder(w).Encode(&post); err != nil {
+			http.Error(w, "Something went wrong", http.StatusInternalServerError)
+			return
+		}
+		
+	} else if post.Privay == 3 {  //? if it's partial private
+		// ldk how it would look in front-end 
 	}
 }
+
 
 func GetPosts(w http.ResponseWriter, r *http.Request) {
     var posts []m.Post
