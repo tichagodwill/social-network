@@ -39,6 +39,24 @@ func middleware(next http.Handler) http.Handler {
 	})
 }
 
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Allow requests from your frontend origin
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173") // or your frontend URL
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
 func main() {
 	// Open the database connection
 	err := sqlite.OpenDB("./social-network.db")
@@ -73,11 +91,13 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	//NOTE: GO VERSION 1.22+ WILL BE USED IN THIS PROJECT IF YOU DON'T HAVE THAT PLEASE UPDATE YOUR GO
+	// Public routes (no middleware)
 	mux.HandleFunc("POST /register", api.RegisterHandler)
 	mux.HandleFunc("POST /login", api.LoginHandler)
 	mux.HandleFunc("POST /logout", api.LogoutHandler)
+	mux.HandleFunc("GET /user/current", api.GetCurrentUser)
 
+	// Protected routes (with middleware)
 	mux.Handle("POST /posts", middleware(http.HandlerFunc(api.CreatePost)))
 	mux.Handle("GET /posts/{id}", middleware(http.HandlerFunc(api.ViewPost)))
 	mux.Handle("GET /posts", middleware(http.HandlerFunc(api.GetPosts)))
@@ -94,7 +114,6 @@ func main() {
 	mux.Handle("POST /groups/reject", middleware(http.HandlerFunc(api.GroupReject)))
 	mux.Handle("POST /groups/leave", middleware(http.HandlerFunc(api.GroupLeave)))
 
-
 	mux.Handle("POST /follow", middleware(http.HandlerFunc(api.RequestFollowUser)))
 	mux.Handle("PATCH /follow/{requestID}", middleware(http.HandlerFunc(api.AcceptOrRejectRequest)))
 	mux.Handle("GET /follower/{userID}", middleware(http.HandlerFunc(api.GetFollowers)))
@@ -103,6 +122,11 @@ func main() {
 
 	mux.Handle("/ws", middleware(http.HandlerFunc(api.WebSocketHandler)))
 
+	mux.Handle("GET /groups/{id}", middleware(http.HandlerFunc(api.GetGroup)))
+
+	// Wrap the entire mux with CORS middleware
+	handler := corsMiddleware(mux)
+
 	fmt.Println("Server running on localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", mux))
+	log.Fatal(http.ListenAndServe(":8080", handler))
 }

@@ -1,13 +1,31 @@
-@import 'tailwindcss/base';
-@import 'tailwindcss/components';
-@import 'tailwindcss/utilities';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-@layer components {
-    .primary-text {
-        @apply text-primary-700 dark:text-primary-600;
-    }
+:root {
+    --primary-color: #6366f1;
+}
 
-    .primary-text:after {
-        content: "*";
+.primary-text {
+    color: var(--primary-color);
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
     }
+    50% {
+        transform: scale(1.05);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+.drag-active {
+    animation: pulse 1.5s infinite;
+}
+
+.drag-overlay {
+    transition: opacity 0.3s ease-in-out;
 }

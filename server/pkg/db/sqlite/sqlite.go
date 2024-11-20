@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite3"
@@ -82,21 +83,34 @@ func runMigrations() error {
 		return err
 	}
 
-	absPath, err := filepath.Abs("/pkg/db/migrations/sqlite")
+	// Get the absolute path to the migrations directory
+	migrationsPath, err := filepath.Abs("pkg/db/migrations/sqlite")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get absolute path: %v", err)
 	}
 
-	m, err := migrate.NewWithDatabaseInstance("file:/"+absPath, "sqlite3", driver)
+	// Convert Windows path separators to forward slashes
+	migrationsPath = strings.ReplaceAll(migrationsPath, "\\", "/")
+
+	// Create the file URL
+	sourceURL := fmt.Sprintf("file://%s", migrationsPath)
+
+	log.Printf("Using migrations path: %s", sourceURL)
+
+	m, err := migrate.NewWithDatabaseInstance(
+		sourceURL,
+		"sqlite3",
+		driver,
+	)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create migration instance: %v", err)
 	}
 
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		return err
+		return fmt.Errorf("failed to run migrations: %v", err)
 	}
 
-	log.Println("Migration applied succesffuly")
+	log.Println("Migration applied successfully")
 	return nil
 }
 
