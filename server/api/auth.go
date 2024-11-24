@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	m "social-network/models"
 	"social-network/pkg/db/sqlite"
@@ -15,76 +16,156 @@ import (
 )
 
 func RegisterHandler(w http.ResponseWriter, r *http.Request) {
-	var user m.User
-	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
-		log.Printf("Error decoding request body: %v", err)
-		http.Error(w, "Error reading data", http.StatusBadRequest)
+	// Set content type header first
+	w.Header().Set("Content-Type", "application/json")
+
+	// Create a struct to receive the raw JSON
+	type RegisterRequest struct {
+		Email       string `json:"email"`
+		Password    string `json:"password"`
+		Username    string `json:"username"`
+		FirstName   string `json:"first_name"`
+		LastName    string `json:"last_name"`
+		DateOfBirth string `json:"date_of_birth"`
+		Avatar      string `json:"avatar"`
+		AboutMe     string `json:"about_me"`
+	}
+
+	var rawData RegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&rawData); err != nil {
+		log.Printf("Error decoding JSON: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Invalid JSON format",
+		})
 		return
+	}
+
+	// Parse the date string
+	dateOfBirth, err := time.Parse(time.RFC3339, rawData.DateOfBirth)
+	if err != nil {
+		log.Printf("Error parsing date: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Invalid date format. Please use ISO 8601 format",
+		})
+		return
+	}
+
+	// Create the user object
+	user := m.User{
+		Email:       rawData.Email,
+		Password:    rawData.Password,
+		Username:    rawData.Username,
+		FirstName:   rawData.FirstName,
+		LastName:    rawData.LastName,
+		DateOfBirth: dateOfBirth,
+		Avatar:      rawData.Avatar,
+		AboutMe:     rawData.AboutMe,
 	}
 
 	// Debug log
 	log.Printf("Received registration data: %+v", user)
 
-	// check if all the required fields are provided
-	if strings.TrimSpace(user.Email) == "" || strings.TrimSpace(user.Username) == "" || strings.TrimSpace(user.Password) == "" || strings.TrimSpace(user.FirstName) == "" || strings.TrimSpace(user.LastName) == "" || strings.TrimSpace(user.AboutMe) == "" || strings.TrimSpace(user.Avatar) == "" || user.DateOfBirth.IsZero() {
-		log.Printf("Missing required fields: email=%s, username=%s, firstName=%s, lastName=%s, aboutMe=%s, avatar=%s, dateOfBirth=%v",
-			user.Email, user.Username, user.FirstName, user.LastName, user.AboutMe, user.Avatar, user.DateOfBirth)
-		http.Error(w, "Please populate all required fields", http.StatusBadRequest)
+	// check only required fields
+	if strings.TrimSpace(user.Email) == "" || 
+	   strings.TrimSpace(user.Username) == "" || 
+	   strings.TrimSpace(user.Password) == "" || 
+	   strings.TrimSpace(user.FirstName) == "" || 
+	   strings.TrimSpace(user.LastName) == "" {
+		log.Printf("Missing required fields: email=%s, username=%s, firstName=%s, lastName=%s",
+			user.Email, user.Username, user.FirstName, user.LastName)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Please provide all required fields: email, username, password, firstName, and lastName",
+		})
 		return
 	}
 
 	var id int
-
+	var err2 error // Declare new error variable
 	// check if the username or email already exists
-	err := sqlite.DB.QueryRow("SELECT id FROM users WHERE email = ? OR username = ?", user.Email, user.Username).Scan(&id)
-
-	if err == nil {
-		http.Error(w, "User already exists", http.StatusBadRequest)
+	err2 = sqlite.DB.QueryRow("SELECT id FROM users WHERE email = ? OR username = ?", user.Email, user.Username).Scan(&id)
+	if err2 == nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "User already exists",
+		})
 		return
-	} else if err != sql.ErrNoRows {
-		http.Error(w, "Something went wrong", http.StatusInternalServerError)
-		log.Printf("select err: %v", err)
+	} else if err2 != sql.ErrNoRows {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Something went wrong",
+		})
+		log.Printf("select err: %v", err2)
 		return
 	}
 
 	hashedpassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
-		http.Error(w, "Something went wrong", http.StatusBadRequest)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Error processing password",
+		})
 		log.Printf("hash error: %v", err)
 		return
 	}
 
-	res, err := sqlite.DB.Exec("INSERT INTO users (username, email, password, first_name, last_name, avatar, about_me, date_of_birth) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", user.Username, user.Email, string(hashedpassword), user.FirstName, user.LastName, user.Avatar, user.AboutMe, user.DateOfBirth)
+	// If date of birth is not provided, use current time
+	if user.DateOfBirth.IsZero() {
+		user.DateOfBirth = time.Now()
+	}
+
+	res, err := sqlite.DB.Exec(`
+		INSERT INTO users (
+			username, email, password, first_name, last_name, 
+			avatar, about_me, date_of_birth
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		user.Username, user.Email, string(hashedpassword),
+		user.FirstName, user.LastName, user.Avatar,
+		user.AboutMe, user.DateOfBirth)
+	
 	if err != nil {
-		http.Error(w, "Something went wrong, please try again later", http.StatusInternalServerError)
-		log.Printf("Hash error: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to create user",
+		})
+		log.Printf("Insert error: %v", err)
 		return
 	}
 
-	// get the last inserted id from the database
 	userID, err := res.LastInsertId()
 	if err != nil {
-		http.Error(w, "Something went wrong", http.StatusInternalServerError)
-		log.Printf("get id: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to get user ID",
+		})
+		log.Printf("get id error: %v", err)
 		return
 	}
 
 	// generate the session for the user
 	if err := util.GenerateSession(w, &user); err != nil {
-		http.Error(w, "Something went wrong", http.StatusInternalServerError)
-		log.Printf("Error: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to create session",
+		})
+		log.Printf("Session error: %v", err)
 		return
 	}
 
-	userResponse := m.UserResponse{
-		ID:       userID,
-		Username: user.Username,
+	// Create response
+	response := map[string]interface{}{
+		"id":       userID,
+		"username": user.Username,
+		"status":   "success",
+		"message":  "Registration successful",
 	}
 
-	if err := json.NewEncoder(w).Encode(&userResponse); err != nil {
-		http.Error(w, "Something went wrong", http.StatusInternalServerError)
-
-		log.Printf("sending back: %v", err)
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding response: %v", err)
 	}
 }
 
@@ -208,8 +289,13 @@ func GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	// Set content type header first
 	w.Header().Set("Content-Type", "application/json")
 
+	// Log request headers for debugging
+	log.Printf("Request Headers: %+v", r.Header)
+	log.Printf("Request Cookies: %+v", r.Cookies())
+
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
+		log.Printf("Session error: %v", err) // Enhanced logging
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Unauthorized",
@@ -228,12 +314,14 @@ func GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
+			log.Printf("User not found: %s", username)
 			w.WriteHeader(http.StatusNotFound)
 			json.NewEncoder(w).Encode(map[string]string{
 				"error": "User not found",
 			})
 			return
 		}
+		log.Printf("Database error: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Something went wrong",
@@ -255,5 +343,7 @@ func GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding response: %v", err)
+	}
 }

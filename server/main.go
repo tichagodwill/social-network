@@ -10,10 +10,11 @@ import (
 	"social-network/api"
 	"social-network/pkg/db/sqlite"
 	"social-network/util"
+	"social-network/middleware"
 )
 
-// middleware that will check the existance of the cookie on each handler
-func middleware(next http.Handler) http.Handler {
+// authMiddleware checks the existence of the cookie on each handler
+func authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// get the cookie from the browser
 		cookie, err := r.Cookie("AccessToken")
@@ -35,24 +36,6 @@ func middleware(next http.Handler) http.Handler {
 			http.Error(w, "Unauthorized user", http.StatusUnauthorized)
 			return
 		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Allow requests from your frontend origin
-		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173") // or your frontend URL
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-
-		// Handle preflight requests
-		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
 		next.ServeHTTP(w, r)
 	})
 }
@@ -84,8 +67,12 @@ func main() {
 		if err := sqlite.RollbackMigrations(); err != nil {
 			log.Fatalf("Error rolling back: %v", err)
 		}
-
-		// exit after rolling back
+		return
+	} else if strings.EqualFold(arg, "migrate") {
+		// run migrations
+		if err := sqlite.RunMigrations(); err != nil {
+			log.Fatalf("Error running migrations: %v", err)
+		}
 		return
 	}
 
@@ -97,35 +84,46 @@ func main() {
 	mux.HandleFunc("POST /logout", api.LogoutHandler)
 	mux.HandleFunc("GET /user/current", api.GetCurrentUser)
 
-	// Protected routes (with middleware)
-	mux.Handle("POST /posts", middleware(http.HandlerFunc(api.CreatePost)))
-	mux.Handle("GET /posts/{id}", middleware(http.HandlerFunc(api.ViewPost)))
-	mux.Handle("GET /posts", middleware(http.HandlerFunc(api.GetPosts)))
+	// Protected routes (with authMiddleware)
+	mux.Handle("POST /posts", authMiddleware(http.HandlerFunc(api.CreatePost)))
+	mux.Handle("GET /posts/{id}", authMiddleware(http.HandlerFunc(api.ViewPost)))
+	mux.Handle("GET /posts", authMiddleware(http.HandlerFunc(api.GetPosts)))
 
-	mux.Handle("POST /comments", middleware(http.HandlerFunc(api.CreateComment)))
-	mux.Handle("GET /comments/{postID}", middleware(http.HandlerFunc(api.GetComments)))
+	mux.Handle("POST /comments", authMiddleware(http.HandlerFunc(api.CreateComment)))
+	mux.Handle("GET /comments/{postID}", authMiddleware(http.HandlerFunc(api.GetComments)))
 
-	mux.Handle("GET /groups", middleware(http.HandlerFunc(api.VeiwGorups)))
-	mux.Handle("POST /groups", middleware(http.HandlerFunc(api.CreateGroup)))
-	mux.Handle("POST /groups/{id}/posts", middleware(http.HandlerFunc(api.CreateGroupPost)))
-	mux.Handle("GET /groups/{id}/posts", middleware(http.HandlerFunc(api.GetGroupPost)))
-	mux.Handle("POST /groups/invitation", middleware(http.HandlerFunc(api.GroupInvitation)))
-	mux.Handle("POST /groups/accept", middleware(http.HandlerFunc(api.GroupAccept)))
-	mux.Handle("POST /groups/reject", middleware(http.HandlerFunc(api.GroupReject)))
-	mux.Handle("POST /groups/leave", middleware(http.HandlerFunc(api.GroupLeave)))
+	mux.Handle("GET /groups", authMiddleware(http.HandlerFunc(api.VeiwGorups)))
+	mux.Handle("POST /groups", authMiddleware(http.HandlerFunc(api.CreateGroup)))
+	mux.Handle("POST /groups/{id}/posts", authMiddleware(http.HandlerFunc(api.CreateGroupPost)))
+	mux.Handle("GET /groups/{id}/posts", authMiddleware(http.HandlerFunc(api.GetGroupPost)))
+	mux.Handle("POST /groups/invitation", authMiddleware(http.HandlerFunc(api.GroupInvitation)))
+	mux.Handle("POST /groups/accept", authMiddleware(http.HandlerFunc(api.GroupAccept)))
+	mux.Handle("POST /groups/reject", authMiddleware(http.HandlerFunc(api.GroupReject)))
+	mux.Handle("POST /groups/leave", authMiddleware(http.HandlerFunc(api.GroupLeave)))
 
-	mux.Handle("POST /follow", middleware(http.HandlerFunc(api.RequestFollowUser)))
-	mux.Handle("PATCH /follow/{requestID}", middleware(http.HandlerFunc(api.AcceptOrRejectRequest)))
-	mux.Handle("GET /follower/{userID}", middleware(http.HandlerFunc(api.GetFollowers)))
+	mux.Handle("POST /follow", authMiddleware(http.HandlerFunc(api.RequestFollowUser)))
+	mux.Handle("PATCH /follow/{requestID}", authMiddleware(http.HandlerFunc(api.AcceptOrRejectRequest)))
+	mux.Handle("GET /follower/{userID}", authMiddleware(http.HandlerFunc(api.GetFollowers)))
 
-	mux.Handle("GET /user/{userID}", middleware(http.HandlerFunc(api.UserProfile)))
+	mux.Handle("GET /user/{userID}", authMiddleware(http.HandlerFunc(api.UserProfile)))
 
-	mux.Handle("/ws", middleware(http.HandlerFunc(api.WebSocketHandler)))
+	mux.Handle("/ws", authMiddleware(http.HandlerFunc(api.WebSocketHandler)))
 
-	mux.Handle("GET /groups/{id}", middleware(http.HandlerFunc(api.GetGroup)))
+	mux.Handle("GET /groups/{id}", authMiddleware(http.HandlerFunc(api.GetGroup)))
+
+	mux.Handle("GET /notifications", authMiddleware(http.HandlerFunc(api.GetNotifications)))
+
+	mux.Handle("GET /groups/{id}/members", authMiddleware(http.HandlerFunc(api.GetGroupMembers)))
+
+	mux.Handle("GET /groups/{id}/events", authMiddleware(http.HandlerFunc(api.GetGroupEvents)))
+	mux.Handle("POST /groups/{id}/events", authMiddleware(http.HandlerFunc(api.CreateGroupEvent)))
+	mux.Handle("POST /groups/events/{eventId}/respond", authMiddleware(http.HandlerFunc(api.RespondToGroupEvent)))
+
+	mux.Handle("PUT /groups/{id}", authMiddleware(http.HandlerFunc(api.UpdateGroup)))
+	mux.Handle("DELETE /groups/{id}", authMiddleware(http.HandlerFunc(api.DeleteGroup)))
 
 	// Wrap the entire mux with CORS middleware
-	handler := corsMiddleware(mux)
+	handler := middleware.CORS(mux)
 
 	fmt.Println("Server running on localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", handler))
