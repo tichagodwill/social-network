@@ -1,64 +1,92 @@
-const units = [
-  { label: 'years', seconds: 31536000 },
-  { label: 'months', seconds: 2592000 },
-  { label: 'days', seconds: 86400 },
-  { label: 'hours', seconds: 3600 },
-  { label: 'minutes', seconds: 60 },
-  { label: 'seconds', seconds: 1 },
-]
+const units: { label: string; seconds: number }[] = [
+    { label: 'years', seconds: 31536000 },
+    { label: 'months', seconds: 2592000 },
+    { label: 'days', seconds: 86400 },
+    { label: 'hours', seconds: 3600 },
+    { label: 'minutes', seconds: 60 },
+    { label: 'seconds', seconds: 1 }
+];
 
-export function getFormattedDate(inputDate: Date) {
-  const formattedDate = inputDate.toDateString() // Format: "Tue Sep 24 2024"
+export function getFormattedDate(inputDate: Date | string | undefined) {
+    if (!inputDate) {
+        return { formated: 'No date', diff: 'No date' };
+    }
 
-  // diff
-  let suffix = 'ago'
-  let now = new Date()
+    // Convert string to Date if necessary
+    const date = typeof inputDate === 'string' ? new Date(inputDate) : inputDate;
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+        return { formated: 'Invalid date', diff: 'Invalid date' };
+    }
 
-  if (now < inputDate) {
-    const tmp = now
-    suffix = 'ahead'
+    const formattedDate = date.toDateString(); // Format: "Tue Sep 24 2024"
 
-    now = inputDate
-    inputDate = tmp
-  }
+    // diff
+    let suffix = 'ago';
+    let now = new Date();
 
-  const diffSeconds = (now.getTime() - inputDate.getTime()) / 1000 + 1
+    if (now < date) {
+        const tmp = now;
+        suffix = 'ahead';
+        now = date;
+        inputDate = tmp;
+    }
 
-  const unit = units.find((u) => diffSeconds >= u.seconds)!
-  const value = Math.round(diffSeconds / unit.seconds)
-  const timeAgo = `${value} ${unit.label} ${suffix}`
+    const diffSeconds = Math.floor((now.getTime() - date.getTime()) / 1000) + 1;
 
-  return { formated: formattedDate, diff: timeAgo }
+    const unit = units.find(u => diffSeconds >= u.seconds);
+    if (!unit) {
+        return { formated: formattedDate, diff: 'just now' };
+    }
+
+    const value = Math.round(diffSeconds / unit.seconds);
+    const timeAgo = `${value} ${unit.label} ${suffix}`;
+
+    return { formated: formattedDate, diff: timeAgo };
 }
 
-export function getLastDate(input: Date) {
-  const now = new Date()
-  const diff = (now.getTime() - input.getTime()) / 1000 + 1
+export function getLastDate(input: Date | string | undefined) {
+    if (!input) {
+        return 'No date';
+    }
 
-  if (diff < 3)
-    return 'now'
+    const date = typeof input === 'string' ? new Date(input) : input;
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+        return 'Invalid date';
+    }
 
-  if (diff < 60) // 32s
-    return `${diff}s`
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - date.getTime()) / 1000) + 1;
 
-  if (diff < 3600) { // <1hour: 32min
-    const minutes = Math.floor(diff / 60)
-    return `${minutes}s`
-  }
+    if (diff < 3) {
+        return 'now';
+    }
 
-  if (diff < 86400) { // <1day: 12:33pm
-    return input.toLocaleTimeString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true })
-  }
+    if (diff < 60) { // 32s
+        return `${diff}s`;
+    }
 
-  if (diff < 604800) { // <1week: sun
-    return input.toLocaleDateString('en-US', { weekday: 'short' })
-  }
+    if (diff < 3600) { // <1hour: 32min
+        const minutes = Math.floor(diff / 60);
+        return `${minutes}m`;
+    }
 
-  if (diff < 31104000) { // <1year: 12 jan
-    return input.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
-  }
+    if (diff < 86400) { // <1day: 12:33pm
+        return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true });
+    }
 
-  // >1year: 2 year
-  const years = Math.round(diff / 31104000)
-  return `${years} year`
+    if (diff < 604800) { // <1week: sun
+        return date.toLocaleDateString('en-US', { weekday: 'short' });
+    }
+
+    if (diff < 31104000) { // <1year: 12 jan
+        return date.toLocaleDateString('en-US', { day: 'numeric', month: 'short' });
+    }
+
+    // >1year: 2 year
+    const years = Math.round(diff / 31104000);
+    return `${years} year${years > 1 ? 's' : ''}`;
 }

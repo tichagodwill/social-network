@@ -18,6 +18,10 @@ var socketManager = makeSocketManager()
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		// Allow all origins in development
+		return true
+	},
 }
 
 // Create a socket manager
@@ -28,69 +32,75 @@ func makeSocketManager() *m.SocketManager {
 }
 
 func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
+	// Set CORS headers for WebSocket
+	w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
 
-    username, err := util.GetUsernameFromSession(r)
-    if err != nil {
-        http.Error(w, "Unauthorized: no session cookie", http.StatusUnauthorized)
-        return
-    }
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		log.Printf("Session error in WebSocket: %v", err)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 
-    var userID uint64
-    err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
-    if err != nil {
-        http.Error(w, "Unauthorized: user not found", http.StatusUnauthorized)
-        return
-    }
+	var userID uint64
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		log.Printf("Database error: %v", err)
+		http.Error(w, "Unauthorized: user not found", http.StatusUnauthorized)
+		return
+	}
 
-    conn, err := upgrader.Upgrade(w, r, nil)
-    if err != nil {
-        http.Error(w, "Could not upgrade to WebSocket", http.StatusInternalServerError)
-        return
-    }
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("WebSocket upgrade error: %v", err)
+		return
+	}
 
-    log.Println("User ID:", userID)
+	log.Printf("New WebSocket connection for user %s (ID: %d)", username, userID)
 
-    AddConnection(socketManager, userID, conn)
+	// Store the connection
+	AddConnection(socketManager, userID, conn)
 
-    go func() {
-        HandleMessages(conn, userID)
-        RemoveConnection(socketManager, userID)
-    }()
+	// Clean up on disconnect
+	defer func() {
+		RemoveConnection(socketManager, userID)
+		conn.Close()
+	}()
+
+	// Handle messages
+	for {
+		_, message, err := conn.ReadMessage()
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("WebSocket error: %v", err)
+			}
+			break
+		}
+
+		// Handle the message
+		HandleMessage(message, userID)
+	}
 }
 
-func HandleMessages(conn *websocket.Conn, userID uint64) {
-    for {
-        var connectionType m.ConnectionType
+func HandleMessage(message []byte, userID uint64) {
+	var msg map[string]interface{}
+	if err := json.Unmarshal(message, &msg); err != nil {
+		log.Printf("Error parsing message: %v", err)
+		return
+	}
 
-        _, message, err := conn.ReadMessage()
-        if err != nil {
-            log.Println("Error reading message:", err)
-            break
-        }
-
-        // Handle the message here
-        if err := json.Unmarshal(message, &connectionType); err != nil {
-            log.Println("Error unmarshalling message:", err)
-            continue
-        }
-
-        switch connectionType.Type {
-        case "notification":
-            // Handle notification message
-        case "chat":
-            // Handle chat message
-            SendMessage(socketManager, message)
-        case "groupChat":
-            // Handle group chat message
-        case "like":
-            // Handle like message
-            MakeLikeDeslike(socketManager, message)
-        default:
-            log.Printf("Unknown message type: %s", connectionType.Type)
-        }
-    }
-    // Ensure the connection is closed when the loop exits
-    RemoveConnection(socketManager, userID)
+	// Handle different message types
+	switch msg["type"] {
+	case "chat":
+		// Handle chat message
+		break
+	case "notification":
+		// Handle notification
+		break
+	default:
+		log.Printf("Unknown message type: %v", msg["type"])
+	}
 }
 
 
@@ -248,6 +258,19 @@ func Broadcast(sm *m.SocketManager, message []byte) {
 		if err != nil {
 			log.Printf("Error broadcasting to user ID %d: %v", userID, err)
 			RemoveConnection(sm, userID)
+		}
+	}
+}
+
+// Function to send notification to a specific user
+func SendNotification(userID uint64, notification interface{}) {
+	socketManager.Mu.Lock()
+	defer socketManager.Mu.Unlock()
+
+	if conn, ok := socketManager.Sockets[userID]; ok {
+		if err := conn.WriteJSON(notification); err != nil {
+			log.Printf("Error sending notification to user %d: %v", userID, err)
+			RemoveConnection(socketManager, userID)
 		}
 	}
 }

@@ -1,34 +1,134 @@
 <script lang="ts">
-  import { Card } from 'flowbite-svelte'
-  import {AddressBookOutline, CogOutline, MessageCaptionOutline, MessagesOutline, UsersGroupOutline} from 'flowbite-svelte-icons'
-  import ChatEntry from '$lib/components/chat-entry.svelte'
-  import ChatRoom from '$lib/components/chat-room.svelte'
-  import OptionButton from '$lib/components/option-button.svelte'
+    import { onMount, onDestroy } from 'svelte';
+    import { chat } from '$lib/stores/chat';
+    import { auth } from '$lib/stores/auth';
+    import { Card, Button, Input, Avatar } from 'flowbite-svelte';
+    import { getLastDate } from '$lib/dateFormater';
+    import EmojiPicker from '$lib/components/EmojiPicker.svelte';
+    import type { EmojiPickerEvent } from '$lib/types';
+    import ChatInput from '$lib/components/ChatInput.svelte';
+    import FileUpload from '$lib/components/FileUpload.svelte';
+    import MessageContent from '$lib/components/MessageContent.svelte';
+    import type { FileUploadResponse } from '$lib/types';
+    import DragDropZone from '$lib/components/DragDropZone.svelte';
 
-  let selectedName = 'gerenal'
-  let handleOptionButton = (event: CustomEvent) => { selectedName = event.detail.text }
+    let newMessage = '';
+    let inputElement: HTMLInputElement;
+    let chatInput: ChatInput;
+    let dragDropActive = false;
+
+    onMount(() => {
+        chat.initialize();
+        chat.loadContacts();
+    });
+
+    onDestroy(() => {
+        chat.cleanup();
+    });
+
+    function handleSend() {
+        if (!newMessage.trim() || !$chat.activeChat) return;
+        
+        chat.sendMessage(newMessage, $chat.activeChat);
+        newMessage = '';
+    }
+
+    function handleEmojiSelect(event: EmojiPickerEvent) {
+        const emoji = event.detail.emoji.native;
+        const cursorPosition = chatInput.getCursorPosition();
+        newMessage = 
+            newMessage.slice(0, cursorPosition) + 
+            emoji + 
+            newMessage.slice(cursorPosition);
+        chatInput.focus();
+    }
+
+    function handleKeyPress(event: KeyboardEvent) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            handleSend();
+        }
+    }
+
+    function handleFileUpload(event: CustomEvent<FileUploadResponse>) {
+        const { url, fileName, fileType } = event.detail;
+        chat.sendMessage('', $chat.activeChat, { url, fileName, fileType });
+    }
+
+    function handleDragEnter() {
+        dragDropActive = true;
+    }
+
+    function handleDragLeave() {
+        dragDropActive = false;
+    }
 </script>
 
-<Card size="none" class="flex-grow flex-row h-full" style="padding: 0px">
+<DragDropZone 
+    bind:active={dragDropActive}
+    on:upload={handleFileUpload}
+>
+    <div class="container mx-auto px-4 py-8">
+        <div 
+            class="grid grid-cols-12 gap-4 h-[calc(100vh-12rem)]"
+            role="presentation"
+            on:dragenter={handleDragEnter}
+            on:dragleave={handleDragLeave}
+        >
+            <!-- Contacts List -->
+            <div class="col-span-3 bg-white dark:bg-gray-800 rounded-lg shadow overflow-y-auto">
+                <div class="p-4">
+                    <h2 class="text-lg font-semibold mb-4">Contacts</h2>
+                    {#each $chat.contacts as contact}
+                        <button
+                            class="w-full text-left p-3 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg mb-2 flex items-center space-x-3"
+                            class:bg-gray-100={$chat.activeChat === contact.id}
+                            on:click={() => chat.loadMessages(contact.id)}
+                        >
+                            <Avatar src={contact.avatar || '/default-avatar.png'} size="sm" />
+                            <div>
+                                <p class="font-medium">{contact.username}</p>
+                                <p class="text-sm text-gray-500">{contact.firstName} {contact.lastName}</p>
+                            </div>
+                        </button>
+                    {/each}
+                </div>
+            </div>
 
-  <div class="w-40 flex flex-col justify-center bg-primary-50">
-    <div class="grow-[0.333]" />
-
-      <OptionButton name='General' selectedName={selectedName} on:message={handleOptionButton}><MessagesOutline class="w-6 h-6 mr-2" /></OptionButton>
-      <OptionButton name='Chat' selectedName={selectedName} on:message={handleOptionButton}><MessageCaptionOutline class="w-6 h-6 mr-2" /></OptionButton>
-      <OptionButton name='Groups' selectedName={selectedName} on:message={handleOptionButton}><UsersGroupOutline class="w-6 h-6 mr-2" /></OptionButton>
-      <OptionButton name='Contact' selectedName={selectedName} on:message={handleOptionButton}><AddressBookOutline class="w-6 h-6 mr-2" /></OptionButton>
-      <OptionButton name='Settings' selectedName={selectedName} on:message={handleOptionButton}><CogOutline class="w-6 h-6 mr-2" /></OptionButton>
-
-    <div class="grow-[1]" />
-  </div>
-
-  <div class="w-1/3 grow-0 shrink-[0.2] flex flex-col justify-center gap-2">
-    <ChatEntry isSelected={true}></ChatEntry>
-    <ChatEntry></ChatEntry>
-    <ChatEntry></ChatEntry>
-  </div>
-  <div class="bg-gray-100 w-ful grow shrink-[0.9]">
-    <ChatRoom></ChatRoom>
-  </div>
-</Card>
+            <!-- Chat Area -->
+            <div class="col-span-9 bg-white dark:bg-gray-800 rounded-lg shadow flex flex-col">
+                {#if $chat.activeChat}
+                    <div class="flex-1 overflow-y-auto p-4">
+                        {#each $chat.messages as message}
+                            <div class="mb-4 flex" class:justify-end={message.senderId === $auth.user?.id}>
+                                <div class="max-w-[70%] bg-gray-100 dark:bg-gray-700 rounded-lg p-3">
+                                    <MessageContent {message} />
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        {getLastDate(new Date(message.createdAt))}
+                                    </p>
+                                </div>
+                            </div>
+                        {/each}
+                    </div>
+                    <div class="p-4 border-t dark:border-gray-700">
+                        <div class="flex space-x-2">
+                            <ChatInput
+                                bind:this={chatInput}
+                                bind:value={newMessage}
+                                placeholder="Type a message..."
+                                on:keypress={handleKeyPress}
+                            />
+                            <FileUpload on:upload={handleFileUpload} />
+                            <EmojiPicker on:emoji-select={handleEmojiSelect} />
+                            <Button on:click={handleSend}>Send</Button>
+                        </div>
+                    </div>
+                {:else}
+                    <div class="flex-1 flex items-center justify-center">
+                        <p class="text-gray-500">Select a contact to start chatting</p>
+                    </div>
+                {/if}
+            </div>
+        </div>
+    </div>
+</DragDropZone>

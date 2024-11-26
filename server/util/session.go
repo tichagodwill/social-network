@@ -26,7 +26,8 @@ func GenerateSession(w http.ResponseWriter, u *m.User) error {
 		Value:    sessionIDInString,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(24 * time.Hour / time.Second),
 	}
 
@@ -45,18 +46,18 @@ func DestroySession(w http.ResponseWriter, r *http.Request) {
 			// no cookie found nothing to do
 			return
 		}
-		http.Error(w, "Something went wrong", 500)
 		return
 	}
 
 	// invalidate the cookie and send it to the frontend
 	invalidCookie := &http.Cookie{
 		Name:     "AccessToken",
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   true,
-		MaxAge:   -1,
+		 Value:    "",
+		 Path:     "/",
+		 HttpOnly: true,
+		 Secure:   false,
+		 SameSite: http.SameSiteLaxMode,
+		 MaxAge:   -1,
 	}
 
 	http.SetCookie(w, invalidCookie)
@@ -66,16 +67,16 @@ func DestroySession(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetUsernameFromSession(r *http.Request) (string, error) {
-    cookie, err := r.Cookie("AccessToken")
-    if err != nil {
-        return "", err
-    }
+	cookie, err := r.Cookie("AccessToken")
+	if err != nil {
+		return "", fmt.Errorf("no session cookie found: %v", err)
+	}
 
-    username, ok := UserSession[cookie.Value]
-    if !ok {
-        return "", fmt.Errorf("session not found")
-    }
+	username, ok := UserSession[cookie.Value]
+	if !ok {
+		return "", fmt.Errorf("invalid or expired session")
+	}
 
-    return username, nil
+	return username, nil
 }
 

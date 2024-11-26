@@ -1,8 +1,11 @@
-// import * as db from '$lib/server/database';
 import type { LayoutServerLoad } from './$types'
 
-export const load: LayoutServerLoad = async () => {
+export const load: LayoutServerLoad = async ({ cookies }) => {
+	const accessToken = cookies.get('AccessToken');
+	
 	return {
-		user: {loggedIn: false},
+		user: {
+			loggedIn: !!accessToken
+		}
 	};
 };
