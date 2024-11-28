@@ -3,14 +3,14 @@ package models
 import "time"
 
 type Post struct {
-	ID        uint      `json:"id,omitempty"`
-	Title     string    `json:"title,omitempty"`
-	Content   string    `json:"content,omitempty"`
-	Media     string    `json:"media,omitempty"`
-	Privay    uint      `json:"privay,omitempty"`
-	CreatedAt time.Time `json:"created_at,omitempty"`
-	Author    uint      `json:"author,omitempty"`
-	GroupID   uint      `json:"group_id,omitempty"`
+	ID        int       `json:"id"`
+	Title     string    `json:"title"`
+	Content   string    `json:"content"`
+	Media     string    `json:"media"`
+	Privacy   int       `json:"privacy"`
+	Author    int       `json:"author"`
+	CreatedAt time.Time `json:"created_at"`
+	GroupID   int       `json:"group_id,omitempty"`
 }
 
 type PostPrivateView struct {

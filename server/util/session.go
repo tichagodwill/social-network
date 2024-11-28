@@ -7,6 +7,7 @@ import (
 	"github.com/gofrs/uuid"
 	"fmt"
 	m "social-network/models"
+	"log"
 )
 
 var UserSession = make(map[string]string) // sessionID: username
@@ -29,12 +30,14 @@ func GenerateSession(w http.ResponseWriter, u *m.User) error {
 		Secure:   false,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(24 * time.Hour / time.Second),
+		Domain:   "localhost",
 	}
 
 	// send the cookie to the browser
 	http.SetCookie(w, cookie)
 
 	UserSession[sessionIDInString] = u.Username
+	log.Printf("Created session for user: %s", u.Username)
 
 	return nil
 }
@@ -77,6 +80,7 @@ func GetUsernameFromSession(r *http.Request) (string, error) {
 		return "", fmt.Errorf("invalid or expired session")
 	}
 
+	log.Printf("Session found for user: %s", username)
 	return username, nil
 }
 

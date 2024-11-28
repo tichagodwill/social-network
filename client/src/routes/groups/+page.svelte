@@ -1,90 +1,64 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
-    import { Card, Button } from 'flowbite-svelte';
-    import { getFormattedDate } from '$lib/dateFormater';
-    import CreateGroupModal from '$lib/components/CreateGroupModal.svelte';
-    import type { Group } from '$lib/types';
+    import { Button, Card } from 'flowbite-svelte';
+    import { auth } from '$lib/stores/auth';
 
-    let groups: Group[] = [];
-    let loading = true;
-    let error = '';
-    let showCreateModal = false;
-
-    async function loadGroups() {
-        try {
-            const response = await fetch('http://localhost:8080/groups', {
-                credentials: 'include'
-            });
-            if (response.ok) {
-                groups = await response.json();
-            } else {
-                error = 'Failed to load groups';
-            }
-        } catch (err) {
-            error = 'Error connecting to server';
-            console.error('Failed to fetch groups:', err);
-        } finally {
-            loading = false;
-        }
-    }
-
-    onMount(loadGroups);
-
-    function handleGroupCreated() {
-        loadGroups();
-    }
+    export let data;
+    let groups = data.groups || [];
 </script>
 
-<div class="container mx-auto px-4 py-8">
-    <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold dark:text-white">Groups</h1>
-        <Button on:click={() => showCreateModal = true}>Create Group</Button>
+<div class="max-w-4xl mx-auto p-4 space-y-8">
+    <div class="flex justify-between items-center">
+        <h1 class="text-3xl font-bold">Groups</h1>
+        {#if $auth.isAuthenticated}
+            <Button href="/groups/create">Create Group</Button>
+        {/if}
     </div>
 
-    {#if error}
-        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">
-            {error}
-        </div>
-    {/if}
-
-    {#if loading}
-        <div class="text-center">
-            <p>Loading groups...</p>
+    {#if !$auth.isAuthenticated}
+        <div class="p-4 text-center">
+            <p class="text-lg mb-4">Please log in to view and interact with groups</p>
+            <Button href="/login">Log In</Button>
         </div>
     {:else if groups.length === 0}
-        <div class="text-center">
-            <p>No groups found. Create one to get started!</p>
-        </div>
+        <p class="text-gray-500">No groups found</p>
     {:else}
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div class="grid gap-6">
             {#each groups as group}
                 <Card>
-                    <div class="flex flex-col h-full">
-                        <h5 class="mb-2 text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-                            {group.title}
-                        </h5>
-                        <p class="mb-3 font-normal text-gray-700 dark:text-gray-400 flex-grow">
-                            {group.description}
-                        </p>
-                        <div class="mt-4 flex justify-between items-center">
-                            <span class="text-sm text-gray-500">
-                                {#if group.createdAt}
-                                    Created {getFormattedDate(group.createdAt).diff}
-                                {/if}
-                            </span>
-                            <Button href="/groups/{group.id}">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h2 class="text-xl font-semibold">
+                                <a href="/groups/{group.id}" class="hover:underline">
+                                    {group.title}
+                                </a>
+                            </h2>
+                            <p class="text-gray-600 dark:text-gray-400 mt-2">
+                                {group.description}
+                            </p>
+                            <p class="text-sm text-gray-500 mt-2">
+                                Created by: {group.creator_username}
+                            </p>
+                        </div>
+                        {#if !group.isMember && !group.hasPendingRequest}
+                            <Button 
+                                size="sm"
+                                href="/groups/{group.id}"
+                            >
                                 View Group
                             </Button>
-                        </div>
+                        {:else if group.hasPendingRequest}
+                            <span class="text-sm text-gray-500">Request Pending</span>
+                        {:else}
+                            <Button 
+                                size="sm"
+                                href="/groups/{group.id}"
+                            >
+                                View Group
+                            </Button>
+                        {/if}
                     </div>
                 </Card>
             {/each}
         </div>
     {/if}
-</div>
-
-<CreateGroupModal
-    bind:open={showCreateModal}
-    onClose={() => showCreateModal = false}
-    onGroupCreated={handleGroupCreated}
-/> 
+</div> 

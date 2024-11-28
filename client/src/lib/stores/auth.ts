@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import { goto } from '$app/navigation';
+import { browser } from '$app/environment';
 
 interface User {
     id: number;
@@ -28,7 +29,7 @@ function createAuthStore() {
         error: null
     });
 
-    return {
+    const store = {
         subscribe,
         login: async (email: string, password: string) => {
             try {
@@ -92,9 +93,22 @@ function createAuthStore() {
             }
         },
         initialize: async () => {
+            if (!browser) {
+                set({
+                    user: null,
+                    isAuthenticated: false,
+                    loading: false,
+                    error: null
+                });
+                return;
+            }
+
             try {
                 const response = await fetch('http://localhost:8080/user/current', {
-                    credentials: 'include'
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
                 });
                 
                 if (response.ok) {
@@ -122,9 +136,10 @@ function createAuthStore() {
                         loading: false,
                         error: null
                     });
-                    if (window.location.pathname !== '/login' && 
-                        window.location.pathname !== '/register' && 
-                        window.location.pathname !== '/') {
+                    
+                    const currentPath = window.location.pathname;
+                    const publicRoutes = ['/login', '/register', '/'];
+                    if (!publicRoutes.includes(currentPath)) {
                         goto('/login');
                     }
                 }
@@ -137,8 +152,92 @@ function createAuthStore() {
                     error: 'Failed to connect to server'
                 });
             }
+        },
+        register: async (userData: {
+            email: string;
+            password: string;
+            username: string;
+            firstName: string;
+            lastName: string;
+            dateOfBirth: string;
+            avatar?: string;
+            aboutMe?: string;
+        }) => {
+            try {
+                // Parse and format the date
+                const dateOfBirth = new Date(userData.dateOfBirth);
+                const formattedDate = dateOfBirth.toISOString();
+
+                const requestData = {
+                    email: userData.email,
+                    password: userData.password,
+                    username: userData.username,
+                    first_name: userData.firstName,
+                    last_name: userData.lastName,
+                    date_of_birth: formattedDate,
+                    avatar: userData.avatar || "",
+                    about_me: userData.aboutMe || ""
+                };
+
+                console.log('Sending registration data:', requestData);
+
+                const response = await fetch('http://localhost:8080/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify(requestData)
+                });
+
+                const responseText = await response.text();
+                console.log('Raw response:', responseText);
+
+                if (!response.ok) {
+                    let errorMessage: string;
+                    try {
+                        const errorData = JSON.parse(responseText);
+                        errorMessage = errorData.error || 'Registration failed';
+                    } catch (e) {
+                        errorMessage = responseText || 'Registration failed';
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const data = JSON.parse(responseText);
+                
+                set({ 
+                    user: {
+                        id: data.id,
+                        username: data.username,
+                        email: userData.email,
+                        firstName: userData.firstName,
+                        lastName: userData.lastName,
+                        avatar: userData.avatar,
+                        aboutMe: userData.aboutMe,
+                        isPrivate: false,
+                        dateOfBirth: userData.dateOfBirth
+                    },
+                    isAuthenticated: true,
+                    loading: false,
+                    error: null
+                });
+
+                if (browser) {
+                    goto('/');
+                }
+            } catch (error) {
+                console.error('Registration failed:', error);
+                throw error;
+            }
         }
     };
+
+    if (browser) {
+        store.initialize();
+    }
+
+    return store;
 }
 
 export const auth = createAuthStore(); 
