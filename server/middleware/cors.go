@@ -10,15 +10,14 @@ func CORS(next http.Handler) http.Handler {
         w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
         w.Header().Set("Access-Control-Allow-Credentials", "true")
 
-        // Handle WebSocket preflight
+        // Handle WebSocket upgrade
         if r.Header.Get("Upgrade") == "websocket" {
+            next.ServeHTTP(w, r)
             return
         }
 
-        // Handle preflight requests for all methods
+        // Handle preflight requests
         if r.Method == "OPTIONS" {
-            // Explicitly set allowed methods in response headers
-            w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
             w.WriteHeader(http.StatusOK)
             return
         }

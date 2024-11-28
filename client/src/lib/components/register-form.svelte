@@ -9,12 +9,12 @@
 		email: '',
 		password: '',
 		confirmPassword: '',
-		first_name: '',
-		last_name: '',
-		date_of_birth: '',
+		firstName: '',
+		lastName: '',
+		dateOfBirth: '',
 		avatar: 'default-avatar.png',
 		username: '',
-		about_me: ''
+		aboutMe: ''
 	}
 
 	let error = ''
@@ -53,26 +53,26 @@
 <form on:submit={handleSubmit} class="space-y-6">
 	<div class="grid gap-6 mb-6 md:grid-cols-2">
 		<div>
-			<Label for="first_name" class="mb-2">First name{@html requiredMark}</Label>
-			<Input type="text" id="first_name" bind:value={formData.first_name} required />
+			<Label for="firstName" class="mb-2">First name{@html requiredMark}</Label>
+			<Input type="text" id="firstName" bind:value={formData.firstName} required />
 		</div>
 		<div>
-			<Label for="last_name" class="mb-2">Last name{@html requiredMark}</Label>
-			<Input type="text" id="last_name" bind:value={formData.last_name} required />
+			<Label for="lastName" class="mb-2">Last name{@html requiredMark}</Label>
+			<Input type="text" id="lastName" bind:value={formData.lastName} required />
 		</div>
 		<div>
 			<Label for="username" class="mb-2">Username{@html requiredMark}</Label>
 			<Input type="text" id="username" bind:value={formData.username} required />
 		</div>
 		<div>
-			<Label for="date_of_birth" class="mb-2">Date of Birth{@html requiredMark}</Label>
-			<Input type="date" id="date_of_birth" bind:value={formData.date_of_birth} required />
+			<Label for="dateOfBirth" class="mb-2">Date of Birth{@html requiredMark}</Label>
+			<Input type="date" id="dateOfBirth" bind:value={formData.dateOfBirth} required />
 		</div>
 	</div>
 
 	<div class="mb-6">
-		<Label for="about_me" class="mb-2">About Me{@html requiredMark}</Label>
-		<Input type="text" id="about_me" bind:value={formData.about_me} required />
+		<Label for="aboutMe" class="mb-2">About Me</Label>
+		<Input type="text" id="aboutMe" bind:value={formData.aboutMe} />
 	</div>
 
 	<div class="mb-6">

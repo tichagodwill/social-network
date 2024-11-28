@@ -74,6 +74,9 @@ func main() {
 			log.Fatalf("Error running migrations: %v", err)
 		}
 		return
+	} else if strings.EqualFold(arg, "show-data") {
+		sqlite.PrintDatabaseContent()
+		return
 	}
 
 	mux := http.NewServeMux()
@@ -121,6 +124,11 @@ func main() {
 
 	mux.Handle("PUT /groups/{id}", authMiddleware(http.HandlerFunc(api.UpdateGroup)))
 	mux.Handle("DELETE /groups/{id}", authMiddleware(http.HandlerFunc(api.DeleteGroup)))
+
+	mux.Handle("PUT /groups/{id}/members/{memberId}/role", authMiddleware(http.HandlerFunc(api.UpdateMemberRole)))
+	mux.Handle("DELETE /groups/{id}/members/{memberId}", authMiddleware(http.HandlerFunc(api.RemoveMember)))
+
+	mux.Handle("GET /groups/{id}/requests", authMiddleware(http.HandlerFunc(api.GetGroupRequests)))
 
 	// Wrap the entire mux with CORS middleware
 	handler := middleware.CORS(mux)

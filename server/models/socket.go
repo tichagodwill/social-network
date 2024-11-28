@@ -13,7 +13,7 @@ type Connection struct {
 
 type SocketManager struct {
 	Sockets map[uint64]*websocket.Conn
-	Mu      sync.Mutex
+	Mu      sync.RWMutex
 }
 
 type ConnectionType struct {

@@ -289,13 +289,12 @@ func GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 	// Set content type header first
 	w.Header().Set("Content-Type", "application/json")
 
-	// Log request headers for debugging
-	log.Printf("Request Headers: %+v", r.Header)
-	log.Printf("Request Cookies: %+v", r.Cookies())
-
+	// Add debug logging
+	log.Printf("Cookies received: %v", r.Cookies())
+	
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
-		log.Printf("Session error: %v", err) // Enhanced logging
+		log.Printf("Session error: %v", err)
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Unauthorized",
