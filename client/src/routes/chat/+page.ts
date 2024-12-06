@@ -1,1 +1,5 @@
-export const preload = false; 
+export const load = async ({ params }) => {
+  return {
+    props: {}
+  };
+};

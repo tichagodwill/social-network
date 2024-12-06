@@ -68,9 +68,10 @@ function createChatStore() {
 
             socket.send(JSON.stringify(message));
         },
-        loadContacts: async () => {
+        loadContacts: async (userId: string | number) => {
+
             try {
-                const response = await fetch('http://localhost:8080/contacts', {
+                const response = await fetch(`http://localhost:8080/follower/${userId}`, {
                     credentials: 'include'
                 });
                 if (response.ok) {
