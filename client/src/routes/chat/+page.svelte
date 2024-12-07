@@ -19,7 +19,7 @@
 
     onMount(() => {
         chat.initialize();
-        chat.loadContacts();
+        chat.loadContacts($auth.user!.id);
     });
 
     onDestroy(() => {
