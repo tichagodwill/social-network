@@ -1,5 +1,5 @@
-import { writable } from 'svelte/store';
-import type { User } from '$lib/types';
+import {writable} from 'svelte/store';
+import type {User} from '$lib/types';
 
 interface FollowRequest {
     id: number;
@@ -10,7 +10,7 @@ interface FollowRequest {
 }
 
 function createFollowersStore() {
-    const { subscribe, set, update } = writable<{
+    const {subscribe, set, update} = writable<{
         followers: User[];
         following: User[];
         requests: FollowRequest[];
@@ -29,21 +29,25 @@ function createFollowersStore() {
                 });
                 if (response.ok) {
                     const followers = await response.json();
-                    update(state => ({ ...state, followers }));
+                    update(state => ({...state, followers}));
                 }
             } catch (error) {
                 console.error('Failed to load followers:', error);
             }
         },
-        followUser: async (userId: number) => {
+        followUser: async (userId: number, loggedInUser: number) => {
             try {
+                debugger;
                 const response = await fetch('http://localhost:8080/follow', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     credentials: 'include',
-                    body: JSON.stringify({ followedId: userId })
+                    body: JSON.stringify({
+                        followerId: loggedInUser, // Current user's ID
+                        followedId: userId,       // User to follow
+                    }),
                 });
                 if (response.ok) {
                     // Refresh followers list
@@ -62,7 +66,7 @@ function createFollowersStore() {
                         'Content-Type': 'application/json'
                     },
                     credentials: 'include',
-                    body: JSON.stringify({ accept })
+                    body: JSON.stringify({accept})
                 });
                 if (response.ok) {
                     // Remove request from list

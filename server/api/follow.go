@@ -22,6 +22,12 @@ func RequestFollowUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate required fields
+	if follow.FollowerID == 0 || follow.FollowedID == 0 {
+		http.Error(w, `{"error":"FollowerID and FollowedID are required"}`, http.StatusBadRequest)
+		return
+	}
+
 	if followedExists, err := models.DoesUserExist(follow.FollowedID, sqlite.DB); !followedExists {
 		if err != nil {
 			http.Error(w, "Something went wrong", http.StatusInternalServerError)
@@ -124,4 +130,3 @@ func GetFollowers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error sending data", http.StatusInternalServerError)
 	}
 }
-

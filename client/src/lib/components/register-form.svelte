@@ -12,7 +12,7 @@
 		firstName: '',
 		lastName: '',
 		dateOfBirth: '',
-		avatar: 'default-avatar.png',
+		avatar: '',
 		username: '',
 		aboutMe: ''
 	}

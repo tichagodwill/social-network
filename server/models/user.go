@@ -25,14 +25,10 @@ type UserResponse struct {
 }
 
 func DoesUserExist(userID uint, db *sql.DB) (bool, error) {
-	var id int
-
-	if err := db.QueryRow("SELECT id FROM users WHERE id = ?", userID).Scan(&id); err != nil {
-		if err == sql.ErrNoRows {
-			return false, nil
-		}
+	var exists bool
+	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE id = ?)", userID).Scan(&exists)
+	if err != nil {
 		return false, err
 	}
-
-	return true, nil
+	return exists, nil
 }

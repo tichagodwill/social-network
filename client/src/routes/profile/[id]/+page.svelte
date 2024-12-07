@@ -1,13 +1,14 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
-    import { followers } from '$lib/stores/followers';
-    import { auth } from '$lib/stores/auth';
-    import { Button, Card, Avatar } from 'flowbite-svelte';
-    import type { PageData } from './$types';
+    import {onMount} from 'svelte';
+    import {followers} from '$lib/stores/followers';
+    import {auth} from '$lib/stores/auth';
+    import {Button, Avatar, Badge, Tabs, TabItem} from 'flowbite-svelte';
+    import type {PageData} from './$types';
+    import defualtProfileImg from '$lib/assets/defualt-profile.jpg'
 
     export let data: PageData;
     const userId = parseInt(data.params.id);
-    
+
     let isOwnProfile = false;
     let isFollowing = false;
     let hasPendingRequest = false;
@@ -21,7 +22,7 @@
     });
 
     async function handleFollow() {
-        await followers.followUser(userId);
+        await followers.followUser(userId, $auth.user.id);
     }
 
     async function getUser(userId: number) {
@@ -47,90 +48,117 @@
 </script>
 
 <div class="container mx-auto px-4 py-8">
-    <Card class="mb-8">
-        <div class="flex items-center space-x-4">
-            <Avatar src={data.user?.avatar || '/default-avatar.png'} size="xl" />
-            <div>
-                <h2 class="text-2xl font-bold">{data.user?.username}</h2>
-                <p class="text-gray-600 dark:text-gray-400">{data.user?.aboutMe}</p>
+    <!-- Profile Header -->
+    <div
+            class="rounded-lg shadow-md p-6 bg-gradient-to-r from-[rgba(239,86,47,1)] to-[rgba(239,86,47,0.8)] text-white"
+    >
+        <div class="flex flex-col md:flex-row items-center md:items-start md:space-x-6">
+            <Avatar src={data.user?.avatar} size="xl" alt="User Avatar"/>
+            <div class="flex-1 text-center md:text-left mt-4 md:mt-0">
+                <h1 class="text-4xl font-extrabold">{data.user?.username}</h1>
+                <p class="text-gray-200 dark:text-gray-300 mt-2">{data.user?.aboutMe}</p>
             </div>
             {#if !isOwnProfile}
-                <Button 
-                    color={isFollowing ? 'alternative' : 'primary'}
-                    disabled={hasPendingRequest}
-                    on:click={handleFollow}
+                <Button
+                        class="mt-4 md:mt-0 transition-transform hover:scale-105"
+                        color={isFollowing ? 'alternative' : 'primary'}
+                        disabled={hasPendingRequest}
+                        on:click={handleFollow}
+                        aria-label="Follow/Unfollow Button"
                 >
                     {#if hasPendingRequest}
-                        Request Pending
+                        <Badge color="yellow">Request Pending</Badge>
                     {:else if isFollowing}
-                        Following
+                        <Badge color="green">Following</Badge>
                     {:else}
                         Follow
                     {/if}
                 </Button>
             {/if}
         </div>
-    </Card>
-
-    <div class="grid md:grid-cols-2 gap-8">
-        <Card>
-            <h3 class="text-xl font-semibold mb-4">Followers</h3>
-            {#each $followers.followers as follower}
-                <div class="flex items-center space-x-4 mb-4">
-                    <Avatar src={follower.avatar || '/default-avatar.png'} />
-                    <div>
-                        <p class="font-semibold">{follower.username}</p>
-                        <p class="text-sm text-gray-600 dark:text-gray-400">
-                            {follower.firstName} {follower.lastName}
-                        </p>
-                    </div>
-                </div>
-            {/each}
-        </Card>
-
-        <Card>
-            <h3 class="text-xl font-semibold mb-4">Following</h3>
-            {#each $followers.following as following}
-                <div class="flex items-center space-x-4 mb-4">
-                    <Avatar src={following.avatar || '/default-avatar.png'} />
-                    <div>
-                        <p class="font-semibold">{following.username}</p>
-                        <p class="text-sm text-gray-600 dark:text-gray-400">
-                            {following.firstName} {following.lastName}
-                        </p>
-                    </div>
-                </div>
-            {/each}
-        </Card>
     </div>
 
-    {#if isOwnProfile && $followers.requests.length > 0}
-        <Card class="mt-8">
-            <h3 class="text-xl font-semibold mb-4">Follow Requests</h3>
-            {#each $followers.requests as request}
-                <div class="flex items-center justify-between mb-4">
-                    <div class="flex items-center space-x-4">
-                        <Avatar src={request.followerUser?.avatar || '/default-avatar.png'} />
-                        <p class="font-semibold">{request.followerUser?.username}</p>
+    <!-- Tabs Section -->
+    <Tabs class="mt-8">
+        <TabItem title="Followers" active>
+            <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
+                <h3 class="text-2xl font-semibold mb-4">Followers</h3>
+                {#if $followers.followers.length > 0}
+                    <div class="space-y-4">
+                        {#each $followers.followers as follower}
+                            <div class="flex items-center space-x-4 hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
+                                <Avatar src={follower.avatar || '/default-avatar.png'} alt="Follower Avatar"/>
+                                <div>
+                                    <p class="font-semibold text-lg">{follower.username}</p>
+                                    <p class="text-sm text-gray-600 dark:text-gray-400">
+                                        {follower.firstName} {follower.lastName}
+                                    </p>
+                                </div>
+                            </div>
+                        {/each}
                     </div>
-                    <div class="space-x-2">
-                        <Button 
-                            size="sm" 
-                            color="primary"
-                            on:click={() => followers.handleRequest(request.id, true)}
-                        >
-                            Accept
-                        </Button>
-                        <Button 
-                            size="sm" 
-                            color="alternative"
-                            on:click={() => followers.handleRequest(request.id, false)}
-                        >
-                            Decline
-                        </Button>
+                {:else}
+                    <p class="text-gray-500 dark:text-gray-400">No followers yet.</p>
+                {/if}
+            </div>
+        </TabItem>
+
+        <TabItem title="Following">
+            <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
+                <h3 class="text-2xl font-semibold mb-4">Following</h3>
+                {#if $followers.following.length > 0}
+                    <div class="space-y-4">
+                        {#each $followers.following as following}
+                            <div class="flex items-center space-x-4 hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
+                                <Avatar src={following.avatar || '/default-avatar.png'} alt="Following Avatar"/>
+                                <div>
+                                    <p class="font-semibold text-lg">{following.username}</p>
+                                    <p class="text-sm text-gray-600 dark:text-gray-400">
+                                        {following.firstName} {following.lastName}
+                                    </p>
+                                </div>
+                            </div>
+                        {/each}
                     </div>
+                {:else}
+                    <p class="text-gray-500 dark:text-gray-400">Not following anyone yet.</p>
+                {/if}
+            </div>
+        </TabItem>
+
+        {#if isOwnProfile && $followers.requests.length > 0}
+            <TabItem title="Follow Requests">
+                <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
+                    <h3 class="text-2xl font-semibold mb-4">Follow Requests</h3>
+                    {#each $followers.requests as request}
+                        <div class="flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
+                            <div class="flex items-center space-x-4">
+                                <Avatar src={request.followerUser?.avatar || '/default-avatar.png'}
+                                        alt="Request Avatar"/>
+                                <p class="font-semibold text-lg">{request.followerUser?.username}</p>
+                            </div>
+                            <div class="space-x-2">
+                                <Button
+                                        size="sm"
+                                        color="primary"
+                                        on:click={() => followers.handleRequest(request.id, true)}
+                                        aria-label="Accept Request Button"
+                                >
+                                    Accept
+                                </Button>
+                                <Button
+                                        size="sm"
+                                        color="alternative"
+                                        on:click={() => followers.handleRequest(request.id, false)}
+                                        aria-label="Decline Request Button"
+                                >
+                                    Decline
+                                </Button>
+                            </div>
+                        </div>
+                    {/each}
                 </div>
-            {/each}
-        </Card>
-    {/if}
-</div> 
+            </TabItem>
+        {/if}
+    </Tabs>
+</div>
