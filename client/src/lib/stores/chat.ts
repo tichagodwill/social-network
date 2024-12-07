@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import type { Message, User } from '$lib/types';
+import { transformUser } from '$lib/utils/transformer'
 
 interface ChatState {
     messages: Message[];
@@ -41,14 +42,14 @@ function createChatStore() {
 
             update(state => ({ ...state, socket }));
         },
-        loadMessages: async (userId: number) => {
+        loadMessages: async (userId: number, contactId: number) => {
             try {
-                const response = await fetch(`http://localhost:8080/messages/${userId}`, {
+                const response = await fetch(`http://localhost:8080/messages/${userId}/${contactId}`, {
                     credentials: 'include'
                 });
                 if (response.ok) {
-                    const messages = await response.json();
-                    update(state => ({ ...state, messages, activeChat: userId }));
+                    const messages = await response.json() ?? [];
+                    update(state => ({ ...state, messages, activeChat: contactId }));
                 }
             } catch (error) {
                 console.error('Failed to load messages:', error);
@@ -63,7 +64,8 @@ function createChatStore() {
                 recipientId,
                 fileUrl: fileOptions?.url,
                 fileName: fileOptions?.fileName,
-                fileType: fileOptions?.fileType
+                fileType: fileOptions?.fileType,
+                createdAt: new Date(),
             };
 
             socket.send(JSON.stringify(message));
@@ -71,11 +73,12 @@ function createChatStore() {
         loadContacts: async (userId: string | number) => {
 
             try {
-                const response = await fetch(`http://localhost:8080/follower/${userId}`, {
+                const response = await fetch(`http://localhost:8080/contact/${userId}`, {
                     credentials: 'include'
                 });
                 if (response.ok) {
-                    const contacts = await response.json();
+                    let contacts = await response.json();
+                    contacts = contacts.map((c: any) => transformUser(c))
                     update(state => ({ ...state, contacts }));
                 }
             } catch (error) {

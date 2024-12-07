@@ -1,5 +1,6 @@
 import type { PageLoad } from './$types';
 import type {User} from "$lib/types";
+import { transformUser } from '$lib/utils/transformer'
 
 export const load: PageLoad = async ({ params, fetch }) => {
     try {
@@ -8,8 +9,8 @@ export const load: PageLoad = async ({ params, fetch }) => {
         });
         
         if (response.ok) {
-            var userData = await response.json();
-            const user = transformUser(userData);
+            const userData = await response.json();
+            const user: User = transformUser(userData);
             return {
                 user,
                 params
@@ -28,18 +29,3 @@ export const load: PageLoad = async ({ params, fetch }) => {
         };
     }
 };
-
-function transformUser(data: any): User {
-    return {
-        id: data.id,
-        email: data.email,
-        firstName: data.first_name,
-        lastName: data.last_name,
-        dateOfBirth: data.date_of_birth,
-        username: data.username,
-        aboutMe: data.about_me,
-        createdAt: data.created_at,
-        isPrivate: data.IsPrivate,
-        avatar: data.avatar
-    };
-}

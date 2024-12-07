@@ -104,7 +104,7 @@ func GetFollowers(w http.ResponseWriter, r *http.Request) {
 
 	var followers []models.Follow
 
-	rows, err := sqlite.DB.Query("SELECT * FROM followers WHERE follower_id = ?", userId) // TODO add status
+	rows, err := sqlite.DB.Query("SELECT * FROM followers WHERE following_id = ? AND status = 'accepted'", userId)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, "No followers found", http.StatusBadRequest)

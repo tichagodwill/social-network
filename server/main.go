@@ -108,6 +108,9 @@ func main() {
 	mux.Handle("PATCH /follow/{requestID}", authMiddleware(http.HandlerFunc(api.AcceptOrRejectRequest)))
 	mux.Handle("GET /follower/{userID}", authMiddleware(http.HandlerFunc(api.GetFollowers)))
 
+	mux.Handle("GET /contact/{userID}", authMiddleware(http.HandlerFunc(api.GetContact)))
+	mux.Handle("GET /messages/{userId}/{contactId}", authMiddleware(http.HandlerFunc(api.GetMessages)))
+
 	mux.Handle("GET /user/{userID}", authMiddleware(http.HandlerFunc(api.UserProfile)))
 
 	mux.Handle("/ws", authMiddleware(http.HandlerFunc(api.WebSocketHandler)))

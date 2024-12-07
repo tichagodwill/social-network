@@ -11,15 +11,17 @@
     import MessageContent from '$lib/components/MessageContent.svelte';
     import type { FileUploadResponse } from '$lib/types';
     import DragDropZone from '$lib/components/DragDropZone.svelte';
+    import defualtProfileImg from '$lib/assets/defualt-profile.jpg'
 
     let newMessage = '';
     let inputElement: HTMLInputElement;
     let chatInput: ChatInput;
     let dragDropActive = false;
+    const userId = $auth.user!.id
 
     onMount(() => {
         chat.initialize();
-        chat.loadContacts($auth.user!.id);
+        chat.loadContacts(userId);
     });
 
     onDestroy(() => {
@@ -83,9 +85,9 @@
                         <button
                             class="w-full text-left p-3 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg mb-2 flex items-center space-x-3"
                             class:bg-gray-100={$chat.activeChat === contact.id}
-                            on:click={() => chat.loadMessages(contact.id)}
+                            on:click={() => chat.loadMessages(userId, contact.id)}
                         >
-                            <Avatar src={contact.avatar || '/default-avatar.png'} size="sm" />
+                            <Avatar src={contact.avatar || defualtProfileImg} size="sm" />
                             <div>
                                 <p class="font-medium">{contact.username}</p>
                                 <p class="text-sm text-gray-500">{contact.firstName} {contact.lastName}</p>
