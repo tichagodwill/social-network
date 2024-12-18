@@ -3,6 +3,7 @@
     import { onMount } from 'svelte';
     import { auth } from '$lib/stores/auth';
     import { Spinner } from 'flowbite-svelte';
+    import Navbar from '$lib/components/Navbar.svelte'
 
     let loading = true;
 
@@ -21,6 +22,7 @@
             <Spinner size="12" />
         </div>
     {:else}
+        <Navbar />
         <slot />
     {/if}
 </div>
