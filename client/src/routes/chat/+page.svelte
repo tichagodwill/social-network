@@ -2,7 +2,7 @@
     import { onMount, onDestroy } from 'svelte';
     import { chat } from '$lib/stores/chat';
     import { auth } from '$lib/stores/auth';
-    import { Card, Button, Input, Avatar } from 'flowbite-svelte';
+    import { Button, Avatar } from 'flowbite-svelte';
     import { getLastDate } from '$lib/dateFormater';
     import EmojiPicker from '$lib/components/EmojiPicker.svelte';
     import type { EmojiPickerEvent } from '$lib/types';
@@ -14,7 +14,6 @@
     import defualtProfileImg from '$lib/assets/defualt-profile.jpg'
 
     let newMessage = '';
-    let inputElement: HTMLInputElement;
     let chatInput: ChatInput;
     let dragDropActive = false;
     const userId = $auth.user!.id
@@ -31,7 +30,7 @@
     function handleSend() {
         if (!newMessage.trim() || !$chat.activeChat) return;
         
-        chat.sendMessage(newMessage, $chat.activeChat);
+        chat.sendMessage(newMessage, userId, $chat.activeChat);
         newMessage = '';
     }
 
@@ -54,7 +53,7 @@
 
     function handleFileUpload(event: CustomEvent<FileUploadResponse>) {
         const { url, fileName, fileType } = event.detail;
-        chat.sendMessage('', $chat.activeChat, { url, fileName, fileType });
+        chat.sendMessage('', userId, $chat.activeChat, { url, fileName, fileType });
     }
 
     function handleDragEnter() {

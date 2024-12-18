@@ -29,9 +29,21 @@ function createChatStore() {
         subscribe,
         initialize: () => {
             socket = new WebSocket('ws://localhost:8080/ws');
-            
+            let currentState = <ChatState>{};
+
+            subscribe(s => {
+                currentState = s;
+            });
+
             socket.onmessage = (event) => {
-                const message = JSON.parse(event.data);
+                const message: Message | any = JSON.parse(event.data);
+
+                if (message.recipientId != currentState.activeChat){
+                    console.log('notification goes here')
+                    // TODO add notification
+                    return;
+                }
+
                 if (message.type === 'chat') {
                     update(state => ({
                         ...state,
@@ -55,12 +67,13 @@ function createChatStore() {
                 console.error('Failed to load messages:', error);
             }
         },
-        sendMessage: (content: string, recipientId: number | null, fileOptions?: SendMessageOptions) => {
+        sendMessage: (content: string, senderId: number | null, recipientId: number | null, fileOptions?: SendMessageOptions) => {
             if (!socket || recipientId === null) return;
 
             const message = {
                 type: 'chat',
                 content,
+                senderId,
                 recipientId,
                 fileUrl: fileOptions?.url,
                 fileName: fileOptions?.fileName,

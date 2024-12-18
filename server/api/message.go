@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"social-network/models"
+	m "social-network/models"
 	"social-network/pkg/db/sqlite"
 	"strconv"
 )
@@ -26,7 +26,7 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var messages []models.Chat_message
+	var messages []m.Chat_message
 
 	rows, err := sqlite.DB.Query(`
 SELECT sender_id, recipient_id, content, created_at
@@ -46,7 +46,7 @@ where sender_id = ? and recipient_id = ?
 	}
 
 	for rows.Next() {
-		var m models.Chat_message
+		var m m.Chat_message
 		err := rows.Scan(&m.SenderID, &m.RecipientID, &m.Content, &m.CreatedAt)
 		if err != nil {
 			http.Error(w, "Something went wrong", http.StatusInternalServerError)
@@ -60,5 +60,18 @@ where sender_id = ? and recipient_id = ?
 	encodeErr := json.NewEncoder(w).Encode(&messages)
 	if encodeErr != nil {
 		http.Error(w, "Error sending data", http.StatusInternalServerError)
+	}
+}
+
+func SaveMessage(message m.Chat_message) {
+
+	insertQuery := `
+INSERT INTO chat_messages (sender_id, recipient_id, content, created_at)
+VALUES (?, ?, ?, ?)
+	`
+
+	_, err := sqlite.DB.Exec(insertQuery, message.SenderID, message.RecipientID, message.Content, message.CreatedAt)
+	if err != nil {
+		log.Fatal("[SaveMessage] Error inserting message:", err)
 	}
 }

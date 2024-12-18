@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	m "social-network/models"
@@ -19,7 +20,7 @@ var (
 			return true
 		},
 	}
-	
+
 	// Global socket manager with mutex for thread safety
 	socketManager = &m.SocketManager{
 		Sockets: make(map[uint64]*websocket.Conn),
@@ -94,10 +95,42 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		// Echo the message back (for testing)
-		if err := conn.WriteMessage(messageType, message); err != nil {
-			log.Printf("WebSocket write error: %v", err)
-			break
+		switch messageType {
+		case websocket.TextMessage:
+
+			// getting the request type. from this we can unmarshall into the actual message
+			var connectionType m.ConnectionType
+			if err := json.Unmarshal(message, &connectionType); err != nil {
+				log.Printf("WebSocket json unmarshal error: %v", err)
+				break
+			}
+
+			// this can be made into a switch to handle future message types. but for now it's chat only
+			if connectionType.Type == "chat" {
+				var chatMessage m.Chat_message
+				if err := json.Unmarshal(message, &chatMessage); err != nil {
+					log.Printf("WebSocket chat json unmarshal error: %v", err)
+					break
+				}
+
+				SaveMessage(chatMessage)
+
+				// Echo the message back (for real this time)
+				if err := conn.WriteMessage(messageType, message); err != nil {
+					log.Printf("WebSocket write error: %v", err)
+					break
+				}
+			}
+
+		case websocket.BinaryMessage:
+			log.Printf("Received Binary Message: %v\n", message)
+		case websocket.CloseMessage:
+			log.Println("Received Close Message")
+			return
+		case websocket.PingMessage:
+			log.Println("Received Ping Message")
+		case websocket.PongMessage:
+			log.Println("Received Pong Message")
 		}
 	}
 }
