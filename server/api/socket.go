@@ -8,6 +8,8 @@ import (
 	"social-network/pkg/db/sqlite"
 	"social-network/util"
 	"sync"
+	"time"
+	"encoding/json"
 
 	"github.com/gorilla/websocket"
 )
@@ -26,10 +28,36 @@ var (
 		Sockets: make(map[uint64]*websocket.Conn),
 		Mu:      sync.RWMutex{},
 	}
+
+	// Channel for broadcasting messages
+	broadcast = make(chan m.BroadcastMessage, 100)
 )
 
+func init() {
+	// Start the broadcast handler
+	go handleBroadcasts()
+}
+
+func handleBroadcasts() {
+	for msg := range broadcast {
+		socketManager.Mu.RLock()
+		for userID, conn := range socketManager.Sockets {
+			// Skip if this message is not for this user
+			if msg.TargetUsers != nil && !msg.TargetUsers[userID] {
+				continue
+			}
+			
+			if err := conn.WriteJSON(msg.Data); err != nil {
+				log.Printf("Error broadcasting to user %d: %v", userID, err)
+				conn.Close()
+				delete(socketManager.Sockets, userID)
+			}
+		}
+		socketManager.Mu.RUnlock()
+	}
+}
+
 func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
-	// Get username from session
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
 		log.Printf("WebSocket session error: %v", err)
@@ -37,7 +65,6 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get user ID
 	var userID uint64
 	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
 	if err != nil {
@@ -46,43 +73,48 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if connection already exists
-	socketManager.Mu.RLock()
-	existingConn, exists := socketManager.Sockets[userID]
-	socketManager.Mu.RUnlock()
-
-	if exists {
-		// Close existing connection
-		existingConn.Close()
-		socketManager.Mu.Lock()
-		delete(socketManager.Sockets, userID)
-		socketManager.Mu.Unlock()
-		log.Printf("Closed existing WebSocket connection for user %s", username)
-	}
-
-	// Upgrade connection
+	// Configure WebSocket connection
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
 		return
 	}
 
-	// Store connection
+	// Set connection properties
+	conn.SetReadLimit(4096) // 4KB message size limit
+	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	conn.SetPongHandler(func(string) error {
+			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+			return nil
+	})
+
+	// Handle existing connection
 	socketManager.Mu.Lock()
+	if existingConn, exists := socketManager.Sockets[userID]; exists {
+		// Send close message to existing connection
+		existingConn.WriteMessage(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, "New connection established"),
+		)
+		existingConn.Close()
+		log.Printf("Closed existing connection for user %s", username)
+	}
 	socketManager.Sockets[userID] = conn
 	socketManager.Mu.Unlock()
 
-	log.Printf("New WebSocket connection for user %s (ID: %d)", username, userID)
+	// Start ping ticker
+	ticker := time.NewTicker(54 * time.Second)
+	defer ticker.Stop()
 
 	// Clean up on disconnect
 	defer func() {
 		socketManager.Mu.Lock()
-		if conn, ok := socketManager.Sockets[userID]; ok {
-			conn.Close()
+		if _, ok := socketManager.Sockets[userID]; ok {
 			delete(socketManager.Sockets, userID)
+			log.Printf("Removed connection for user %s", username)
 		}
 		socketManager.Mu.Unlock()
-		log.Printf("WebSocket connection closed for user %s", username)
+		conn.Close()
 	}()
 
 	// Handle incoming messages
@@ -135,19 +167,36 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// SendNotification sends a notification to a specific user
-func SendNotification(userID uint64, notification interface{}) {
-	socketManager.Mu.RLock()
-	conn, exists := socketManager.Sockets[userID]
-	socketManager.Mu.RUnlock()
-
-	if exists {
-		if err := conn.WriteJSON(notification); err != nil {
-			log.Printf("Error sending notification to user %d: %v", userID, err)
-			socketManager.Mu.Lock()
-			conn.Close()
-			delete(socketManager.Sockets, userID)
-			socketManager.Mu.Unlock()
-		}
+// SendNotification sends a notification to specific users
+func SendNotification(userIDs []uint64, notification interface{}) {
+	targetUsers := make(map[uint64]bool)
+	for _, id := range userIDs {
+		targetUsers[id] = true
 	}
+
+	broadcast <- m.BroadcastMessage{
+		Data: notification,
+		TargetUsers: targetUsers,
+	}
+}
+
+// Broadcast sends a message to all connected users
+func Broadcast(message interface{}) {
+	broadcast <- m.BroadcastMessage{
+		Data: message,
+		TargetUsers: nil, // nil means broadcast to all
+	}
+}
+
+// Helper functions for different message types
+func handleChatMessage(msg m.WebSocketMessage, senderID uint64) {
+	// Handle chat message logic
+}
+
+func handleNotification(msg m.WebSocketMessage, senderID uint64) {
+	// Handle notification logic
+}
+
+func handleTypingIndicator(msg m.WebSocketMessage, senderID uint64) {
+	// Handle typing indicator logic
 }

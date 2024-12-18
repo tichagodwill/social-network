@@ -3,11 +3,12 @@ package models
 import "time"
 
 type Group struct {
-	ID          uint      `json:"id,omitempty"`
-	CreatorID   uint      `json:"creator_id,omitempty"`
-	Title       string    `json:"title,omitempty"`
-	Description string    `json:"description,omitempty"`
-	CreatedAt   time.Time `json:"created_at,omitempty"`
+	ID              int       `json:"id"`
+	Title           string    `json:"title"`
+	Description     string    `json:"description"`
+	CreatorID       int       `json:"creator_id"`
+	CreatorUsername string    `json:"creator_username"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type GroupMemebers struct {

@@ -133,6 +133,10 @@ func main() {
 
 	mux.Handle("GET /groups/{id}/requests", authMiddleware(http.HandlerFunc(api.GetGroupRequests)))
 
+	mux.Handle("GET /groups/{id}/invitation/status", authMiddleware(http.HandlerFunc(api.GetInvitationStatus)))
+	mux.Handle("POST /groups/{id}/join", authMiddleware(http.HandlerFunc(api.RequestJoinGroup)))
+	mux.Handle("POST /groups/invitation/{id}/{action}", authMiddleware(http.HandlerFunc(api.HandleInvitation)))
+
 	// Wrap the entire mux with CORS middleware
 	handler := middleware.CORS(mux)
 
