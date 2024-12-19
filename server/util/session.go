@@ -13,60 +13,29 @@ import (
 var UserSession = make(map[string]string) // sessionID: username
 
 func GenerateSession(w http.ResponseWriter, u *m.User) error {
-	// generating the session id
 	sessionID, err := uuid.NewV7()
 	if err != nil {
 		return err
 	}
 
-	sessionIDInString := sessionID.String()
+	sessionIDString := sessionID.String()
 
-	// create the cookie
 	cookie := &http.Cookie{
 		Name:     "AccessToken",
-		Value:    sessionIDInString,
+		Value:    sessionIDString,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   false,
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(24 * time.Hour / time.Second),
+		MaxAge:   int(24 * time.Hour.Seconds()),
 		Domain:   "localhost",
 	}
 
-	// send the cookie to the browser
 	http.SetCookie(w, cookie)
-
-	UserSession[sessionIDInString] = u.Username
-	log.Printf("Created session for user: %s", u.Username)
+	UserSession[sessionIDString] = u.Username
+	log.Printf("Created session for user: %s with token: %s", u.Username, sessionIDString)
 
 	return nil
-}
-
-func DestroySession(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("AccessToken")
-	if err != nil {
-		if err == http.ErrNoCookie {
-			// no cookie found nothing to do
-			return
-		}
-		return
-	}
-
-	// invalidate the cookie and send it to the frontend
-	invalidCookie := &http.Cookie{
-		Name:     "AccessToken",
-		 Value:    "",
-		 Path:     "/",
-		 HttpOnly: true,
-		 Secure:   false,
-		 SameSite: http.SameSiteLaxMode,
-		 MaxAge:   -1,
-	}
-
-	http.SetCookie(w, invalidCookie)
-
-	// remove the cookie from the map
-	delete(UserSession, cookie.Value)
 }
 
 func GetUsernameFromSession(r *http.Request) (string, error) {
@@ -80,7 +49,25 @@ func GetUsernameFromSession(r *http.Request) (string, error) {
 		return "", fmt.Errorf("invalid or expired session")
 	}
 
-	log.Printf("Session found for user: %s", username)
+	log.Printf("Session found for user: %s with token: %s", username, cookie.Value)
 	return username, nil
+}
+
+func DestroySession(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("AccessToken")
+	if err == nil {
+		delete(UserSession, cookie.Value)
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "AccessToken",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+		Domain:   "localhost",
+	})
 }
 

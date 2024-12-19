@@ -17,6 +17,8 @@ import (
 
 func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	// Set content type header first
+		// Set content type header first
+
 	w.Header().Set("Content-Type", "application/json")
 
 	// Create a struct to receive the raw JSON

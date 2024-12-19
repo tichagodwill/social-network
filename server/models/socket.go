@@ -19,3 +19,15 @@ type SocketManager struct {
 type ConnectionType struct {
 	Type string `json:"type"`
 }
+
+type WebSocketMessage struct {
+	Type    string      `json:"type"`
+	Data    interface{} `json:"data"`
+	RoomID  string      `json:"roomId,omitempty"`
+	GroupID uint64      `json:"groupId,omitempty"`
+}
+
+type BroadcastMessage struct {
+	Data        interface{}
+	TargetUsers map[uint64]bool // nil means broadcast to all
+}

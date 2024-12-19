@@ -60,13 +60,13 @@
 
     onMount(loadPendingRequests);
 
-    $: showCard = isCreator || (!isMember && requests && requests.length > 0);
+    $: showCard = isCreator && requests.length > 0;
 </script>
 
 {#if showCard}
     <Card>
         <div class="space-y-4">
-            <h3 class="text-xl font-semibold">Join Requests</h3>
+            <h3 class="text-xl font-semibold">Pending Join Requests</h3>
 
             {#if error}
                 <div class="p-4 text-red-800 bg-red-100 rounded-lg">

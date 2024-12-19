@@ -20,6 +20,8 @@
         description: group.description
     };
 
+    $: canViewContent = isCreator || isMember;
+
     async function handleEdit() {
         try {
             const response = await fetch(`http://localhost:8080/groups/${group.id}`, {
@@ -101,18 +103,26 @@
 
         <div class="grid md:grid-cols-2 gap-8">
             <div class="space-y-8">
-                <GroupJoinRequests 
-                    groupId={group.id}
-                    {isCreator}
-                    {isMember}
-                />
+                {#if isCreator}
+                    <GroupJoinRequests 
+                        groupId={group.id}
+                        {isCreator}
+                        {isMember}
+                    />
+                {/if}
                 <GroupMembership 
                     groupId={group.id}
                     {members}
                     {isCreator}
                 />
             </div>
-            <GroupEvents groupId={group.id} />
+            {#if canViewContent}
+                <GroupEvents groupId={group.id} />
+            {:else}
+                <Card>
+                    <p class="text-gray-500">Join the group to view events and other content</p>
+                </Card>
+            {/if}
         </div>
     {/if}
 </div>

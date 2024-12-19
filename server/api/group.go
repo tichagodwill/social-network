@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -299,35 +300,64 @@ func ViewGroups(w http.ResponseWriter, r *http.Request) {
 func GetGroup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	// Get group ID from URL
 	groupIDStr := r.PathValue("id")
 	groupID, err := strconv.Atoi(groupIDStr)
 	if err != nil {
+		log.Printf("Invalid group ID: %v", err)
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid group ID"})
 		return
 	}
 
-	var group struct {
-		ID          int       `json:"id"`
-		Title       string    `json:"title"`
-		Description string    `json:"description"`
-		CreatorID   int       `json:"creator_id"`
-		CreatedAt   time.Time `json:"created_at"`
+	// Get current user
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		log.Printf("Session error: %v", err)
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+		return
 	}
 
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		log.Printf("Database error getting user ID: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get user information"})
+		return
+	}
+
+	// Get group information with error handling
+	var group m.Group
 	err = sqlite.DB.QueryRow(`
-		SELECT id, title, description, creator_id, created_at
-		FROM groups WHERE id = ?`, groupID).Scan(
-		&group.ID, &group.Title, &group.Description, &group.CreatorID, &group.CreatedAt)
+		SELECT 
+			g.id, 
+			g.title, 
+			g.description, 
+			g.creator_id, 
+			u.username as creator_username,
+			g.created_at
+		FROM groups g
+		JOIN users u ON g.creator_id = u.id
+		WHERE g.id = ?`, groupID).Scan(
+		&group.ID,
+		&group.Title,
+		&group.Description,
+		&group.CreatorID,
+		&group.CreatorUsername,
+		&group.CreatedAt)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
+			log.Printf("Group not found: %d", groupID)
 			w.WriteHeader(http.StatusNotFound)
 			json.NewEncoder(w).Encode(map[string]string{"error": "Group not found"})
 			return
 		}
+		log.Printf("Database error getting group: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to fetch group"})
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get group information"})
 		return
 	}
 
@@ -388,7 +418,90 @@ func GetGroupPost(w http.ResponseWriter, r *http.Request) {
 }
 
 func GroupInvitation(w http.ResponseWriter, r *http.Request) {
-	// Implementation for group invitation
+	w.Header().Set("Content-Type", "application/json")
+
+	// Parse request
+	var req struct {
+		GroupID       int    `json:"groupId"`
+		Identifier   string `json:"identifier"`
+		IdentifierType string `json:"identifierType"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request format"})
+		return
+	}
+
+	// Get inviter's username from session
+	inviterUsername, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+		return
+	}
+
+	// Get inviter's ID
+	var inviterID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", inviterUsername).Scan(&inviterID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get inviter information"})
+		return
+	}
+
+	// Find invitee by email or username
+	var inviteeID int
+	var query string
+	if req.IdentifierType == "email" {
+		query = "SELECT id FROM users WHERE email = ?"
+	} else {
+		query = "SELECT id FROM users WHERE username = ?"
+	}
+
+	err = sqlite.DB.QueryRow(query, req.Identifier).Scan(&inviteeID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "User not found"})
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
+		return
+	}
+
+	// Check if user is already a member
+	var exists bool
+	err = sqlite.DB.QueryRow(
+		"SELECT EXISTS(SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?)",
+		req.GroupID, inviteeID).Scan(&exists)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
+		return
+	}
+	if exists {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "User is already a member"})
+		return
+	}
+
+	// Create invitation
+	_, err = sqlite.DB.Exec(`
+		INSERT INTO group_invitations (group_id, inviter_id, invitee_id, status)
+		VALUES (?, ?, ?, 'pending')
+		ON CONFLICT (group_id, invitee_id) DO UPDATE SET
+		status = 'pending', inviter_id = ?`,
+		req.GroupID, inviterID, inviteeID, inviterID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to create invitation"})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Invitation sent successfully"})
 }
 
 func GroupAccept(w http.ResponseWriter, r *http.Request) {
@@ -931,4 +1044,329 @@ func GetGroupRequests(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(requests)
+}
+
+// GetInvitationStatus checks if a user has a pending invitation or join request
+func GetInvitationStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	groupID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid group ID"})
+		return
+	}
+
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+		return
+	}
+
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get user information"})
+		return
+	}
+
+	// Check for pending invitation
+	var invitation struct {
+		ID     int    `json:"id"`
+		Status string `json:"status"`
+	}
+	err = sqlite.DB.QueryRow(`
+		SELECT id, status 
+		FROM group_invitations 
+		WHERE group_id = ? AND invitee_id = ? AND status = 'pending'`,
+		groupID, userID).Scan(&invitation.ID, &invitation.Status)
+
+	hasInvitation := err != sql.ErrNoRows
+	if err != nil && err != sql.ErrNoRows {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to check invitation status"})
+		return
+	}
+
+	// Check for pending join request
+	var hasRequest bool
+	err = sqlite.DB.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM group_invitations 
+			WHERE group_id = ? AND inviter_id = ? AND invitee_id = ? AND status = 'pending'
+		)`, groupID, userID, userID).Scan(&hasRequest)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to check request status"})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"hasInvitation": hasInvitation,
+		"hasRequest":    hasRequest,
+		"invitation":    hasInvitation ? invitation : nil,
+	})
+}
+
+// RequestJoinGroup handles requests to join a group
+func RequestJoinGroup(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	groupID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid group ID"})
+		return
+	}
+
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+		return
+	}
+
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get user information"})
+		return
+	}
+
+	// Start transaction
+	tx, err := sqlite.DB.Begin()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to start transaction"})
+		return
+	}
+	defer tx.Rollback()
+
+	// Check if group exists
+	var exists bool
+	err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM groups WHERE id = ?)", groupID).Scan(&exists)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to check group existence"})
+		return
+	}
+	if !exists {
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Group not found"})
+		return
+	}
+
+	// Check if user is already a member
+	err = tx.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM group_members 
+			WHERE group_id = ? AND user_id = ?
+		)`, groupID, userID).Scan(&exists)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to check membership"})
+		return
+	}
+	if exists {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Already a member of this group"})
+		return
+	}
+
+	// Check for existing invitation or request
+	err = tx.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM group_invitations 
+			WHERE group_id = ? AND invitee_id = ? AND status = 'pending'
+		)`, groupID, userID).Scan(&exists)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to check existing requests"})
+		return
+	}
+	if exists {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Already have a pending request or invitation"})
+		return
+	}
+
+	// Create the join request
+	result, err := tx.Exec(`
+		INSERT INTO group_invitations (group_id, inviter_id, invitee_id, status, created_at)
+		VALUES (?, ?, ?, 'pending', CURRENT_TIMESTAMP)`,
+		groupID, userID, userID) // inviter_id = invitee_id indicates it's a request
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to create join request"})
+		return
+	}
+
+	// Get the invitation ID
+	invitationID, err := result.LastInsertId()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get invitation ID"})
+		return
+	}
+
+	// Get group creator for notification
+	var creatorID int
+	err = tx.QueryRow("SELECT creator_id FROM groups WHERE id = ?", groupID).Scan(&creatorID)
+	if err == nil {
+		// Create notification for group creator
+		_, err = tx.Exec(`
+			INSERT INTO notifications (user_id, type, content, from_user_id, group_id)
+			VALUES (?, 'group_join_request', ?, ?, ?)`,
+			creatorID, fmt.Sprintf("%s requested to join your group", username), userID, groupID)
+		if err != nil {
+			log.Printf("Failed to create notification: %v", err)
+		}
+	}
+
+	if err = tx.Commit(); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to commit transaction"})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Join request sent successfully",
+		"invitationId": invitationID,
+	})
+}
+
+// HandleInvitation handles accepting or rejecting an invitation
+func HandleInvitation(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
+	invitationID := r.PathValue("id")
+	action := r.PathValue("action")
+	
+	if action != "accept" && action != "reject" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid action"})
+		return
+	}
+
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+		return
+	}
+
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get user information"})
+		return
+	}
+
+	tx, err := sqlite.DB.Begin()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to start transaction"})
+		return
+	}
+	defer tx.Rollback()
+
+	var groupID int
+	err = tx.QueryRow(`
+		SELECT group_id FROM group_invitations 
+		WHERE id = ? AND invitee_id = ? AND status = 'pending'`,
+		invitationID, userID).Scan(&groupID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Invitation not found"})
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get invitation"})
+		}
+		return
+	}
+
+	if action == "accept" {
+		// Add member to group
+		_, err = tx.Exec(`
+			INSERT INTO group_members (group_id, user_id, role, status)
+			VALUES (?, ?, 'member', 'active')`,
+				groupID, userID)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Failed to add member"})
+			return
+		}
+
+		// Create notification for the new member
+		_, err = tx.Exec(`
+			INSERT INTO notifications (user_id, type, content, group_id)
+			VALUES (?, 'group_join_accepted', 'You are now a member of the group', ?)`,
+			userID, groupID)
+		if err != nil {
+			log.Printf("Failed to create member notification: %v", err)
+		}
+
+		// Create notification for group creator
+		var creatorID int
+		err = tx.QueryRow("SELECT creator_id FROM groups WHERE id = ?", groupID).Scan(&creatorID)
+		if err == nil {
+			_, err = tx.Exec(`
+				INSERT INTO notifications (user_id, type, content, from_user_id, group_id)
+				VALUES (?, 'group_join', ?, ?, ?)`,
+				creatorID, fmt.Sprintf("%s joined your group", username), userID, groupID)
+			if err != nil {
+				log.Printf("Failed to create creator notification: %v", err)
+			}
+		}
+	}
+
+	_, err = tx.Exec(`
+		UPDATE group_invitations 
+		SET status = ? 
+			WHERE id = ?`,
+		action+"ed", invitationID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to update invitation"})
+		return
+	}
+
+	if err = tx.Commit(); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to commit transaction"})
+		return
+	}
+
+	// Return updated group data
+	var group m.Group
+	err = sqlite.DB.QueryRow(`
+		SELECT g.id, g.title, g.description, g.creator_id, u.username as creator_username, g.created_at
+		FROM groups g
+		JOIN users u ON g.creator_id = u.id
+		WHERE g.id = ?`, groupID).Scan(
+		&group.ID,
+		&group.Title,
+		&group.Description,
+		&group.CreatorID,
+		&group.CreatorUsername,
+		&group.CreatedAt)
+
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get updated group data"})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Invitation " + action + "ed successfully",
+		"group": group,
+	})
 }
