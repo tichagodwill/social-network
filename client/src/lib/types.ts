@@ -45,8 +45,8 @@ export interface Notification {
     toUserId: number;
     fromUserId: number;
     content: string;
-    type: 'follow_request' | 'group_invite' | 'group_event' | 'post_like' | 'comment';
-    read: boolean;
+    type: 'follow_request' | 'group_invite' | 'group_event' | 'post_like' | 'comment' | 'chat';
+    isRead: boolean;
     createdAt: string;
     groupId?: number;
     eventId?: number;

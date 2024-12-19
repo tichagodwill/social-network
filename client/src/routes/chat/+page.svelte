@@ -13,6 +13,8 @@
     import DragDropZone from '$lib/components/DragDropZone.svelte';
     import defualtProfileImg from '$lib/assets/defualt-profile.jpg'
 
+    export let loadContact: number | null = null;
+
     let newMessage = '';
     let chatInput: ChatInput;
     let dragDropActive = false;
@@ -21,6 +23,9 @@
     onMount(() => {
         chat.initialize();
         chat.loadContacts(userId);
+
+        if (loadContact)
+            chat.loadMessages(userId, loadContact);
     });
 
     onDestroy(() => {
