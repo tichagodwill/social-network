@@ -1103,12 +1103,17 @@ func GetInvitationStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	response := map[string]interface{}{
 		"hasInvitation": hasInvitation,
 		"hasRequest":    hasRequest,
-		"invitation":    hasInvitation ? invitation : nil,
-	})
+	}
+	
+	if hasInvitation {
+		response["invitation"] = invitation
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
 }
 
 // RequestJoinGroup handles requests to join a group
