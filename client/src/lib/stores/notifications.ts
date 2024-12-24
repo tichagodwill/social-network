@@ -37,10 +37,10 @@ function createNotificationStore() {
                 });
                 if (response.ok) {
                     const notifications = await response.json();
-                    update(state => ({ 
+                    update(state => ({
                         ...state, 
                         notifications,
-                        unreadCount: notifications.filter((n: Notification) => !n.read).length
+                        unreadCount: notifications.filter((n: Notification) => !n.isRead).length
                     }));
                 }
             } catch (error) {
@@ -50,14 +50,14 @@ function createNotificationStore() {
         markAsRead: async (notificationId: number) => {
             try {
                 const response = await fetch(`http://localhost:8080/notifications/${notificationId}/read`, {
-                    method: 'POST',
+                    method: 'GET',
                     credentials: 'include'
                 });
                 if (response.ok) {
                     update(state => ({
                         ...state,
                         notifications: state.notifications.map(n => 
-                            n.id === notificationId ? { ...n, read: true } : n
+                            n.id === notificationId ? { ...n, isRead: true } : n
                         ),
                         unreadCount: state.unreadCount - 1
                     }));

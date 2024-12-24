@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"social-network/api"
+	"social-network/middleware"
 	"social-network/pkg/db/sqlite"
 	"social-network/util"
-	"social-network/middleware"
 )
 
 // authMiddleware checks the existence of the cookie on each handler
@@ -118,6 +118,7 @@ func main() {
 	mux.Handle("GET /groups/{id}", authMiddleware(http.HandlerFunc(api.GetGroup)))
 
 	mux.Handle("GET /notifications", authMiddleware(http.HandlerFunc(api.GetNotifications)))
+	mux.Handle("GET /notifications/{id}/read", authMiddleware(http.HandlerFunc(api.MarkNotificationAsRead)))
 
 	mux.Handle("GET /groups/{id}/members", authMiddleware(http.HandlerFunc(api.GetGroupMembers)))
 

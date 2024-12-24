@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
 	m "social-network/models"
@@ -45,7 +46,7 @@ func handleBroadcasts() {
 			if msg.TargetUsers != nil && !msg.TargetUsers[userID] {
 				continue
 			}
-			
+
 			if err := conn.WriteJSON(msg.Data); err != nil {
 				log.Printf("Error broadcasting to user %d: %v", userID, err)
 				conn.Close()
@@ -83,8 +84,8 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 	conn.SetReadLimit(4096) // 4KB message size limit
 	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	conn.SetPongHandler(func(string) error {
-			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-			return nil
+		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
 	})
 
 	// Handle existing connection
@@ -174,7 +175,7 @@ func SendNotification(userIDs []uint64, notification interface{}) {
 	}
 
 	broadcast <- m.BroadcastMessage{
-		Data: notification,
+		Data:        notification,
 		TargetUsers: targetUsers,
 	}
 }
@@ -182,7 +183,7 @@ func SendNotification(userIDs []uint64, notification interface{}) {
 // Broadcast sends a message to all connected users
 func Broadcast(message interface{}) {
 	broadcast <- m.BroadcastMessage{
-		Data: message,
+		Data:        message,
 		TargetUsers: nil, // nil means broadcast to all
 	}
 }

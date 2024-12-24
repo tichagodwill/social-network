@@ -3,9 +3,10 @@
     import { Button, Dropdown, DropdownItem } from 'flowbite-svelte';
     import { BellSolid } from 'flowbite-svelte-icons';
     import { getFormattedDate } from '$lib/dateFormater';
+    import { goto } from '$app/navigation'
 
-    function handleNotificationClick(notification: any) {
-        notifications.markAsRead(notification.id);
+    async function handleNotificationClick(notification: any) {
+        await notifications.markAsRead(notification.id);
         
         // Handle different notification types
         switch (notification.type) {
@@ -17,6 +18,9 @@
                 break;
             case 'group_event':
                 window.location.href = `/groups/${notification.groupId}/events/${notification.eventId}`;
+                break;
+            case 'chat':
+                goto(`/chat/${notification.fromUserId}`)
                 break;
             default:
                 break;
@@ -49,7 +53,7 @@
                         class="flex items-start gap-3 cursor-pointer"
                         on:click={() => handleNotificationClick(notification)}
                     >
-                        <div class:font-bold={!notification.read} class="flex-1">
+                        <div class:font-bold={!notification.isRead} class="flex-1">
                             <p>{notification.content}</p>
                             <p class="text-xs text-gray-500">
                                 {getFormattedDate(new Date(notification.createdAt)).diff}
