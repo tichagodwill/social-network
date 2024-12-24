@@ -50,11 +50,10 @@ func checkUserRole(groupID, userID int, requiredRole string) (bool, error) {
 func CreateGroup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Get the current user from the session
+	// Get current user from session
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -62,80 +61,65 @@ func CreateGroup(w http.ResponseWriter, r *http.Request) {
 	var creatorID int
 	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&creatorID)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get user information"})
+		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
 
-	// Parse the request body
+	// Parse request body
 	var group struct {
 		Title       string `json:"title"`
 		Description string `json:"description"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&group); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"})
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// Validate required fields
-	if strings.TrimSpace(group.Title) == "" || strings.TrimSpace(group.Description) == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Please provide all required fields"})
-		return
-	}
-
-	// Start a transaction
+	// Start transaction
 	tx, err := sqlite.DB.Begin()
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to start transaction"})
+		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
-	defer tx.Rollback() // Will rollback if not committed
+	defer tx.Rollback()
 
-	// Insert the group
-	result, err := tx.Exec(
-		"INSERT INTO groups (creator_id, title, description, created_at) VALUES (?, ?, ?, datetime('now'))",
-		creatorID, group.Title, group.Description)
+	// Create group
+	result, err := tx.Exec(`
+		INSERT INTO groups (title, description, creator_id)
+		VALUES (?, ?, ?)`,
+		group.Title, group.Description, creatorID)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to create group"})
-		log.Printf("Error creating group: %v", err)
+		http.Error(w, "Failed to create group", http.StatusInternalServerError)
 		return
 	}
 
+	// Get the new group's ID
 	groupID, err := result.LastInsertId()
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to retrieve group ID"})
+		http.Error(w, "Failed to get new group ID", http.StatusInternalServerError)
 		return
 	}
 
-	// Add creator as a member with "creator" role and "active" status
-	_, err = tx.Exec(
-		"INSERT INTO group_members (group_id, user_id, role, status) VALUES (?, ?, ?, ?)",
-		groupID, creatorID, "creator", "active")
+	// Add creator as a member with creator role
+	_, err = tx.Exec(`
+		INSERT INTO group_members (group_id, user_id, role)
+		VALUES (?, ?, 'creator')`,
+		groupID, creatorID)
 	if err != nil {
-		log.Printf("Error adding creator as member: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to add creator as a member"})
+		http.Error(w, "Failed to add creator as a member", http.StatusInternalServerError)
 		return
 	}
 
-	// Commit the transaction
+	// Commit transaction
 	if err = tx.Commit(); err != nil {
-		log.Printf("Error committing transaction: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to commit transaction"})
+		http.Error(w, "Failed to complete group creation", http.StatusInternalServerError)
 		return
 	}
 
 	// Return success response
-	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"id":      groupID,
 		"message": "Group created successfully",
+		"groupId": groupID,
 	})
 }
 
