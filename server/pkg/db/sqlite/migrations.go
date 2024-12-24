@@ -45,15 +45,25 @@ func RunMigrations() error {
             return fmt.Errorf("failed to read migration file %s: %v", fileName, err)
         }
 
-        // Execute migration
-        _, err = DB.Exec(string(content))
-        if err != nil {
-            // Check if error is about table already existing
-            if strings.Contains(err.Error(), "already exists") {
-                log.Printf("Table already exists in %s, continuing...", fileName)
+        // Split the content into individual statements
+        statements := strings.Split(string(content), ";")
+
+        // Execute each statement
+        for _, stmt := range statements {
+            stmt = strings.TrimSpace(stmt)
+            if stmt == "" {
                 continue
             }
-            return fmt.Errorf("failed to execute migration %s: %v", fileName, err)
+
+            _, err = DB.Exec(stmt)
+            if err != nil {
+                // Check if error is about table/index already existing
+                if strings.Contains(err.Error(), "already exists") {
+                    log.Printf("Object already exists in %s, continuing...", fileName)
+                    continue
+                }
+                return fmt.Errorf("failed to execute migration %s: %v", fileName, err)
+            }
         }
     }
 

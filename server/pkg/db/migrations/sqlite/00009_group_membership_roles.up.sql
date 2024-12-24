@@ -1,41 +1,54 @@
--- First check if the role column exists
-SELECT CASE 
-    WHEN COUNT(*) = 0 THEN
-        -- If the column doesn't exist, add it
-        'ALTER TABLE group_members ADD COLUMN role TEXT DEFAULT "member" NOT NULL;'
-    ELSE
-        -- If it exists, do nothing
-        'SELECT 1;'
-END as sql_to_execute
-FROM pragma_table_info('group_members')
-WHERE name = 'role';
+-- First ensure the groups table exists and has the required structure
+CREATE TABLE IF NOT EXISTS groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT,
+    creator_id INTEGER NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (creator_id) REFERENCES users(id) ON DELETE CASCADE
+);
 
--- Update existing members to have the default role if they don't have one
-UPDATE group_members 
-SET role = 'member' 
-WHERE role IS NULL;
+-- Create group_members table with proper structure
+CREATE TABLE IF NOT EXISTS group_members_temp (
+    group_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    role TEXT NOT NULL DEFAULT 'member' 
+        CHECK (role IN ('member', 'moderator', 'admin', 'creator')),
+    joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    PRIMARY KEY (group_id, user_id)
+);
 
--- Add check constraint if it doesn't exist
-SELECT CASE 
-    WHEN NOT EXISTS (
-        SELECT 1 FROM sqlite_master 
-        WHERE type = 'table' 
-        AND name = 'group_members' 
-        AND sql LIKE '%CHECK (role IN ("member", "moderator", "admin", "creator"))%'
-    ) THEN
-        'ALTER TABLE group_members ADD CONSTRAINT valid_role CHECK (role IN ("member", "moderator", "admin", "creator"));'
-    ELSE
-        'SELECT 1;'
-END as sql_to_execute;
+-- Copy existing data if any
+INSERT OR IGNORE INTO group_members_temp (group_id, user_id, role)
+SELECT 
+    gm.group_id,
+    gm.user_id,
+    CASE 
+        WHEN g.creator_id = gm.user_id THEN 'creator'
+        ELSE COALESCE(gm.role, 'member')
+    END
+FROM group_members gm
+JOIN groups g ON g.id = gm.group_id
+WHERE EXISTS (SELECT 1 FROM groups WHERE id = gm.group_id)
+AND EXISTS (SELECT 1 FROM users WHERE id = gm.user_id);
 
--- Add invitation system tables
-CREATE TABLE group_invitations (
+-- Drop old table and rename new one
+DROP TABLE IF EXISTS group_members;
+ALTER TABLE group_members_temp RENAME TO group_members;
+
+-- Create indexes
+CREATE INDEX IF NOT EXISTS idx_group_members_group_id ON group_members(group_id);
+CREATE INDEX IF NOT EXISTS idx_group_members_user_id ON group_members(user_id);
+
+-- Create invitation system tables
+CREATE TABLE IF NOT EXISTS group_invitations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     group_id INTEGER NOT NULL,
     inviter_id INTEGER NOT NULL,
     invitee_id INTEGER NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending' 
-        CHECK (status IN ('pending', 'accepted', 'rejected')),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
     FOREIGN KEY (inviter_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -43,7 +56,7 @@ CREATE TABLE group_invitations (
     UNIQUE(group_id, invitee_id)
 );
 
--- Add indexes
-CREATE INDEX idx_group_invitations_group_id ON group_invitations(group_id);
-CREATE INDEX idx_group_invitations_invitee_id ON group_invitations(invitee_id);
-CREATE INDEX idx_group_invitations_status ON group_invitations(status); 
+-- Create indexes for better performance
+CREATE INDEX IF NOT EXISTS idx_group_invitations_group_id ON group_invitations(group_id);
+CREATE INDEX IF NOT EXISTS idx_group_invitations_invitee_id ON group_invitations(invitee_id);
+CREATE INDEX IF NOT EXISTS idx_group_invitations_status ON group_invitations(status); 

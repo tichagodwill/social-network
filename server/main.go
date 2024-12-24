@@ -44,10 +44,14 @@ func main() {
 	// Open the database connection
 	err := sqlite.OpenDB("./social-network.db")
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		log.Fatal(err)
 	}
-
 	defer sqlite.DB.Close()
+
+	// Run migrations
+	if err := sqlite.RunMigrations(); err != nil {
+		log.Fatal("Failed to run migrations:", err)
+	}
 
 	var arg string
 
@@ -104,8 +108,10 @@ func main() {
 	mux.Handle("POST /groups/reject", authMiddleware(http.HandlerFunc(api.GroupReject)))
 	mux.Handle("POST /groups/leave", authMiddleware(http.HandlerFunc(api.GroupLeave)))
 
-	mux.Handle("POST /follow", authMiddleware(http.HandlerFunc(api.RequestFollowUser)))
-	mux.Handle("PATCH /follow/{requestID}", authMiddleware(http.HandlerFunc(api.AcceptOrRejectRequest)))
+	mux.Handle("POST /follow", authMiddleware(http.HandlerFunc(api.FollowUser)))
+	mux.Handle("POST /unfollow", authMiddleware(http.HandlerFunc(api.UnfollowUser)))
+	mux.Handle("POST /follow/handle-request", authMiddleware(http.HandlerFunc(api.HandleFollowRequest)))
+
 	mux.Handle("GET /follower/{userID}", authMiddleware(http.HandlerFunc(api.GetFollowers)))
 
 	mux.Handle("GET /contact/{userID}", authMiddleware(http.HandlerFunc(api.GetContact)))
