@@ -9,7 +9,6 @@ import (
 	"social-network/util"
 	"sync"
 	"time"
-	"encoding/json"
 
 	"github.com/gorilla/websocket"
 )
