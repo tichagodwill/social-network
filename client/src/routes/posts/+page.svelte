@@ -52,7 +52,7 @@
                     <div>
                         <h3 class="text-lg font-semibold">{post.author}</h3>
                         <p class="text-sm text-gray-500">
-                            {getFormattedDate(new Date(post.createdAt)).diff}
+                            {getFormattedDate(new Date(post.created_at)).diff}
                         </p>
                     </div>
                 </div>

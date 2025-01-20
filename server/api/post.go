@@ -16,6 +16,26 @@ import (
 func CreatePost(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	// Get current user from session
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Unauthorized",
+		})
+		return
+	}
+
+	// Get user ID
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to get user information",
+		})
+		return
+	}
 	var post m.Post
 	if err := json.NewDecoder(r.Body).Decode(&post); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -24,7 +44,7 @@ func CreatePost(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
+	post.Author = userID
 	// Validate required fields
 	if strings.TrimSpace(post.Title) == "" || strings.TrimSpace(post.Content) == "" {
 		w.WriteHeader(http.StatusBadRequest)
@@ -94,11 +114,33 @@ func GetPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+        // Check the database connection before running the query.
+    if sqlite.DB == nil {
+        log.Printf("Error: Database is not initialized")
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(map[string]string{
+            "error": "Database not initialized",
+        })
+        return
+    }
+    err = sqlite.DB.Ping() // Check the connection
+    if err != nil {
+        log.Printf("Error pinging database: %v", err)
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(map[string]string{
+            "error": "Database connection failed",
+        })
+        return
+    }
+    log.Printf("UserID: %v", userID)
+
+
+
 	// Fetch posts from the database
 	rows, err := sqlite.DB.Query(`
 		SELECT p.id, p.title, p.content, p.media, p.privacy, p.author, p.created_at, p.group_id
 		FROM posts p
-		LEFT JOIN followers f ON p.author = f.following_id
+		LEFT JOIN followers f ON p.author = f.followed_id
 		WHERE p.privacy = 1  -- Public posts
 		OR p.author = ?     -- User's own posts
 		OR (p.privacy = 3 AND f.follower_id = ?)  -- Posts visible to followers
@@ -118,7 +160,9 @@ func GetPosts(w http.ResponseWriter, r *http.Request) {
 	var posts []m.Post
 	for rows.Next() {
 		var post m.Post
-		if err := rows.Scan(&post.ID, &post.Title, &post.Content, &post.Media, &post.Privacy, &post.Author, &post.CreatedAt, &post.GroupID); err != nil {
+		var groupID *int // Use a pointer for the nullable GroupID
+
+		if err := rows.Scan(&post.ID, &post.Title, &post.Content, &post.Media, &post.Privacy, &post.Author, &post.CreatedAt, &groupID); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{
 				"error": "Error reading posts",
@@ -126,6 +170,14 @@ func GetPosts(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Error scanning post: %v", err)
 			return
 		}
+
+		// Now set the GroupID properly (can be nil if the database value is NULL)
+		if groupID != nil {
+			post.GroupID = *groupID
+		} else {
+			post.GroupID = 0 // Or set it to a default value if appropriate
+		}
+
 		posts = append(posts, post)
 	}
 
