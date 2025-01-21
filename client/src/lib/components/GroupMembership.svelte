@@ -8,6 +8,7 @@
     export let isCreator: boolean = false;
 
     let showInviteModal = false;
+    let showRemoveModal = false;
     let inviteIdentifier = '';
     let inviteType = 'email';
     let error = '';
@@ -17,6 +18,7 @@
     let hasInvitation = false;
     let hasRequest = false;
     let invitationData: any = null;
+    let memberToRemove: any = null;
 
     async function checkInvitationStatus() {
         if (!$auth.isAuthenticated) return;
@@ -187,13 +189,17 @@
         }
     }
 
-    async function removeMember(memberId: number) {
-        if (!confirm('Are you sure you want to remove this member?')) {
-            return;
-        }
+    async function handleRemoveMember(member: any) {
+        memberToRemove = member;
+        showRemoveModal = true;
+    }
+
+    async function confirmRemoveMember() {
+        if (!memberToRemove) return;
 
         try {
-            const response = await fetch(`http://localhost:8080/groups/${groupId}/members/${memberId}`, {
+            loading = true;
+            const response = await fetch(`http://localhost:8080/groups/${groupId}/members/${memberToRemove.id}`, {
                 method: 'DELETE',
                 credentials: 'include'
             });
@@ -203,9 +209,15 @@
                 throw new Error(data.error || 'Failed to remove member');
             }
 
-            members = members.filter(member => member.id !== memberId);
+            // Remove member from local state
+            members = members.filter(m => m.id !== memberToRemove.id);
+            success = `${memberToRemove.username} has been removed from the group`;
+            showRemoveModal = false;
+            memberToRemove = null;
         } catch (err) {
             error = err instanceof Error ? err.message : 'Failed to remove member';
+        } finally {
+            loading = false;
         }
     }
 
@@ -213,6 +225,11 @@
         showInviteModal = false;
         inviteIdentifier = '';
         modalError = '';
+    }
+
+    function closeRemoveModal() {
+        showRemoveModal = false;
+        memberToRemove = null;
     }
 
     $: isMember = members.some(m => m.id === $auth.user?.id);
@@ -297,7 +314,7 @@
                                         size="xs" 
                                         color="red"
                                         class="w-full sm:w-auto"
-                                        on:click={() => removeMember(member.id)}
+                                        on:click={() => handleRemoveMember(member)}
                                     >
                                         Remove
                                     </Button>
@@ -383,6 +400,36 @@
                 </Button>
             </div>
         </form>
+    </div>
+</Modal>
+
+<!-- Remove member confirmation modal -->
+<Modal bind:open={showRemoveModal} size="sm">
+    <div class="text-center">
+        <h3 class="mb-4 text-lg font-medium">Remove Member</h3>
+        
+        {#if memberToRemove}
+            <p class="mb-6 text-gray-700 dark:text-gray-300">
+                Are you sure you want to remove {memberToRemove.username} from the group?
+            </p>
+            
+            <div class="flex justify-end space-x-2">
+                <Button 
+                    color="alternative" 
+                    on:click={closeRemoveModal}
+                    disabled={loading}
+                >
+                    Cancel
+                </Button>
+                <Button 
+                    color="red"
+                    on:click={confirmRemoveMember}
+                    disabled={loading}
+                >
+                    {loading ? 'Removing...' : 'Remove Member'}
+                </Button>
+            </div>
+        {/if}
     </div>
 </Modal>
 

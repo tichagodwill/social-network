@@ -8,19 +8,22 @@ CREATE TABLE IF NOT EXISTS groups (
     FOREIGN KEY (creator_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Create group_members table with proper structure
-CREATE TABLE IF NOT EXISTS group_members_temp (
+-- Create temporary table for group members
+CREATE TABLE group_members_temp (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     group_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     role TEXT NOT NULL DEFAULT 'member' 
         CHECK (role IN ('member', 'moderator', 'admin', 'creator')),
-    joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'inactive', 'banned')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (group_id) REFERENCES groups(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    PRIMARY KEY (group_id, user_id)
+    UNIQUE(group_id, user_id)
 );
 
--- Copy existing data if any
+-- Copy existing data if the old table exists
 INSERT OR IGNORE INTO group_members_temp (group_id, user_id, role)
 SELECT 
     gm.group_id,
@@ -34,7 +37,7 @@ JOIN groups g ON g.id = gm.group_id
 WHERE EXISTS (SELECT 1 FROM groups WHERE id = gm.group_id)
 AND EXISTS (SELECT 1 FROM users WHERE id = gm.user_id);
 
--- Drop old table and rename new one
+-- Drop old table if it exists and rename new one
 DROP TABLE IF EXISTS group_members;
 ALTER TABLE group_members_temp RENAME TO group_members;
 
@@ -42,7 +45,7 @@ ALTER TABLE group_members_temp RENAME TO group_members;
 CREATE INDEX IF NOT EXISTS idx_group_members_group_id ON group_members(group_id);
 CREATE INDEX IF NOT EXISTS idx_group_members_user_id ON group_members(user_id);
 
--- Create invitation system tables
+-- Create invitation system tables if they don't exist
 CREATE TABLE IF NOT EXISTS group_invitations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     group_id INTEGER NOT NULL,
