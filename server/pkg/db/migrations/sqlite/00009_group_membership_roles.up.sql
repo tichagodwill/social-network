@@ -27,7 +27,7 @@ SELECT
     gm.user_id,
     CASE 
         WHEN g.creator_id = gm.user_id THEN 'creator'
-        ELSE COALESCE(gm.role, 'member')
+        ELSE 'member'  -- Default role for all existing members
     END
 FROM group_members gm
 JOIN groups g ON g.id = gm.group_id
@@ -59,4 +59,4 @@ CREATE TABLE IF NOT EXISTS group_invitations (
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_group_invitations_group_id ON group_invitations(group_id);
 CREATE INDEX IF NOT EXISTS idx_group_invitations_invitee_id ON group_invitations(invitee_id);
-CREATE INDEX IF NOT EXISTS idx_group_invitations_status ON group_invitations(status); 
+CREATE INDEX IF NOT EXISTS idx_group_invitations_status ON group_invitations(status);
