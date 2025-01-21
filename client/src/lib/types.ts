@@ -5,6 +5,7 @@ export interface Post {
     media?: string;
     privacy: number;
     author: number;
+    authorName: string;
     created_at?: string;
     groupId?: number;
 }
