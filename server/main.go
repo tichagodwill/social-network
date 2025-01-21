@@ -144,6 +144,9 @@ func main() {
 	mux.Handle("POST /groups/{id}/join", authMiddleware(http.HandlerFunc(api.RequestJoinGroup)))
 	mux.Handle("POST /groups/invitation/{id}/{action}", authMiddleware(http.HandlerFunc(api.HandleInvitation)))
 
+	// Add this route with your other routes
+	mux.Handle("POST /groups/{id}/posts/{postId}/comments", authMiddleware(http.HandlerFunc(api.CreateGroupPostComment)))
+
 	// Wrap the entire mux with CORS middleware
 	handler := middleware.CORS(mux)
 

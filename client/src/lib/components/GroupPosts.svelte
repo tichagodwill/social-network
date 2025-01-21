@@ -82,17 +82,18 @@
             const content = newComments[postId];
             if (!content?.trim()) return;
 
-            const response = await fetch(`http://localhost:8080/groups/posts/${postId}/comments`, {
+            const response = await fetch(`http://localhost:8080/groups/${groupId}/posts/${postId}/comments`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 credentials: 'include',
-                body: JSON.stringify({ content })
+                body: JSON.stringify({ content: content.trim() })
             });
 
             if (!response.ok) {
-                throw new Error('Failed to create comment');
+                const errorData = await response.json();
+                throw new Error(errorData.error || 'Failed to create comment');
             }
 
             const comment = await response.json();
@@ -108,6 +109,7 @@
             newComments[postId] = '';
         } catch (err) {
             console.error('Failed to create comment:', err);
+            error = err instanceof Error ? err.message : 'Failed to create comment';
         }
     }
 
