@@ -5,22 +5,34 @@
     import GroupMembership from '$lib/components/GroupMembership.svelte';
     import GroupEvents from '$lib/components/GroupEvents.svelte';
     import GroupJoinRequests from '$lib/components/GroupJoinRequests.svelte';
+    import GroupPosts from '$lib/components/GroupPosts.svelte';
+    import { onMount } from 'svelte';
 
     export let data;
 
-    let group = data.group;
-    let members = data.members || [];
-    $: isCreator = $auth.user ? group.creator_id === $auth.user.id : false;
-    $: isMember = $auth.user && members ? members.some(m => m.id === $auth.user?.id) : false;
+    let group = data?.group;
+    let members = data?.members || [];
+    let error = data?.error || '';
+    
+    $: isCreator = $auth.user && group ? group.creator_id === $auth.user.id : false;
+    $: isMember = $auth.user && members ? members.some((m: any) => m.id === $auth.user?.id) : false;
     let showEditModal = false;
-    let error = '';
+    let showDeleteModal = false;
+    let loading = true;
 
-    let editForm = {
+    let editForm = group ? {
         title: group.title,
         description: group.description
+    } : {
+        title: '',
+        description: ''
     };
 
     $: canViewContent = isCreator || isMember;
+
+    onMount(() => {
+        loading = false;
+    });
 
     async function handleEdit() {
         try {
@@ -48,10 +60,6 @@
     }
 
     async function handleDelete() {
-        if (!confirm('Are you sure you want to delete this group? This action cannot be undone.')) {
-            return;
-        }
-
         try {
             const response = await fetch(`http://localhost:8080/groups/${group.id}`, {
                 method: 'DELETE',
@@ -63,6 +71,7 @@
                 throw new Error(errorData.error || 'Failed to delete group');
             }
 
+            showDeleteModal = false;
             goto('/groups');
         } catch (err) {
             error = err instanceof Error ? err.message : 'Failed to delete group';
@@ -76,13 +85,21 @@
             <p class="text-lg mb-4">Please log in to view this group</p>
             <Button href="/login">Log In</Button>
         </div>
+    {:else if loading}
+        <div class="text-center p-8">
+            <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mx-auto"></div>
+            <p class="mt-4">Loading group data...</p>
+        </div>
+    {:else if error}
+        <div class="p-4 text-red-800 bg-red-100 rounded-lg">
+            {error}
+        </div>
+    {:else if !group}
+        <div class="text-center p-8">
+            <p class="text-lg mb-4">Group not found</p>
+            <Button href="/groups">Back to Groups</Button>
+        </div>
     {:else}
-        {#if error}
-            <div class="p-4 text-red-800 bg-red-100 rounded-lg">
-                {error}
-            </div>
-        {/if}
-
         <Card>
             <div class="space-y-4">
                 <h1 class="text-3xl font-bold">{group.title}</h1>
@@ -93,7 +110,10 @@
                         <Button color="blue" on:click={() => showEditModal = true}>
                             Edit Group
                         </Button>
-                        <Button color="red" on:click={handleDelete}>
+                        <Button 
+                            color="red" 
+                            on:click={() => showDeleteModal = true}
+                        >
                             Delete Group
                         </Button>
                     </div>
@@ -117,10 +137,13 @@
                 />
             </div>
             {#if canViewContent}
-                <GroupEvents groupId={group.id} />
+                <div class="space-y-8">
+                    <GroupPosts groupId={group.id} />
+                    <GroupEvents groupId={group.id} />
+                </div>
             {:else}
                 <Card>
-                    <p class="text-gray-500">Join the group to view events and other content</p>
+                    <p class="text-gray-500">Join the group to view posts, events and other content</p>
                 </Card>
             {/if}
         </div>
@@ -154,5 +177,28 @@
                 <Button type="submit">Save Changes</Button>
             </div>
         </form>
+    </div>
+</Modal>
+
+<Modal bind:open={showDeleteModal} size="md">
+    <div class="space-y-6">
+        <h3 class="text-xl font-medium text-gray-900 dark:text-white">Delete Group</h3>
+        <p class="text-base text-gray-500 dark:text-gray-400">
+            Are you sure you want to delete this group? This action cannot be undone and all group data will be permanently removed.
+        </p>
+        <div class="flex justify-end space-x-2">
+            <Button 
+                color="alternative" 
+                on:click={() => showDeleteModal = false}
+            >
+                Cancel
+            </Button>
+            <Button 
+                color="red" 
+                on:click={handleDelete}
+            >
+                Delete Group
+            </Button>
+        </div>
     </div>
 </Modal> 

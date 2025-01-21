@@ -126,88 +126,295 @@ func CreateGroup(w http.ResponseWriter, r *http.Request) {
 func CreateGroupPost(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Get the group ID from URL
-	groupIDStr := r.URL.Query().Get("id")
+	// Get group ID from URL path parameter
+	groupIDStr := r.PathValue("id")
+	if groupIDStr == "" {
+		log.Printf("Group ID is missing from URL")
+		http.Error(w, "Group ID is required", http.StatusBadRequest)
+		return
+	}
+
 	groupID, err := strconv.Atoi(groupIDStr)
+	if err != nil || groupID <= 0 {
+		log.Printf("Invalid group ID: %v", err)
+		http.Error(w, "Invalid group ID", http.StatusBadRequest)
+		return
+	}
+
+	// Verify group exists
+	var exists bool
+	err = sqlite.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM groups WHERE id = ?)", groupID).Scan(&exists)
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid group ID"})
+		log.Printf("Error checking group existence: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	if !exists {
+		http.Error(w, "Group not found", http.StatusNotFound)
 		return
 	}
 
-	// Parse the request body
-	var post m.Post
-	if err := json.NewDecoder(r.Body).Decode(&post); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid JSON format"})
+	// Get current user
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		log.Printf("Session error: %v", err)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	// Set post privacy to public by default for group posts
-	post.Privacy = 1
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		log.Printf("User not found: %v", err)
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
 
-	// Validate post content
+	// Check if user is a member
+	var isMember bool
+	err = sqlite.DB.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM group_members 
+			WHERE group_id = ? AND user_id = ?
+		)`, groupID, userID).Scan(&isMember)
+	if err != nil {
+		log.Printf("Error checking membership: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	if !isMember {
+		http.Error(w, "Not a group member", http.StatusForbidden)
+		return
+	}
+
+	// Parse request body
+	var post struct {
+		Title   string `json:"title"`
+		Content string `json:"content"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(&post); err != nil {
+		log.Printf("Invalid request body: %v", err)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate post data
 	if strings.TrimSpace(post.Title) == "" || strings.TrimSpace(post.Content) == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Title and content cannot be empty"})
+		http.Error(w, "Title and content are required", http.StatusBadRequest)
 		return
 	}
 
-	// Insert the post into the database
-	_, err = sqlite.DB.Exec(
-		"INSERT INTO posts (title, content, media, privacy, author, group_id) VALUES (?, ?, ?, ?, ?, ?)",
-		post.Title, post.Content, post.Media, post.Privacy, post.Author, groupID)
+	// Start transaction
+	tx, err := sqlite.DB.Begin()
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to create post"})
+		log.Printf("Transaction error: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	// Create post
+	result, err := tx.Exec(`
+		INSERT INTO group_posts (group_id, author_id, title, content, created_at, updated_at)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+		groupID, userID, post.Title, post.Content)
+	if err != nil {
 		log.Printf("Error creating post: %v", err)
+		http.Error(w, "Failed to create post", http.StatusInternalServerError)
 		return
 	}
 
-	// Return success response
+	postID, _ := result.LastInsertId()
+
+	// Commit transaction
+	if err = tx.Commit(); err != nil {
+		log.Printf("Error committing transaction: %v", err)
+		http.Error(w, "Failed to create post", http.StatusInternalServerError)
+		return
+	}
+
+	// Fetch the created post with author information
+	var createdPost m.GroupPost
+	err = sqlite.DB.QueryRow(`
+		SELECT p.id, p.group_id, p.author_id, u.username, p.title, p.content, p.created_at, p.updated_at
+		FROM group_posts p
+		JOIN users u ON p.author_id = u.id
+		WHERE p.id = ?`, postID).Scan(
+		&createdPost.ID,
+		&createdPost.GroupID,
+		&createdPost.AuthorID,
+		&createdPost.Author,
+		&createdPost.Title,
+		&createdPost.Content,
+		&createdPost.CreatedAt,
+		&createdPost.UpdatedAt)
+	if err != nil {
+		log.Printf("Error fetching created post: %v", err)
+		http.Error(w, "Failed to fetch created post", http.StatusInternalServerError)
+		return
+	}
+
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]string{"message": "Post created successfully"})
+	json.NewEncoder(w).Encode(createdPost)
 }
 
 func GetGroupPosts(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Get the group ID from URL
-	groupIDStr := r.URL.Query().Get("id")
-	groupID, err := strconv.Atoi(groupIDStr)
-	if err != nil || groupID < 1 {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid group ID"})
+	groupID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "Invalid group ID", http.StatusBadRequest)
 		return
 	}
 
-	// Fetch posts from the database
-	rows, err := sqlite.DB.Query(
-		"SELECT id, title, content, media, privacy, author, created_at, group_id FROM posts WHERE group_id = ?",
-		groupID)
+	// Get current user
+	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to fetch posts"})
-		log.Printf("Error fetching posts: %v", err)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// Check if user is a member
+	var isMember bool
+	err = sqlite.DB.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM group_members 
+			WHERE group_id = ? AND user_id = ?
+		)`, groupID, userID).Scan(&isMember)
+	if err != nil || !isMember {
+		http.Error(w, "Not a group member", http.StatusForbidden)
+		return
+	}
+
+	// Get posts with authors
+	rows, err := sqlite.DB.Query(`
+		SELECT p.id, p.group_id, p.author_id, u.username, p.title, p.content, p.created_at, p.updated_at
+		FROM group_posts p
+		JOIN users u ON p.author_id = u.id
+		WHERE p.group_id = ?
+		ORDER BY p.created_at DESC`, groupID)
+	if err != nil {
+		http.Error(w, "Failed to fetch posts", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
 
-	// Iterate through the results
-	var posts []m.Post
+	var posts []m.GroupPost
 	for rows.Next() {
-		var post m.Post
-		if err := rows.Scan(&post.ID, &post.Title, &post.Content, &post.Media, &post.Privacy, &post.Author, &post.CreatedAt, &post.GroupID); err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Error reading posts"})
-			log.Printf("Error scanning post: %v", err)
-			return
+		var post m.GroupPost
+		err := rows.Scan(
+			&post.ID, &post.GroupID, &post.AuthorID, &post.Author,
+			&post.Title, &post.Content, &post.CreatedAt, &post.UpdatedAt)
+		if err != nil {
+			continue
 		}
+		
+		// Get comments for each post
+		comments, _ := getPostComments(post.ID)
+		post.Comments = comments
 		posts = append(posts, post)
 	}
 
-	// Return the posts as JSON
 	json.NewEncoder(w).Encode(posts)
+}
+
+func CreateGroupPostComment(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	postID, err := strconv.Atoi(r.PathValue("postId"))
+	if err != nil {
+		http.Error(w, "Invalid post ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get current user
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// Check if user is a member of the group this post belongs to
+	var isMember bool
+	err = sqlite.DB.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM group_members m
+			JOIN group_posts p ON p.group_id = m.group_id
+			WHERE p.id = ? AND m.user_id = ?
+		)`, postID, userID).Scan(&isMember)
+	if err != nil || !isMember {
+		http.Error(w, "Not a group member", http.StatusForbidden)
+		return
+	}
+
+	// Parse request body
+	var comment m.GroupPostComment
+	if err := json.NewDecoder(r.Body).Decode(&comment); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Create comment
+	result, err := sqlite.DB.Exec(`
+		INSERT INTO group_post_comments (post_id, author_id, content)
+		VALUES (?, ?, ?)`,
+		postID, userID, comment.Content)
+	if err != nil {
+		http.Error(w, "Failed to create comment", http.StatusInternalServerError)
+		return
+	}
+
+	commentID, _ := result.LastInsertId()
+	comment.ID = int(commentID)
+	comment.PostID = postID
+	comment.AuthorID = userID
+	comment.Author = username
+	comment.CreatedAt = time.Now()
+	comment.UpdatedAt = time.Now()
+
+	json.NewEncoder(w).Encode(comment)
+}
+
+func getPostComments(postID int) ([]m.GroupPostComment, error) {
+	rows, err := sqlite.DB.Query(`
+		SELECT c.id, c.post_id, c.author_id, u.username, c.content, c.created_at, c.updated_at
+		FROM group_post_comments c
+		JOIN users u ON c.author_id = u.id
+		WHERE c.post_id = ?
+		ORDER BY c.created_at ASC`, postID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var comments []m.GroupPostComment
+	for rows.Next() {
+		var comment m.GroupPostComment
+		err := rows.Scan(
+			&comment.ID, &comment.PostID, &comment.AuthorID, &comment.Author,
+			&comment.Content, &comment.CreatedAt, &comment.UpdatedAt)
+		if err != nil {
+			continue
+		}
+		comments = append(comments, comment)
+	}
+	return comments, nil
 }
 
 func ViewGroups(w http.ResponseWriter, r *http.Request) {
@@ -284,44 +491,31 @@ func ViewGroups(w http.ResponseWriter, r *http.Request) {
 func GetGroup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Get group ID from URL
+	// Get current user from session
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	groupIDStr := r.PathValue("id")
 	groupID, err := strconv.Atoi(groupIDStr)
 	if err != nil {
-		log.Printf("Invalid group ID: %v", err)
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid group ID"})
+		http.Error(w, "Invalid group ID", http.StatusBadRequest)
 		return
 	}
 
-	// Get current user
-	username, err := util.GetUsernameFromSession(r)
-	if err != nil {
-		log.Printf("Session error: %v", err)
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
-		return
-	}
-
+	// Get user ID
 	var userID int
 	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
 	if err != nil {
-		log.Printf("Database error getting user ID: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get user information"})
+		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
 
-	// Get group information with error handling
 	var group m.Group
 	err = sqlite.DB.QueryRow(`
-		SELECT 
-			g.id, 
-			g.title, 
-			g.description, 
-			g.creator_id, 
-			u.username as creator_username,
-			g.created_at
+		SELECT g.id, g.title, g.description, g.creator_id, u.username as creator_username, g.created_at
 		FROM groups g
 		JOIN users u ON g.creator_id = u.id
 		WHERE g.id = ?`, groupID).Scan(
@@ -334,19 +528,39 @@ func GetGroup(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			log.Printf("Group not found: %d", groupID)
-			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Group not found"})
+			http.Error(w, "Group not found", http.StatusNotFound)
 			return
 		}
-		log.Printf("Database error getting group: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get group information"})
+		log.Printf("Database error: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(group)
+	// Check if user is a member or creator
+	var isMember bool
+	err = sqlite.DB.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM group_members 
+			WHERE group_id = ? AND user_id = ?
+		)`, groupID, userID).Scan(&isMember)
+	
+	if err != nil {
+		log.Printf("Error checking membership: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]interface{}{
+		"id":              group.ID,
+		"title":          group.Title,
+		"description":    group.Description,
+		"creator_id":     group.CreatorID,
+		"creator_username": group.CreatorUsername,
+		"created_at":     group.CreatedAt,
+		"is_member":      isMember,
+	}
+
+	json.NewEncoder(w).Encode(response)
 }
 
 func GetGroupMembers(w http.ResponseWriter, r *http.Request) {

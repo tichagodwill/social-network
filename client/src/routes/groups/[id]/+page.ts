@@ -15,29 +15,36 @@ export const load: PageLoad = async ({ params, fetch }) => {
     }
 
     try {
-        const [groupResponse, membersResponse] = await Promise.all([
-            fetch(`http://localhost:8080/groups/${params.id}`, {
-                credentials: 'include'
-            }),
-            fetch(`http://localhost:8080/groups/${params.id}/members`, {
-                credentials: 'include'
-            })
-        ]);
+        // Load group data
+        const groupResponse = await fetch(`http://localhost:8080/groups/${params.id}`, {
+            credentials: 'include'
+        });
 
         if (!groupResponse.ok) {
             if (groupResponse.status === 404) {
                 throw error(404, 'Group not found');
             }
-            throw error(groupResponse.status, 'Failed to load group');
+            const errorData = await groupResponse.json();
+            throw error(groupResponse.status, errorData.error || 'Failed to load group');
         }
 
         const group = await groupResponse.json();
+
+        // Load members data
+        const membersResponse = await fetch(`http://localhost:8080/groups/${params.id}/members`, {
+            credentials: 'include'
+        });
+
         const members = membersResponse.ok ? await membersResponse.json() : [];
+
+        if (!group) {
+            throw error(404, 'Group not found');
+        }
 
         return {
             group,
             members,
-            id: params.id
+            error: null
         };
     } catch (err) {
         console.error('Error loading group:', err);
