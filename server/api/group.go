@@ -47,6 +47,19 @@ func checkUserRole(groupID, userID int, requiredRole string) (bool, error) {
 	return roleHierarchy[role] >= roleHierarchy[requiredRole], nil
 }
 
+// Helper function to check if user has admin privileges
+func hasAdminPrivileges(groupID int, userID int) (bool, error) {
+	var isCreatorOrAdmin bool
+	err := sqlite.DB.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1 
+			FROM groups g
+			LEFT JOIN group_members gm ON g.id = gm.group_id AND gm.user_id = ?
+			WHERE g.id = ? AND (g.creator_id = ? OR gm.role = 'admin')
+		)`, userID, groupID, userID).Scan(&isCreatorOrAdmin)
+	return isCreatorOrAdmin, err
+}
+
 func CreateGroup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -721,7 +734,6 @@ func GetGroupPost(w http.ResponseWriter, r *http.Request) {
 func GroupInvitation(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Parse request
 	var req struct {
 		GroupID        int    `json:"groupId"`
 		Identifier    string `json:"identifier"`
@@ -754,31 +766,28 @@ func GroupInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	// Get inviter ID and check if they're the creator
+	// Get inviter ID
 	var inviterID int
-	var isCreator bool
-	err = tx.QueryRow(`
-		SELECT u.id, g.creator_id = u.id
-		FROM users u
-		JOIN groups g ON g.id = ?
-		WHERE u.username = ?`,
-		req.GroupID, username).Scan(&inviterID, &isCreator)
+	err = tx.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&inviterID)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			sendJSONResponse(w, http.StatusNotFound, map[string]interface{}{
-				"error": "Group not found",
-			})
-			return
-		}
+		sendJSONResponse(w, http.StatusInternalServerError, map[string]interface{}{
+			"error": "Failed to get user information",
+		})
+		return
+	}
+
+	// Check if user has admin privileges
+	hasPrivileges, err := hasAdminPrivileges(req.GroupID, inviterID)
+	if err != nil {
 		sendJSONResponse(w, http.StatusInternalServerError, map[string]interface{}{
 			"error": "Failed to verify permissions",
 		})
 		return
 	}
 
-	if !isCreator {
+	if !hasPrivileges {
 		sendJSONResponse(w, http.StatusForbidden, map[string]interface{}{
-			"error": "Only group creator can invite members",
+			"error": "Only group creator and admins can invite members",
 		})
 		return
 	}
@@ -876,6 +885,7 @@ func GroupInvitation(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Create notification error: %v", err)
 	}
 
+	// Commit the transaction
 	if err = tx.Commit(); err != nil {
 		sendJSONResponse(w, http.StatusInternalServerError, map[string]interface{}{
 			"error": "Failed to complete invitation",
@@ -1398,11 +1408,45 @@ func RemoveMember(w http.ResponseWriter, r *http.Request) {
 func GetGroupRequests(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	groupIDStr := r.PathValue("id")
-	groupID, err := strconv.Atoi(groupIDStr)
+	groupID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid group ID"})
+		sendJSONResponse(w, http.StatusBadRequest, map[string]interface{}{
+			"error": "Invalid group ID",
+		})
+		return
+	}
+
+	// Get current user
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		sendJSONResponse(w, http.StatusUnauthorized, map[string]interface{}{
+			"error": "Unauthorized",
+		})
+		return
+	}
+
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		sendJSONResponse(w, http.StatusInternalServerError, map[string]interface{}{
+			"error": "Failed to get user information",
+		})
+		return
+	}
+
+	// Check if user has admin privileges
+	hasPrivileges, err := hasAdminPrivileges(groupID, userID)
+	if err != nil {
+		sendJSONResponse(w, http.StatusInternalServerError, map[string]interface{}{
+			"error": "Failed to verify permissions",
+		})
+		return
+	}
+
+	if !hasPrivileges {
+		sendJSONResponse(w, http.StatusForbidden, map[string]interface{}{
+			"error": "Only group creator and admins can view requests",
+		})
 		return
 	}
 
@@ -1671,30 +1715,77 @@ func HandleInvitation(w http.ResponseWriter, r *http.Request) {
 	
 	invitationID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid invitation ID"})
+		sendJSONResponse(w, http.StatusBadRequest, map[string]interface{}{
+			"error": "Invalid invitation ID",
+		})
 		return
 	}
 	
 	action := r.PathValue("action")
 	if action != "accept" && action != "reject" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid action"})
+		sendJSONResponse(w, http.StatusBadRequest, map[string]interface{}{
+			"error": "Invalid action",
+		})
 		return
 	}
 
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Unauthorized"})
+		sendJSONResponse(w, http.StatusUnauthorized, map[string]interface{}{
+			"error": "Unauthorized",
+		})
 		return
 	}
 
 	var userID int
 	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to get user information"})
+		sendJSONResponse(w, http.StatusInternalServerError, map[string]interface{}{
+			"error": "Failed to get user information",
+		})
+		return
+	}
+
+	// Get invitation details
+	var invitation struct {
+		GroupID   int
+		InviterID int
+		InviteeID int
+		Status    string
+	}
+	err = sqlite.DB.QueryRow(`
+		SELECT group_id, inviter_id, invitee_id, status 
+		FROM group_invitations 
+		WHERE id = ? AND status = 'pending'`,
+		invitationID).Scan(&invitation.GroupID, &invitation.InviterID, &invitation.InviteeID, &invitation.Status)
+	
+	if err != nil {
+		if err == sql.ErrNoRows {
+			sendJSONResponse(w, http.StatusNotFound, map[string]interface{}{
+				"error": "Invitation not found or already processed",
+			})
+		} else {
+			sendJSONResponse(w, http.StatusInternalServerError, map[string]interface{}{
+				"error": "Database error",
+			})
+		}
+		return
+	}
+
+	// Check if user has permission to handle this invitation
+	hasPrivileges, err := hasAdminPrivileges(invitation.GroupID, userID)
+	if err != nil {
+		sendJSONResponse(w, http.StatusInternalServerError, map[string]interface{}{
+			"error": "Failed to verify permissions",
+		})
+		return
+	}
+
+	// Allow both admins and the invitee to handle the invitation
+	if !hasPrivileges && userID != invitation.InviteeID {
+		sendJSONResponse(w, http.StatusForbidden, map[string]interface{}{
+			"error": "Only group creator, admins, or the invitee can handle this invitation",
+		})
 		return
 	}
 
@@ -1705,29 +1796,6 @@ func HandleInvitation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-
-	// Get invitation details
-	var invitation struct {
-		GroupID   int
-		InviterID int
-		InviteeID int
-		Status    string
-	}
-	err = tx.QueryRow(`
-		SELECT group_id, inviter_id, invitee_id, status 
-		FROM group_invitations 
-		WHERE id = ? AND status = 'pending'`,
-		invitationID).Scan(&invitation.GroupID, &invitation.InviterID, &invitation.InviteeID, &invitation.Status)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			w.WriteHeader(http.StatusNotFound)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Invitation not found or already processed"})
-		} else {
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
-		}
-		return
-	}
 
 	if action == "accept" {
 		// Add member to group

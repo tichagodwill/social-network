@@ -19,6 +19,28 @@
     let hasRequest = false;
     let invitationData: any = null;
     let memberToRemove: any = null;
+    let currentUserRole = '';
+
+    // Function to check if current user is admin or creator
+    function hasAdminPrivileges(): boolean {
+        if (!$auth.user) return false;
+        const currentMember = members.find(m => m.id === $auth.user.id);
+        return isCreator || (currentMember?.role === 'admin');
+    }
+
+    // Function to check if current user is a member
+    function isMember(): boolean {
+        if (!$auth.user) return false;
+        return members.some(m => m.id === $auth.user?.id);
+    }
+
+    // Update currentUserRole when members or auth changes
+    $: {
+        if ($auth.user && members.length > 0) {
+            const currentMember = members.find(m => m.id === $auth.user.id);
+            currentUserRole = currentMember?.role || '';
+        }
+    }
 
     async function checkInvitationStatus() {
         if (!$auth.isAuthenticated) return;
@@ -215,17 +237,15 @@
         memberToRemove = null;
     }
 
-    $: isMember = members.some(m => m.id === $auth.user?.id);
-
     // Check invitation status on mount and when auth state changes
     $: {
-        if ($auth.isAuthenticated && !isMember) {
+        if ($auth.isAuthenticated && !isMember()) {
             checkInvitationStatus();
         }
     }
 
     onMount(() => {
-        if ($auth.isAuthenticated && !isMember) {
+        if ($auth.isAuthenticated && !isMember()) {
             checkInvitationStatus();
         }
     });
@@ -235,11 +255,11 @@
     <div class="space-y-4">
         <div class="flex justify-between items-center">
             <h3 class="text-xl font-semibold">Members ({members.length})</h3>
-            {#if isCreator}
+            {#if hasAdminPrivileges()}
                 <Button color="blue" on:click={() => showInviteModal = true}>
                     Invite Member
                 </Button>
-            {:else if !isMember}
+            {:else if !isMember()}
                 {#if hasInvitation}
                     <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                         <Button 
@@ -275,19 +295,28 @@
             </div>
         {/if}
 
-        {#if isMember || isCreator}
+        {#if isMember() || isCreator}
             <div class="space-y-2">
                 {#if Array.isArray(members) && members.length > 0}
                     {#each members as member}
                         <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center p-2 bg-gray-50 dark:bg-gray-800 rounded gap-2">
                             <div>
-                                <p class="font-medium">{member.username}</p>
-                                <p class="text-sm text-gray-500">{member.role}</p>
+                                <p class="username username-{member.role.toLowerCase()} flex items-center gap-2">
+                                    {member.username}
+                                    {#if member.role === 'creator'}
+                                        <svg class="w-4 h-4 text-purple-500" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M10 2a1 1 0 0 1 .78.375l2.143 2.5a1 1 0 0 0 .672.3H16a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7.176a2 2 0 0 1 2-2h2.405a1 1 0 0 0 .672-.3L9.22 2.375A1 1 0 0 1 10 2z"/>
+                                        </svg>
+                                    {/if}
+                                </p>
+                                <span class="role-badge {`role-${member.role.toLowerCase()}`}">
+                                    {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
+                                </span>
                             </div>
                             {#if isCreator && member.id !== $auth.user?.id}
                                 <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                                     <select 
-                                        class="text-sm border rounded p-1"
+                                        class="text-sm border rounded p-1 bg-white dark:bg-gray-700"
                                         value={member.role}
                                         on:change={(e) => updateMemberRole(member.id, e.target?.value)}
                                     >
@@ -430,5 +459,45 @@
         :global(.modal-content) {
             max-width: 28rem;
         }
+    }
+
+    .username {
+        @apply font-medium;
+    }
+
+    .username-creator {
+        @apply text-purple-700 dark:text-purple-300 font-bold;
+    }
+
+    .username-admin {
+        @apply text-blue-700 dark:text-blue-300 font-semibold;
+    }
+
+    .username-moderator {
+        @apply text-green-700 dark:text-green-300;
+    }
+
+    .username-member {
+        @apply text-gray-700 dark:text-gray-300;
+    }
+
+    .role-badge {
+        @apply text-xs font-semibold px-2.5 py-0.5 rounded-full;
+    }
+
+    .role-creator {
+        @apply bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300;
+    }
+
+    .role-admin {
+        @apply bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300;
+    }
+
+    .role-member {
+        @apply bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300;
+    }
+
+    .role-moderator {
+        @apply bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300;
     }
 </style> 

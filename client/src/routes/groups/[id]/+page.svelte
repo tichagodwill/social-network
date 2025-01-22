@@ -13,6 +13,7 @@
     let group = data?.group;
     let members = data?.members || [];
     let error = data?.error || '';
+    let groupId = group?.id;
     
     $: isCreator = $auth.user && group ? group.creator_id === $auth.user.id : false;
     $: isMember = $auth.user && members ? members.some((m: any) => m.id === $auth.user?.id) : false;
@@ -29,6 +30,7 @@
     };
 
     $: canViewContent = isCreator || isMember;
+    $: groupId = group?.id;
 
     onMount(() => {
         loading = false;
@@ -77,6 +79,12 @@
             error = err instanceof Error ? err.message : 'Failed to delete group';
         }
     }
+
+    function hasAdminPrivileges(): boolean {
+        if (!$auth.user || !group) return false;
+        const currentMember = members.find(m => m.id === $auth.user.id);
+        return isCreator || (currentMember?.role === 'admin');
+    }
 </script>
 
 <div class="max-w-4xl mx-auto p-4 space-y-8">
@@ -123,16 +131,16 @@
 
         <div class="grid md:grid-cols-2 gap-8">
             <div class="space-y-8">
-                {#if isCreator}
+                {#if hasAdminPrivileges()}
                     <GroupJoinRequests 
-                        groupId={group.id}
+                        {groupId}
                         {isCreator}
                         {isMember}
                         bind:members
                     />
                 {/if}
                 <GroupMembership 
-                    groupId={group.id}
+                    {groupId}
                     {members}
                     {isCreator}
                 />

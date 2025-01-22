@@ -1,6 +1,7 @@
 <script lang="ts">
     import { Button, Card } from 'flowbite-svelte';
     import { onMount } from 'svelte';
+    import { auth } from '$lib/stores/auth';
 
     export let groupId: number;
     export let isCreator: boolean = false;
@@ -12,7 +13,16 @@
     let success = '';
     let loading = true;
 
+    // Function to check if current user is admin or creator
+    function hasAdminPrivileges(): boolean {
+        if (!$auth.user) return false;
+        const currentMember = members.find(m => m.id === $auth.user.id);
+        return isCreator || (currentMember?.role === 'admin');
+    }
+
     async function loadPendingRequests() {
+        if (!hasAdminPrivileges()) return;
+
         try {
             const response = await fetch(`http://localhost:8080/groups/${groupId}/requests`, {
                 credentials: 'include'
@@ -37,6 +47,8 @@
     }
 
     async function handleRequest(requestId: number, action: 'accept' | 'reject') {
+        if (!hasAdminPrivileges()) return;
+
         try {
             const response = await fetch(`http://localhost:8080/groups/invitation/${requestId}/${action}`, {
                 method: 'POST',
@@ -70,9 +82,17 @@
         }
     }
 
+    // Watch for changes in members or auth that might affect admin status
+    $: {
+        if ($auth.user && members.length > 0) {
+            loadPendingRequests();
+        }
+    }
+
     onMount(loadPendingRequests);
 
-    $: showCard = isCreator && requests.length > 0;
+    // Show card if user has admin privileges and there are requests
+    $: showCard = hasAdminPrivileges() && requests.length > 0;
 </script>
 
 <div class="space-y-4">
@@ -97,7 +117,7 @@
                     <div class="text-center py-4">
                         <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mx-auto"></div>
                     </div>
-                {:else if !requests || requests.length === 0}
+                {:else if requests.length === 0}
                     <p class="text-gray-500">No pending requests</p>
                 {:else}
                     <div class="space-y-2">
@@ -109,24 +129,22 @@
                                         Requested {new Date(request.createdAt).toLocaleDateString()}
                                     </p>
                                 </div>
-                                {#if isCreator}
-                                    <div class="flex space-x-2">
-                                        <Button 
-                                            size="xs" 
-                                            color="green"
-                                            on:click={() => handleRequest(request.id, 'accept')}
-                                        >
-                                            Accept
-                                        </Button>
-                                        <Button 
-                                            size="xs" 
-                                            color="red"
-                                            on:click={() => handleRequest(request.id, 'reject')}
-                                        >
-                                            Reject
-                                        </Button>
-                                    </div>
-                                {/if}
+                                <div class="flex space-x-2">
+                                    <Button 
+                                        size="xs" 
+                                        color="green"
+                                        on:click={() => handleRequest(request.id, 'accept')}
+                                    >
+                                        Accept
+                                    </Button>
+                                    <Button 
+                                        size="xs" 
+                                        color="red"
+                                        on:click={() => handleRequest(request.id, 'reject')}
+                                    >
+                                        Reject
+                                    </Button>
+                                </div>
                             </div>
                         {/each}
                     </div>
