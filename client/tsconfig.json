@@ -10,7 +10,9 @@
 		"sourceMap": true,
 		"strict": true,
 		"moduleResolution": "bundler",
-		"types": ["svelte", "@sveltejs/kit"]
+		"types": ["svelte", "@sveltejs/kit","node"],
+		"target": "es2022",
+		"module": "es2022"
 	},
 	"include": [
 		"src/**/*.d.ts",

@@ -114,27 +114,25 @@ func GetPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-        // Check the database connection before running the query.
-    if sqlite.DB == nil {
-        log.Printf("Error: Database is not initialized")
-        w.WriteHeader(http.StatusInternalServerError)
-        json.NewEncoder(w).Encode(map[string]string{
-            "error": "Database not initialized",
-        })
-        return
-    }
-    err = sqlite.DB.Ping() // Check the connection
-    if err != nil {
-        log.Printf("Error pinging database: %v", err)
-        w.WriteHeader(http.StatusInternalServerError)
-        json.NewEncoder(w).Encode(map[string]string{
-            "error": "Database connection failed",
-        })
-        return
-    }
-    log.Printf("UserID: %v", userID)
-
-
+	// Check the database connection before running the query.
+	if sqlite.DB == nil {
+		log.Printf("Error: Database is not initialized")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Database not initialized",
+		})
+		return
+	}
+	err = sqlite.DB.Ping() // Check the connection
+	if err != nil {
+		log.Printf("Error pinging database: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Database connection failed",
+		})
+		return
+	}
+	log.Printf("UserID: %v", userID)
 
 	// Fetch posts from the database
 	rows, err := sqlite.DB.Query(`
@@ -170,6 +168,27 @@ func GetPosts(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Error scanning post: %v", err)
 			return
 		}
+		// Fetch the author's username from the database
+		var authorName string
+		var authorAvatar string
+		err = sqlite.DB.QueryRow(`
+		SELECT username, avatar
+		FROM users 
+		WHERE id = ?`,
+			post.Author).Scan(&authorName, &authorAvatar)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "Failed to fetch author's username",
+			})
+			log.Printf("Error fetching author's username: %v", err)
+			return
+		}
+
+		post.AuthorName = authorName
+		post.AuthorAvatar = authorAvatar
+
+
 
 		// Now set the GroupID properly (can be nil if the database value is NULL)
 		if groupID != nil {

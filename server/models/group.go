@@ -47,25 +47,3 @@ type GroupLeave struct {
     GroupID uint `json:"group_id"`
     UserID  uint `json:"user_id"`
 }
-
-type GroupPost struct {
-    ID        int       `json:"id"`
-    GroupID   int       `json:"group_id"`
-    AuthorID  int       `json:"author_id"`
-    Author    string    `json:"author"`
-    Title     string    `json:"title"`
-    Content   string    `json:"content"`
-    CreatedAt time.Time `json:"created_at"`
-    UpdatedAt time.Time `json:"updated_at"`
-    Comments  []GroupPostComment `json:"comments,omitempty"`
-}
-
-type GroupPostComment struct {
-    ID        int       `json:"id"`
-    PostID    int       `json:"post_id"`
-    AuthorID  int       `json:"author_id"`
-    Author    string    `json:"author"`
-    Content   string    `json:"content"`
-    CreatedAt time.Time `json:"created_at"`
-    UpdatedAt time.Time `json:"updated_at"`
-}
