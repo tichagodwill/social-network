@@ -8,6 +8,15 @@ export interface Post {
     authorName: string;
     created_at?: string;
     groupId?: number;
+
+    // Additional helpful fields
+    authorAvatar?: string;
+    isEdited?: boolean;
+    lastEditedAt?: string;
+    mediaType?: 'image' | 'gif';
+    likes?: number;
+    comments?: number;
+    privacyLabel?: 'Public' | 'Private' | 'Almost Private';
 }
 
 export interface User {

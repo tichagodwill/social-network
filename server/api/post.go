@@ -173,7 +173,7 @@ func GetPosts(w http.ResponseWriter, r *http.Request) {
 		var authorAvatar string
 		err = sqlite.DB.QueryRow(`
 		SELECT username, avatar
-		FROM users 
+		FROM users
 		WHERE id = ?`,
 			post.Author).Scan(&authorName, &authorAvatar)
 		if err != nil {
