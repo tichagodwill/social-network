@@ -3,13 +3,81 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
+	"social-network/util"
 	"strconv"
 
 	"social-network/models"
 	"social-network/pkg/db/sqlite"
 )
+
+type Profile struct {
+	Image       string `json:"image"`
+	Description string `json:"description"`
+	Privacy     bool   `json:"privacy"`
+}
+
+func UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Get current user from session
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Unauthorized",
+		})
+		return
+	}
+
+	// Get user ID
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to get user information",
+		})
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read request body", http.StatusInternalServerError)
+		return
+	}
+	defer r.Body.Close()
+
+	// Parse the JSON data into the Profile struct
+	var profile Profile
+	err = json.Unmarshal(body, &profile)
+	if err != nil {
+		http.Error(w, "Failed to parse JSON", http.StatusBadRequest)
+		return
+	}
+
+	// Insert the post into the database
+	result, err := sqlite.DB.Exec(
+		"update users set avatar = ?, about_me = ?, is_private = ? where id = ?",
+		profile.Image, profile.Description, profile.Privacy, userID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to create post",
+		})
+		log.Printf("Error creating post: %v", err)
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		http.Error(w, "Follow request not found or already processed", http.StatusBadRequest)
+		return
+	}
+
+}
 
 func UserProfile(w http.ResponseWriter, r *http.Request) {
 	userIdString := r.PathValue("userID")

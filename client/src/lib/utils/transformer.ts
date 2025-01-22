@@ -10,7 +10,7 @@ export function transformUser(data: any): User {
     username: data.username,
     aboutMe: data.about_me,
     createdAt: data.created_at,
-    isPrivate: data.IsPrivate,
+    isPrivate: data.is_private,
     avatar: data.avatar
   };
 }

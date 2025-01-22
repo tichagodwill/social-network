@@ -7,7 +7,6 @@ export const load: PageLoad = async ({ params, fetch }) => {
         const response = await fetch(`http://localhost:8080/user/${params.id}`, {
             credentials: 'include'
         });
-        
         if (response.ok) {
             const userData = await response.json();
             const user: User = transformUser(userData);
@@ -16,7 +15,6 @@ export const load: PageLoad = async ({ params, fetch }) => {
                 params
             };
         }
-        
         return {
             user: null,
             params

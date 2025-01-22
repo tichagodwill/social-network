@@ -188,8 +188,6 @@ func GetPosts(w http.ResponseWriter, r *http.Request) {
 		post.AuthorName = authorName
 		post.AuthorAvatar = authorAvatar
 
-
-
 		// Now set the GroupID properly (can be nil if the database value is NULL)
 		if groupID != nil {
 			post.GroupID = *groupID
