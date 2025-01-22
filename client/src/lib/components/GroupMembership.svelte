@@ -47,6 +47,7 @@
         try {
             if (!inviteIdentifier.trim()) {
                 modalError = `Please enter a valid ${inviteType}`;
+                loading = false;
                 return;
             }
 
@@ -58,37 +59,18 @@
                 credentials: 'include',
                 body: JSON.stringify({
                     groupId: groupId,
-                    identifier: inviteIdentifier,
+                    identifier: inviteIdentifier.trim(),
                     identifierType: inviteType
                 })
             });
 
-            const data = await response.json();
-
             if (!response.ok) {
-                switch (response.status) {
-                    case 404:
-                        modalError = `No user found with this ${inviteType}`;
-                        break;
-                    case 400:
-                        if (data.error.includes('already a member')) {
-                            modalError = 'This user is already a member of the group';
-                        } else if (data.error.includes('pending invitation')) {
-                            modalError = 'This user already has a pending invitation';
-                        } else {
-                            modalError = data.error || 'Invalid invitation request';
-                        }
-                        break;
-                    case 403:
-                        modalError = 'You do not have permission to invite members';
-                        break;
-                    default:
-                        modalError = data.error || 'Failed to send invitation';
-                }
-                return;
+                const data = await response.json();
+                throw new Error(data.error || 'Failed to send invitation');
             }
 
-            success = 'Invitation sent successfully';
+            const data = await response.json();
+            success = data.message;
             inviteIdentifier = '';
             showInviteModal = false;
             
@@ -97,6 +79,7 @@
             }, 3000);
         } catch (err) {
             modalError = err instanceof Error ? err.message : 'Failed to send invitation';
+            console.error('Failed to send invitation:', err);
         } finally {
             loading = false;
         }
@@ -253,7 +236,9 @@
         <div class="flex justify-between items-center">
             <h3 class="text-xl font-semibold">Members ({members.length})</h3>
             {#if isCreator}
-                <Button on:click={() => showInviteModal = true}>Invite Members</Button>
+                <Button color="blue" on:click={() => showInviteModal = true}>
+                    Invite Member
+                </Button>
             {:else if !isMember}
                 {#if hasInvitation}
                     <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
@@ -332,74 +317,61 @@
     </div>
 </Card>
 
-<!-- Invite Modal with responsive design -->
-<Modal 
-    bind:open={showInviteModal} 
-    size="md" 
-    class="w-full max-w-md mx-auto"
->
-    <div class="space-y-6">
-        <h3 class="text-xl font-medium">Invite Member</h3>
+<!-- Invite Modal -->
+<Modal bind:open={showInviteModal} size="xs" autoclose={false}>
+    <div class="space-y-4">
+        <h3 class="text-xl font-medium">Invite New Member</h3>
         
         {#if modalError}
-            <div class="p-4 text-red-800 bg-red-100 rounded-lg">
+            <div class="p-4 text-red-800 bg-red-100 rounded-lg text-sm">
                 {modalError}
             </div>
         {/if}
 
-        <form on:submit|preventDefault={inviteMember} class="space-y-4">
-            <div>
-                <Label>Invite by</Label>
-                <div class="flex space-x-4 mb-4">
-                    <label class="flex items-center">
-                        <input
-                            type="radio"
-                            bind:group={inviteType}
-                            value="email"
-                            class="mr-2"
-                        />
-                        Email
-                    </label>
-                    <label class="flex items-center">
-                        <input
-                            type="radio"
-                            bind:group={inviteType}
-                            value="username"
-                            class="mr-2"
-                        />
-                        Username
-                    </label>
-                </div>
-            </div>
-            <div>
-                <Label for="identifier">
-                    {inviteType === 'email' ? "Member's Email" : "Member's Username"}
-                </Label>
-                <Input
-                    id="identifier"
-                    type={inviteType === 'email' ? 'email' : 'text'}
-                    bind:value={inviteIdentifier}
-                    required
-                    placeholder={`Enter member's ${inviteType}`}
-                    disabled={loading}
-                />
-            </div>
-            <div class="flex justify-end space-x-2">
+        <div class="space-y-2">
+            <Label>Invite by:</Label>
+            <div class="flex space-x-2">
                 <Button 
-                    color="alternative" 
-                    on:click={closeModal}
-                    disabled={loading}
+                    color={inviteType === 'email' ? 'blue' : 'light'}
+                    on:click={() => inviteType = 'email'}
                 >
-                    Cancel
+                    Email
                 </Button>
                 <Button 
-                    type="submit"
-                    disabled={loading}
+                    color={inviteType === 'username' ? 'blue' : 'light'}
+                    on:click={() => inviteType = 'username'}
                 >
-                    {loading ? 'Sending...' : 'Send Invitation'}
+                    Username
                 </Button>
             </div>
-        </form>
+        </div>
+
+        <div>
+            <Label for="identifier">{inviteType === 'email' ? 'Email' : 'Username'}</Label>
+            <Input
+                id="identifier"
+                type={inviteType === 'email' ? 'email' : 'text'}
+                placeholder={`Enter ${inviteType}`}
+                bind:value={inviteIdentifier}
+            />
+        </div>
+
+        <div class="flex justify-end space-x-2">
+            <Button color="light" on:click={() => {
+                showInviteModal = false;
+                modalError = '';
+                inviteIdentifier = '';
+            }}>
+                Cancel
+            </Button>
+            <Button 
+                color="blue"
+                disabled={loading || !inviteIdentifier.trim()}
+                on:click={inviteMember}
+            >
+                {loading ? 'Sending...' : 'Send Invitation'}
+            </Button>
+        </div>
     </div>
 </Modal>
 

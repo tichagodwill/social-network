@@ -128,6 +128,7 @@
                         groupId={group.id}
                         {isCreator}
                         {isMember}
+                        bind:members
                     />
                 {/if}
                 <GroupMembership 
