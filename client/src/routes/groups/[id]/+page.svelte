@@ -5,6 +5,7 @@
     import GroupMembership from '$lib/components/GroupMembership.svelte';
     import GroupEvents from '$lib/components/GroupEvents.svelte';
     import GroupJoinRequests from '$lib/components/GroupJoinRequests.svelte';
+    import GroupPosts from "$lib/components/GroupPosts.svelte";
 
     export let data;
 
@@ -117,6 +118,7 @@
                 />
             </div>
             {#if canViewContent}
+                <GroupPosts groupId={group.id} />
                 <GroupEvents groupId={group.id} />
             {:else}
                 <Card>
