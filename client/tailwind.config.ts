@@ -1,5 +1,6 @@
 import type { Config } from 'tailwindcss';
 import flowbitePlugin from 'flowbite/plugin'
+import typography from '@tailwindcss/typography';
 
 export default {
 	content: ['./src/**/*.{html,js,svelte,ts}', './node_modules/flowbite-svelte/**/*.{html,js,svelte,ts}'],
@@ -26,5 +27,5 @@ export default {
 			}
 		}
 	},
-	plugins: [flowbitePlugin]
+	plugins: [flowbitePlugin, typography]
 } as Config;
