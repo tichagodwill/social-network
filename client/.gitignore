@@ -27,3 +27,5 @@ vite.config.ts.timestamp-*
 
 # svelte-kit
 .svelte-kit/
+
+../server/social-network.db
