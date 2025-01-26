@@ -13,22 +13,58 @@
     let hasPendingRequest = false;
     let isLoading = false;
     let errorMessage = '';
-    let showSettingsModal = false; // Controls the visibility of the settings modal
-    let newProfilePhoto: string = data.user?.avatar ?? ""; // Stores the new profile photo (base64)
-    let privacySetting: boolean = data.user?.isPrivate === true; // Privacy setting (true = private, false = public)
-    let userDescription: string = data.user?.aboutMe || ''; // Stores the user's description
-    let userPosts: Array<any> = []; // Stores the user's posts
-    let showExpandedImage = false; // Controls the visibility of the expanded image modal
-    let expandedImageSrc = ''; // Stores the source of the expanded image
+    let showSettingsModal = false;
+    let newProfilePhoto: string = data.user?.avatar ?? "";
+    let privacySetting: boolean = data.user?.isPrivate === true;
+    let userDescription: string = data.user?.aboutMe || '';
+    let userPosts: Array<any> = [];
+    let showExpandedImage = false;
+    let expandedImageSrc = '';
 
     $: if ($auth.user) {
         isOwnProfile = $auth.user.id === userId;
     }
 
+    // Function to load follow status (whether the user is following, has a pending request, or not)
+    async function loadFollowStatus() {
+       if(isOwnProfile){
+           return
+       }
+       debugger
+        try {
+            const response = await fetch(`http://localhost:8080/user/follow-status`, {
+                method: 'POST', // Use POST method
+                credentials: 'include', // Include cookies for authentication
+                headers: {
+                    'Content-Type': 'application/json', // Specify the content type
+                },
+                body: JSON.stringify({
+                    // Include any required data in the request body
+                    followedId: userId, // Replace with the actual current user's ID
+                }),
+            });
+
+            if (response.ok) {
+                const followStatus = await response.json();
+                isFollowing = followStatus.isFollowing;
+                hasPendingRequest = followStatus.hasPendingRequest;
+            } else {
+                console.error('Failed to fetch follow status');
+            }
+        } catch (error) {
+            console.error('Failed to fetch follow status:', error);
+        }
+    }
     onMount(async () => {
         try {
+            // Load follow status
+            await loadFollowStatus();
+
+            // Load followers and following
             await followers.loadFollowers(userId);
-            await loadUserPosts(); // Load user posts when the component mounts
+
+            // Load user posts
+            await loadUserPosts();
         } catch (error) {
             console.error('Failed to load data:', error);
         }
@@ -78,9 +114,10 @@
         if (fileInput) fileInput.value = '';
     }
 
+    // Function to show settings modal
     function showSettings() {
-        newProfilePhoto = data.user?.avatar ?? ""; // Stores the new profile photo (base64)
-        privacySetting = data.user?.isPrivate === true; // Privacy setting (true = private, false = public)
+        newProfilePhoto = data.user?.avatar ?? "";
+        privacySetting = data.user?.isPrivate === true;
         userDescription = data.user?.aboutMe || '';
         showSettingsModal = true;
     }
@@ -94,7 +131,7 @@
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    image: imageToSend, // Send old image if no new image is selected, or empty string if cleared
+                    image: imageToSend,
                     description: userDescription,
                     privacy: privacySetting
                 }),
@@ -136,20 +173,20 @@
             <!-- Avatar -->
             <div class="relative">
                 <Avatar
-                        src={data.user?.avatar || generateAvatar(data.user.username)}
-                        size="xl"
-                        alt="User Avatar"
-                        on:click={() => {
+                  src={data.user?.avatar || generateAvatar(data.user?.username)}
+                  size="xl"
+                  alt="User Avatar"
+                  on:click={() => {
                         expandedImageSrc = data.user?.avatar || generateAvatar(data.user?.username);
                         showExpandedImage = true;
                     }}
-                        class="cursor-pointer hover:opacity-80 transition-opacity border-4 border-white shadow-lg"
+                  class="cursor-pointer hover:opacity-80 transition-opacity border-4 border-white shadow-lg"
                 />
                 {#if isOwnProfile}
                     <button
-                            class="absolute bottom-0 right-0 p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition"
-                            on:click={() => (showSettings())}
-                            aria-label="Settings"
+                      class="absolute bottom-0 right-0 p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition"
+                      on:click={() => (showSettings())}
+                      aria-label="Settings"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z" />
@@ -196,11 +233,11 @@
             <!-- Follow Button -->
             {#if !isOwnProfile}
                 <Button
-                        class="mt-6 md:mt-0 transition-transform hover:scale-105"
-                        color={isFollowing ? 'alternative' : 'primary'}
-                        disabled={hasPendingRequest || isLoading}
-                        on:click={handleFollow}
-                        aria-label="Follow/Unfollow Button"
+                  class="mt-6 md:mt-0 transition-transform hover:scale-105"
+                  color={isFollowing ? 'alternative' : 'primary'}
+                  disabled={hasPendingRequest || isLoading}
+                  on:click={handleFollow}
+                  aria-label="Follow/Unfollow Button"
                 >
                     {#if isLoading}
                         <span class="flex items-center">
@@ -230,7 +267,7 @@
         <TabItem title="Followers" active>
             <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
                 <h3 class="text-2xl font-semibold mb-4">Followers</h3>
-                {#if $followers.followers.length > 0}
+                {#if $followers.followers && $followers.followers.length > 0}
                     <div class="space-y-4">
                         {#each $followers.followers as follower}
                             <div class="flex items-center space-x-4 hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
@@ -253,7 +290,7 @@
         <TabItem title="Following">
             <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
                 <h3 class="text-2xl font-semibold mb-4">Following</h3>
-                {#if $followers.following.length > 0}
+                {#if $followers.following && $followers.following.length > 0}
                     <div class="space-y-4">
                         {#each $followers.following as following}
                             <div class="flex items-center space-x-4 hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
@@ -277,7 +314,7 @@
         <TabItem title="My Posts">
             <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
                 <h3 class="text-2xl font-semibold mb-4">My Posts</h3>
-                {#if userPosts.length > 0}
+                {#if userPosts && userPosts.length > 0}
                     <div class="space-y-4">
                         {#each userPosts as post}
                             <div class="p-4 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -285,10 +322,10 @@
                                 <p class="text-sm text-gray-600 dark:text-gray-400">{post.content}</p>
                                 {#if post.media}
                                     <img
-                                            src={post.media}
-                                            alt="Post media"
-                                            class="mt-4 rounded-lg max-h-96 w-auto object-cover shadow-md cursor-pointer hover:opacity-80 transition-opacity"
-                                            on:click={() => {
+                                      src={post.media}
+                                      alt="Post media"
+                                      class="mt-4 rounded-lg max-h-96 w-auto object-cover shadow-md cursor-pointer hover:opacity-80 transition-opacity"
+                                      on:click={() => {
                                             expandedImageSrc = post.media;
                                             showExpandedImage = true;
                                         }}
@@ -303,7 +340,7 @@
             </div>
         </TabItem>
 
-        {#if isOwnProfile && $followers.requests.length > 0}
+        {#if isOwnProfile && $followers.requests && $followers.requests.length > 0}
             <TabItem title="Follow Requests">
                 <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
                     <h3 class="text-2xl font-semibold mb-4">Follow Requests</h3>
@@ -315,18 +352,18 @@
                             </div>
                             <div class="space-x-2">
                                 <Button
-                                        size="sm"
-                                        color="primary"
-                                        on:click={() => followers.handleRequest(request.id, true)}
-                                        aria-label="Accept Request Button"
+                                  size="sm"
+                                  color="primary"
+                                  on:click={() => followers.handleRequest(request.id, true)}
+                                  aria-label="Accept Request Button"
                                 >
                                     Accept
                                 </Button>
                                 <Button
-                                        size="sm"
-                                        color="alternative"
-                                        on:click={() => followers.handleRequest(request.id, false)}
-                                        aria-label="Decline Request Button"
+                                  size="sm"
+                                  color="alternative"
+                                  on:click={() => followers.handleRequest(request.id, false)}
+                                  aria-label="Decline Request Button"
                                 >
                                     Decline
                                 </Button>
@@ -346,11 +383,11 @@
                 <label class="block text-sm font-medium mb-2">Profile Photo</label>
                 <div class="relative">
                     <input
-                            id="profile-photo"
-                            type="file"
-                            accept="image/*"
-                            on:change={handleFileUpload}
-                            class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                      id="profile-photo"
+                      type="file"
+                      accept="image/*"
+                      on:change={handleFileUpload}
+                      class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     />
                     <div class="w-full px-4 py-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all flex items-center justify-between bg-white hover:bg-gray-50">
                         <span class="text-gray-500">
@@ -366,10 +403,10 @@
                 {#if newProfilePhoto}
                     <div class="mt-4">
                         <img
-                                src={newProfilePhoto}
-                                alt="Profile Photo"
-                                class="w-20 h-20 rounded-full cursor-pointer hover:opacity-80 transition-opacity"
-                                on:click={() => {
+                          src={newProfilePhoto}
+                          alt="Profile Photo"
+                          class="w-20 h-20 rounded-full cursor-pointer hover:opacity-80 transition-opacity"
+                          on:click={() => {
                                 expandedImageSrc = newProfilePhoto;
                                 showExpandedImage = true;
                             }}
@@ -385,10 +422,10 @@
             <div>
                 <label class="block text-sm font-medium mb-2">Description</label>
                 <Input
-                        type="text"
-                        bind:value={userDescription}
-                        placeholder="Enter your description"
-                        class="w-full"
+                  type="text"
+                  bind:value={userDescription}
+                  placeholder="Enter your description"
+                  class="w-full"
                 />
             </div>
 
@@ -415,14 +452,14 @@
     <!-- Expanded Image Modal -->
     {#if showExpandedImage}
         <div
-                class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
-                on:click={() => showExpandedImage = false}
+          class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+          on:click={() => showExpandedImage = false}
         >
             <div class="max-w-4xl w-full">
                 <img
-                        src={expandedImageSrc}
-                        alt="Expanded Image"
-                        class="rounded-lg max-h-[90vh] w-auto object-contain"
+                  src={expandedImageSrc}
+                  alt="Expanded Image"
+                  class="rounded-lg max-h-[90vh] w-auto object-contain"
                 />
             </div>
         </div>

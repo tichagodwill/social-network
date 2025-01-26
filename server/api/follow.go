@@ -124,7 +124,7 @@ func FollowUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{
-		"status": initialStatus,
+		"status":  initialStatus,
 		"message": "Follow request processed successfully",
 	})
 }
@@ -173,6 +173,44 @@ func UnfollowUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "Successfully unfollowed user",
 	})
+}
+
+func FollowStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Get the current user's username from the session
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Get the current user's ID from the database
+	var currentUserID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&currentUserID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to get user information",
+		})
+		return
+	}
+
+	//// Check if the current user is following the specified user
+	//var isFollowing bool
+	//err = sqlite.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM followers WHERE follower_id = ? AND following_id = ?)", currentUserID, userID).Scan(&isFollowing)
+	//if err != nil {
+	//	w.WriteHeader(http.StatusInternalServerError)
+	//	json.NewEncoder(w).Encode(map[string]string{
+	//		"error": "Failed to check follow status",
+	//	})
+	//	return
+	//}
+	//
+	//// Return the follow status as a JSON response
+	//json.NewEncoder(w).Encode(map[string]bool{
+	//	"isFollowing": isFollowing,
+	//})
 }
 
 // HandleFollowRequest handles accepting or rejecting follow requests
@@ -283,7 +321,7 @@ func GetFollowers(w http.ResponseWriter, r *http.Request) {
 			u.avatar
 		FROM followers f
 		JOIN users u ON f.follower_id = u.id
-		WHERE f.followed_id = ? AND f.status IN ('accepted', 'pending')
+		WHERE f.followed_id = ? AND f.status IN ('accepted')
 	`, userID)
 	if err != nil {
 		log.Printf("Database error: %v", err)
