@@ -35,9 +35,8 @@ function createFollowersStore() {
                 console.error('Failed to load followers:', error);
             }
         },
-        followUser: async (userId: number, loggedInUser: number) => {
+        followUser: async (userId: number) => {
             try {
-                debugger;
                 const response = await fetch('http://localhost:8080/follow', {
                     method: 'POST',
                     headers: {
@@ -45,8 +44,7 @@ function createFollowersStore() {
                     },
                     credentials: 'include',
                     body: JSON.stringify({
-                        followerId: loggedInUser, // Current user's ID
-                        followedId: userId,       // User to follow
+                        userToFollowId: userId,       // User to follow
                     }),
                 });
                 if (response.ok) {
