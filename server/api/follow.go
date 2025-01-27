@@ -196,21 +196,45 @@ func FollowStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	//// Check if the current user is following the specified user
-	//var isFollowing bool
-	//err = sqlite.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM followers WHERE follower_id = ? AND following_id = ?)", currentUserID, userID).Scan(&isFollowing)
-	//if err != nil {
-	//	w.WriteHeader(http.StatusInternalServerError)
-	//	json.NewEncoder(w).Encode(map[string]string{
-	//		"error": "Failed to check follow status",
-	//	})
-	//	return
-	//}
-	//
-	//// Return the follow status as a JSON response
-	//json.NewEncoder(w).Encode(map[string]bool{
-	//	"isFollowing": isFollowing,
-	//})
+	//get userid from body
+	var req struct {
+		FollowedId int `json:"followedId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// Check if the current user is following the specified user
+	var isFollowing bool
+	var pendeingRequest bool
+
+	err = sqlite.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM followers WHERE follower_id = ? AND followed_id = ? AND status = 'accepted')",
+		currentUserID, req.FollowedId).Scan(&isFollowing)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to check follow status",
+		})
+		return
+	}
+
+	err = sqlite.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM followers WHERE follower_id = ? AND followed_id = ? AND status = 'pending')",
+		currentUserID, req.FollowedId).Scan(&pendeingRequest)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to check follow status",
+		})
+		return
+	}
+
+	//return the status
+	json.NewEncoder(w).Encode(map[string]bool{
+		"following":         isFollowing,
+		"hasPendingRequest": pendeingRequest,
+	})
+
 }
 
 // HandleFollowRequest handles accepting or rejecting follow requests

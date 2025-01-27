@@ -4,6 +4,7 @@
     import { auth } from '$lib/stores/auth';
     import { Button, Avatar, Badge, Tabs, TabItem, Modal, Input, Radio } from 'flowbite-svelte';
     import type { PageData } from './$types';
+    import {error} from "@sveltejs/kit";
 
     export let data: PageData;
     const userId = parseInt(data.params.id);
@@ -30,7 +31,6 @@
        if(isOwnProfile){
            return
        }
-       debugger
         try {
             const response = await fetch(`http://localhost:8080/user/follow-status`, {
                 method: 'POST', // Use POST method
@@ -125,6 +125,9 @@
     // Function to update privacy settings and profile photo
     async function updateSettings() {
         try {
+            if(!isOwnProfile){
+                return
+            }
             const imageToSend = newProfilePhoto === null ? data.user?.avatar : newProfilePhoto || '';
 
             const response = await fetch(`http://localhost:8080/updateProfile`, {
@@ -158,7 +161,8 @@
             if (response.ok) {
                 userPosts = await response.json();
             } else {
-                console.error('Failed to fetch posts');
+                //send to 404 page
+                throw error(404, 'User not found');
             }
         } catch (error) {
             console.error('Failed to fetch posts:', error);
@@ -166,7 +170,7 @@
     }
 </script>
 
-<div class="container mx-auto px-4 py-8">
+<div class="container mx-auto px-4 py-24">
     <!-- Profile Header -->
     <div class="rounded-lg shadow-lg p-8 bg-gradient-to-r from-[rgba(239,86,47,1)] to-[rgba(239,86,47,0.8)] text-white">
         <div class="flex flex-col md:flex-row items-center md:items-start md:space-x-8">
@@ -218,16 +222,24 @@
                         </div>
                     </div>
                 </div>
+                {#if userDescription}
                 <p class="text-gray-200 dark:text-gray-300 mt-2">{userDescription}</p>
+                {/if}
+                {#if data.user?.firstName || data.user?.lastName}
                 <p class="text-gray-200 dark:text-gray-300 mt-2">
                     {data.user?.firstName} {data.user?.lastName}
                 </p>
-                <p class="text-gray-200 dark:text-gray-300 mt-2">
-                    {data.user?.email}
-                </p>
+                {/if}
+                {#if data.user?.email}
+                    <p class="text-gray-200 dark:text-gray-300 mt-2">
+                        {data.user?.email}
+                    </p>
+                {/if}
+                {#if data.user?.dateOfBirth}
                 <p class="text-gray-200 dark:text-gray-300 mt-2">
                     Date of Birth: {data.user?.dateOfBirth}
                 </p>
+                {/if}
             </div>
 
             <!-- Follow Button -->

@@ -6,11 +6,10 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"social-network/util"
-	"strconv"
-
 	"social-network/models"
 	"social-network/pkg/db/sqlite"
+	"social-network/util"
+	"strconv"
 )
 
 type Profile struct {
@@ -80,13 +79,60 @@ func UpdateProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func UserProfile(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	userIdString := r.PathValue("userID")
+
+	// Get current user from session
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Unauthorized",
+		})
+		return
+	}
+
+	// Get user ID
+	var currentUserID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&currentUserID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to get user information",
+		})
+		return
+	}
 
 	// Convert id to number
 	userID, err := strconv.Atoi(userIdString)
 	if err != nil {
 		http.Error(w, "Error processing user ID", http.StatusBadRequest)
 		return
+	}
+
+	var canView bool = true
+	if currentUserID != userID {
+		// Check if the user is private
+		var isPrivate bool
+		err = sqlite.DB.QueryRow("SELECT is_private FROM users WHERE id = ?", userID).Scan(&isPrivate)
+		if err != nil {
+			http.Error(w, "Error getting user privacy settings", http.StatusInternalServerError)
+			return
+		}
+		//check if currentUserID follows the user
+		if isPrivate {
+
+			// Check if the user is following the user by the status of the follow request
+			var followStatus string
+			err = sqlite.DB.QueryRow("SELECT status FROM follows WHERE follower_id = ? AND followee_id = ?", currentUserID, userID).Scan(&followStatus)
+			if err != nil {
+				canView = false
+			}
+			if followStatus != "accepted" {
+				canView = false
+			}
+		}
 	}
 
 	var userInfo models.User
@@ -121,6 +167,16 @@ func UserProfile(w http.ResponseWriter, r *http.Request) {
 
 	if aboutMe.Valid {
 		userInfo.AboutMe = aboutMe.String
+	}
+
+	// If the user cannot view the full profile, restrict the details
+	if !canView {
+		userInfo.Email = ""
+		userInfo.FirstName = ""
+		userInfo.LastName = ""
+		userInfo.DateOfBirth = nil
+		userInfo.AboutMe = ""
+		userInfo.CreatedAt = nil
 	}
 
 	// Encode the userInfo as JSON and send it as a response

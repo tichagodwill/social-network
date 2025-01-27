@@ -1,5 +1,5 @@
 # IDE folders
 .idea/
 server/social-network.db
-server/__debug_bin2181434325
 .vscode/
+server/__debug_*.exe

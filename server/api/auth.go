@@ -17,7 +17,7 @@ import (
 
 func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	// Set content type header first
-		// Set content type header first
+	// Set content type header first
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -37,7 +37,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&rawData); err != nil {
 		log.Printf("Error decoding JSON: %v", err)
 		w.WriteHeader(http.StatusBadRequest)
-		
+
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Invalid JSON format",
 		})
@@ -62,7 +62,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		Username:    rawData.Username,
 		FirstName:   rawData.FirstName,
 		LastName:    rawData.LastName,
-		DateOfBirth: dateOfBirth,
+		DateOfBirth: &dateOfBirth,
 		Avatar:      rawData.Avatar,
 		AboutMe:     rawData.AboutMe,
 	}
@@ -71,11 +71,11 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Received registration data: %+v", user)
 
 	// check only required fields
-	if strings.TrimSpace(user.Email) == "" || 
-	   strings.TrimSpace(user.Username) == "" || 
-	   strings.TrimSpace(user.Password) == "" || 
-	   strings.TrimSpace(user.FirstName) == "" || 
-	   strings.TrimSpace(user.LastName) == "" {
+	if strings.TrimSpace(user.Email) == "" ||
+		strings.TrimSpace(user.Username) == "" ||
+		strings.TrimSpace(user.Password) == "" ||
+		strings.TrimSpace(user.FirstName) == "" ||
+		strings.TrimSpace(user.LastName) == "" {
 		log.Printf("Missing required fields: email=%s, username=%s, firstName=%s, lastName=%s",
 			user.Email, user.Username, user.FirstName, user.LastName)
 		w.WriteHeader(http.StatusBadRequest)
@@ -116,7 +116,8 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 
 	// If date of birth is not provided, use current time
 	if user.DateOfBirth.IsZero() {
-		user.DateOfBirth = time.Now()
+		user.DateOfBirth = &time.Time{}
+		*user.DateOfBirth = time.Now()
 	}
 
 	res, err := sqlite.DB.Exec(`
@@ -127,7 +128,7 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		user.Username, user.Email, string(hashedpassword),
 		user.FirstName, user.LastName, user.Avatar,
 		user.AboutMe, user.DateOfBirth)
-	
+
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
@@ -293,7 +294,7 @@ func GetCurrentUser(w http.ResponseWriter, r *http.Request) {
 
 	// Add debug logging
 	log.Printf("Cookies received: %v", r.Cookies())
-	
+
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
 		log.Printf("Session error: %v", err)
