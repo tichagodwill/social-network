@@ -179,8 +179,65 @@ func UserProfile(w http.ResponseWriter, r *http.Request) {
 		userInfo.CreatedAt = nil
 	}
 
-	// Encode the userInfo as JSON and send it as a response
-	if err := json.NewEncoder(w).Encode(&userInfo); err != nil {
+	var following []models.Followers
+	var followers []models.Followers
+
+	if canView {
+		//get the followers that follows the user
+		rows, err := sqlite.DB.Query("SELECT users.id, users.username, users.avatar FROM users INNER JOIN followers f ON users.id = f.follower_id WHERE f.followed_id = ? AND f.status = 'accepted'", userID)
+		if err != nil {
+			http.Error(w, "Error getting followers", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var follower models.Followers
+			var avatar sql.NullString
+			err = rows.Scan(&follower.UserId, &follower.Username, &avatar)
+			if err != nil {
+				http.Error(w, "Error scanning following", http.StatusInternalServerError)
+				return
+			}
+			if avatar.Valid {
+				follower.Avatar = avatar.String
+			}
+			followers = append(followers, follower)
+		}
+
+		//get the users that the user follows
+		rows, err = sqlite.DB.Query("SELECT users.id, users.username, users.avatar FROM users INNER JOIN followers f ON users.id = f.followed_id WHERE f.follower_id = ? AND f.status = 'accepted'", userID)
+		if err != nil {
+			http.Error(w, "Error getting following", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var follow models.Followers
+			var avatar sql.NullString
+			err = rows.Scan(&follow.UserId, &follow.Username, &avatar)
+			if err != nil {
+				http.Error(w, "Error scanning following", http.StatusInternalServerError)
+				return
+			}
+			if avatar.Valid {
+				follow.Avatar = avatar.String
+			}
+			following = append(following, follow)
+		}
+	}
+
+	// Encode the userInfo and followers/following JSON and send it as a response
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"user":      userInfo,
+		"followers": followers,
+		"following": following,
+	}); err != nil {
 		http.Error(w, "Error sending data", http.StatusInternalServerError)
 	}
+
+	//if err := json.NewEncoder(w).Encode(&userInfo); err != nil {
+	//	http.Error(w, "Error sending data", http.StatusInternalServerError)
+	//}
 }

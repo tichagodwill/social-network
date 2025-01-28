@@ -8,8 +8,11 @@ export const load: PageLoad = async ({params, fetch}) => {
         credentials: 'include'
     });
     if (response.ok) {
-        const userData = await response.json();
-        const user: User = transformUser(userData);
+        // "user":      userInfo,
+        // "followers": followers,
+        //  "following": following,
+        const res = await response.json();
+        const user: User = transformUser(res.user);
         return {
             user,
             params
