@@ -34,6 +34,7 @@ export interface User {
 
 export interface Followers{
     id: number;
+    userId: number;
     username: string;
     avatar?: string;
     firstName: string;

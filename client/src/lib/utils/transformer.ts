@@ -16,8 +16,10 @@ export function transformUser(data: any): User {
 }
 
 export function transformFollowers(data: any[]): Followers[] {
+  if (!data) return [];
   return data.map(item => ({
     id: item.id,
+    userId: item.userId,
     username: item.username,
     avatar: item.avatar,
     firstName: item.first_name,

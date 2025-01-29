@@ -349,30 +349,35 @@
             </div>
         </TabItem>
 
-        {#if isOwnProfile && $followers.requests && $followers.requests.length > 0}
+        {#if isOwnProfile && data.Requests && data.Requests.length > 0}
             <TabItem title="Follow Requests">
                 <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
                     <h3 class="text-2xl font-semibold mb-4">Follow Requests</h3>
-                    {#each $followers.requests as request}
+                    {#each data.Requests as request}
                         <div class="flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
                             <div class="flex items-center space-x-4">
-                                <Avatar src={request.followerUser?.avatar || generateAvatar(request.followerUser?.username)} alt="Request Avatar" />
-                                <p class="font-semibold text-lg">{request.followerUser?.username}</p>
+                                <Avatar src={request.avatar|| generateAvatar(request.username)} alt="Request Avatar" />
+                                <div>
+                                    <p class="font-semibold text-lg">{request.username}</p>
+                                    <p class="text-sm text-gray-600 dark:text-gray-400">
+                                        {request.firstName} {request.lastName}
+                                    </p>
+                                </div>
                             </div>
                             <div class="space-x-2">
                                 <Button
-                                  size="sm"
-                                  color="primary"
-                                  on:click={() => followers.handleRequest(request.id, true)}
-                                  aria-label="Accept Request Button"
+                                        size="sm"
+                                        color="primary"
+                                        on:click={() => followers.handleRequest(request.id, true)}
+                                        aria-label="Accept Request Button"
                                 >
                                     Accept
                                 </Button>
                                 <Button
-                                  size="sm"
-                                  color="alternative"
-                                  on:click={() => followers.handleRequest(request.id, false)}
-                                  aria-label="Decline Request Button"
+                                        size="sm"
+                                        color="alternative"
+                                        on:click={() => followers.handleRequest(request.id, false)}
+                                        aria-label="Decline Request Button"
                                 >
                                     Decline
                                 </Button>

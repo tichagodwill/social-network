@@ -43,15 +43,15 @@ function createFollowersStore() {
                 console.error('Failed to follow user:', error);
             }
         },
-        handleRequest: async (requestId: number, accept: boolean) => {
+        handleRequest: async (requestId: number, action: boolean) => {
             try {
-                const response = await fetch(`http://localhost:8080/follow/${requestId}`, {
+                const response = await fetch(`http://localhost:8080/follow/handle-request`, {
                     method: 'PATCH',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     credentials: 'include',
-                    body: JSON.stringify({accept})
+                    body: JSON.stringify({action, requestId}),
                 });
                 if (response.ok) {
                     // Remove request from list

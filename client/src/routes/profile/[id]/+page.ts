@@ -9,18 +9,17 @@ export const load: PageLoad = async ({params, fetch}) => {
     });
 
     if (response.ok) {
-        // "user":      userInfo,
-        // "followers": followers,
-        //  "following": following,
         const res = await response.json();
         const user: User = transformUser(res.user);
         const Following: Followers[] | null = res.following ? transformFollowers(res.following) as Followers[] : null;
         const Followers: Followers[] | null = res.followers ? transformFollowers(res.followers) as Followers[] : null;
+        const Requests: Followers[] | null = res.followers ? transformFollowers(res.requests) as Followers[] : null;
         return {
             user,
             params,
             Following,
-            Followers
+            Followers,
+            Requests
         };
     }
     throw error(404, 'User not found');

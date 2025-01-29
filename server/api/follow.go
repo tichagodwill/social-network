@@ -241,23 +241,50 @@ func HandleFollowRequest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	// We don't need the username for this function since we validate using the request ID
-	_, err := util.GetUsernameFromSession(r)
+	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
+	// Get user ID
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to get user information",
+		})
+		return
+	}
+
 	var req struct {
-		RequestID int    `json:"requestId"`
-		Action    string `json:"action"` // "accept" or "reject"
+		RequestID int  `json:"requestId"`
+		Action    bool `json:"action"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
-	if req.Action != "accept" && req.Action != "reject" {
-		http.Error(w, "Invalid action", http.StatusBadRequest)
+	// Validate action value
+	var action string
+	if req.Action {
+		action = "accepted"
+	} else {
+		action = "rejected"
+	}
+
+	//check if the user is the owner of the request
+	var isOwner bool
+	err = sqlite.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM followers WHERE id = ? AND followed_id = ?)", req.RequestID, userID).Scan(&isOwner)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if !isOwner {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -273,8 +300,8 @@ func HandleFollowRequest(w http.ResponseWriter, r *http.Request) {
 	result, err := tx.Exec(`
 		UPDATE followers 
 		SET status = ? 
-		WHERE id = ? AND status = 'pending'`,
-		req.Action+"ed", req.RequestID)
+		WHERE id = ? AND status = 'pending' AND followed_id = ?`,
+		action, req.RequestID, userID)
 	if err != nil {
 		http.Error(w, "Failed to process follow request", http.StatusInternalServerError)
 		return
@@ -300,8 +327,8 @@ func HandleFollowRequest(w http.ResponseWriter, r *http.Request) {
 			INSERT INTO notifications (user_id, type, content, from_user_id)
 			VALUES (?, ?, ?, ?)`,
 			followRequest.FollowerID,
-			"follow_request_"+req.Action+"ed",
-			"has "+req.Action+"ed your follow request",
+			"follow_request_"+action,
+			"has "+action+" your follow request",
 			followRequest.FollowedID)
 		if err != nil {
 			log.Printf("Failed to create notification: %v", err)
@@ -314,7 +341,7 @@ func HandleFollowRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Follow request " + req.Action + "ed successfully",
+		"message": "Follow request " + action + " successfully",
 	})
 }
 

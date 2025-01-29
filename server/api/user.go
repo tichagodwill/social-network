@@ -181,6 +181,31 @@ func UserProfile(w http.ResponseWriter, r *http.Request) {
 
 	var following []models.Followers
 	var followers []models.Followers
+	var requests []models.Followers
+
+	if currentUserID == userID {
+		//get the followers that follows the user who are pending requests
+		rows, err := sqlite.DB.Query("SELECT f.id, users.id, users.username, users.avatar, users.first_name, users.last_name FROM users INNER JOIN followers f ON users.id = f.follower_id WHERE f.followed_id = ? AND f.status = 'pending'", userID)
+		if err != nil {
+			http.Error(w, "Error getting followers", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var request models.Followers
+			var avatar sql.NullString
+			err = rows.Scan(&request.ID, &request.UserId, &request.Username, &avatar, &request.FirstName, &request.LastName)
+			if err != nil {
+				http.Error(w, "Error scanning following", http.StatusInternalServerError)
+				return
+			}
+			if avatar.Valid {
+				request.Avatar = avatar.String
+			}
+			requests = append(requests, request)
+		}
+	}
 
 	if canView {
 		//get the followers that follows the user
@@ -233,6 +258,7 @@ func UserProfile(w http.ResponseWriter, r *http.Request) {
 		"user":      userInfo,
 		"followers": followers,
 		"following": following,
+		"requests":  requests,
 	}); err != nil {
 		http.Error(w, "Error sending data", http.StatusInternalServerError)
 	}
