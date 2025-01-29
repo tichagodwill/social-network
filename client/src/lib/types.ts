@@ -32,6 +32,14 @@ export interface User {
     createdAt?: string;
 }
 
+export interface Followers{
+    id: number;
+    username: string;
+    avatar?: string;
+    firstName: string;
+    lastName: string;
+}
+
 export interface FollowRequest {
     id: number;
     followerId: number;

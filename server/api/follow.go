@@ -230,7 +230,7 @@ func FollowStatus(w http.ResponseWriter, r *http.Request) {
 
 	//return the status
 	json.NewEncoder(w).Encode(map[string]bool{
-		"following":         isFollowing,
+		"isFollowing":       isFollowing,
 		"hasPendingRequest": pendeingRequest,
 	})
 

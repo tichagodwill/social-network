@@ -45,6 +45,7 @@
             });
 
             if (response.ok) {
+                debugger
                 const followStatus = await response.json();
                 isFollowing = followStatus.isFollowing;
                 hasPendingRequest = followStatus.hasPendingRequest;
@@ -59,10 +60,6 @@
         try {
             // Load follow status
             await loadFollowStatus();
-
-            // Load followers and following
-            await followers.loadFollowers(userId);
-
             // Load user posts
             await loadUserPosts();
         } catch (error) {
@@ -279,22 +276,22 @@
         <TabItem title="Followers" active>
             <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
                 <h3 class="text-2xl font-semibold mb-4">Followers</h3>
-                {#if $followers.followers && $followers.followers.length > 0}
+                {#if data.Followers && data.Followers.length > 0}
                     <div class="space-y-4">
-                        {#each $followers.followers as follower}
+                        {#each data.Followers as Followers}
                             <div class="flex items-center space-x-4 hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
-                                <Avatar src={follower.avatar || generateAvatar(follower.username)} alt="Follower Avatar" />
+                                <Avatar src={Followers.avatar || generateAvatar(Followers.username)} alt="Following Avatar" />
                                 <div>
-                                    <p class="font-semibold text-lg">{follower.username}</p>
+                                    <p class="font-semibold text-lg">{Followers.username}</p>
                                     <p class="text-sm text-gray-600 dark:text-gray-400">
-                                        {follower.firstName} {follower.lastName}
+                                        {Followers.firstName} {Followers.lastName}
                                     </p>
                                 </div>
                             </div>
                         {/each}
                     </div>
                 {:else}
-                    <p class="text-gray-500 dark:text-gray-400">No followers yet.</p>
+                    <p class="text-gray-500 dark:text-gray-400">Not following anyone yet.</p>
                 {/if}
             </div>
         </TabItem>
@@ -302,9 +299,9 @@
         <TabItem title="Following">
             <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
                 <h3 class="text-2xl font-semibold mb-4">Following</h3>
-                {#if $followers.following && $followers.following.length > 0}
+                {#if data.Following && data.Following.length > 0}
                     <div class="space-y-4">
-                        {#each $followers.following as following}
+                        {#each data.Following as following}
                             <div class="flex items-center space-x-4 hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
                                 <Avatar src={following.avatar || generateAvatar(following.username)} alt="Following Avatar" />
                                 <div>

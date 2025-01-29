@@ -125,7 +125,7 @@ func UserProfile(w http.ResponseWriter, r *http.Request) {
 
 			// Check if the user is following the user by the status of the follow request
 			var followStatus string
-			err = sqlite.DB.QueryRow("SELECT status FROM follows WHERE follower_id = ? AND followee_id = ?", currentUserID, userID).Scan(&followStatus)
+			err = sqlite.DB.QueryRow("SELECT status FROM followers WHERE follower_id = ? AND followed_id = ?", currentUserID, userID).Scan(&followStatus)
 			if err != nil {
 				canView = false
 			}
@@ -184,7 +184,7 @@ func UserProfile(w http.ResponseWriter, r *http.Request) {
 
 	if canView {
 		//get the followers that follows the user
-		rows, err := sqlite.DB.Query("SELECT users.id, users.username, users.avatar FROM users INNER JOIN followers f ON users.id = f.follower_id WHERE f.followed_id = ? AND f.status = 'accepted'", userID)
+		rows, err := sqlite.DB.Query("SELECT users.id, users.username, users.avatar, users.first_name, users.last_name FROM users INNER JOIN followers f ON users.id = f.follower_id WHERE f.followed_id = ? AND f.status = 'accepted'", userID)
 		if err != nil {
 			http.Error(w, "Error getting followers", http.StatusInternalServerError)
 			return
@@ -194,7 +194,7 @@ func UserProfile(w http.ResponseWriter, r *http.Request) {
 		for rows.Next() {
 			var follower models.Followers
 			var avatar sql.NullString
-			err = rows.Scan(&follower.UserId, &follower.Username, &avatar)
+			err = rows.Scan(&follower.UserId, &follower.Username, &avatar, &follower.FirstName, &follower.LastName)
 			if err != nil {
 				http.Error(w, "Error scanning following", http.StatusInternalServerError)
 				return
@@ -206,7 +206,7 @@ func UserProfile(w http.ResponseWriter, r *http.Request) {
 		}
 
 		//get the users that the user follows
-		rows, err = sqlite.DB.Query("SELECT users.id, users.username, users.avatar FROM users INNER JOIN followers f ON users.id = f.followed_id WHERE f.follower_id = ? AND f.status = 'accepted'", userID)
+		rows, err = sqlite.DB.Query("SELECT users.id, users.username, users.avatar, users.first_name, users.last_name  FROM users INNER JOIN followers f ON users.id = f.followed_id WHERE f.follower_id = ? AND f.status = 'accepted'", userID)
 		if err != nil {
 			http.Error(w, "Error getting following", http.StatusInternalServerError)
 			return
@@ -216,7 +216,7 @@ func UserProfile(w http.ResponseWriter, r *http.Request) {
 		for rows.Next() {
 			var follow models.Followers
 			var avatar sql.NullString
-			err = rows.Scan(&follow.UserId, &follow.Username, &avatar)
+			err = rows.Scan(&follow.UserId, &follow.Username, &avatar, &follow.FirstName, &follow.LastName)
 			if err != nil {
 				http.Error(w, "Error scanning following", http.StatusInternalServerError)
 				return
