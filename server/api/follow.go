@@ -56,10 +56,9 @@ func FollowUser(w http.ResponseWriter, r *http.Request) {
 	// Check if target user exists and get their privacy setting
 	var isPrivate bool
 	err = tx.QueryRow(`
-		SELECT us.is_private 
-		FROM users u 
-		JOIN user_settings us ON u.id = us.user_id 
-		WHERE u.id = ?`, req.UserToFollowID).Scan(&isPrivate)
+		SELECT is_private 
+		FROM users  
+		WHERE id = ?`, req.UserToFollowID).Scan(&isPrivate)
 	if err == sql.ErrNoRows {
 		http.Error(w, "User to follow not found", http.StatusNotFound)
 		return
