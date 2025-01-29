@@ -22,19 +22,6 @@ function createFollowersStore() {
 
     return {
         subscribe,
-        loadFollowers: async (userId: number) => {
-            try {
-                const response = await fetch(`http://localhost:8080/follower/${userId}`, {
-                    credentials: 'include'
-                });
-                if (response.ok) {
-                    const followers = await response.json();
-                    update(state => ({...state, followers}));
-                }
-            } catch (error) {
-                console.error('Failed to load followers:', error);
-            }
-        },
         followUser: async (userId: number) => {
             try {
                 const response = await fetch('http://localhost:8080/follow', {
