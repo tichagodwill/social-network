@@ -30,6 +30,7 @@
     $: currentPath = $page.url.pathname;
 </script>
 
+<div class="navbar-spacer"></div>
 <Navbar
         let:hidden
         let:toggle
@@ -123,6 +124,11 @@
 </Navbar>
 
 <style lang="postcss">
+    /* Add navbar spacer to prevent content from being covered */
+    .navbar-spacer {
+        height: 64px; /* Adjust this value based on your navbar height */
+    }
+
     /* Enhanced clickable elements and interactions */
     :global(.nav-item) {
         @apply px-3 py-2 text-gray-600 rounded-lg transition-all duration-200
