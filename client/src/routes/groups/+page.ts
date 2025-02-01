@@ -1,36 +1,29 @@
 import type { PageLoad } from './$types';
-import { error } from '@sveltejs/kit';
 import { auth } from '$lib/stores/auth';
 import { get } from 'svelte/store';
+import { fetchGroups } from '$lib/api/groupApi';
 
-export const load: PageLoad = async ({ fetch }) => {
-    const authState = get(auth);
-    
-    if (!authState.isAuthenticated) {
-        return {
-            groups: []
-        };
-    }
-
+export const load: PageLoad = async () => {
     try {
-        const response = await fetch('http://localhost:8080/groups', {
-            credentials: 'include'
-        });
-
-        if (response.status === 401) {
+        const authState = get(auth);
+        
+        if (!authState.isAuthenticated) {
             return {
-                groups: []
+                groups: [],
+                error: null
             };
         }
 
-        if (!response.ok) {
-            throw error(response.status, 'Failed to load groups');
-        }
-
-        const groups = await response.json();
-        return { groups };
+        const groups = await fetchGroups();
+        return { 
+            groups,
+            error: null
+        };
     } catch (err) {
         console.error('Error loading groups:', err);
-        throw error(500, 'Error loading groups');
+        return {
+            groups: [],
+            error: err instanceof Error ? err.message : 'Error loading groups'
+        };
     }
-}; 
+};

@@ -1,33 +1,44 @@
 <script lang="ts">
     import { Button, Card } from 'flowbite-svelte';
-    import { onMount } from 'svelte';
+    import { auth } from '$lib/stores/auth';
+    import { handleJoinRequest } from '$lib/api/groupApi';
 
     export let groupId: number;
-    export let isCreator: boolean = false;
-    export let isMember: boolean = false;
+    export let isCreator: boolean;
+    export let isMember: boolean;
+    export let role: string;
 
-    let requests: any[] = [];
+    interface JoinRequest {
+        id: number;
+        username: string;
+        createdAt: string;
+    }
+
+    let requests: JoinRequest[] = [];
     let error = '';
     let success = '';
     let loading = true;
 
-    async function loadPendingRequests() {
+    // Check if user has admin privileges
+    $: hasAdminPrivileges = isCreator || role === 'admin';
+
+    async function loadRequests() {
+        if (!groupId || !hasAdminPrivileges) return;
+        
         try {
-            const response = await fetch(`http://localhost:8080/groups/${groupId}/requests`, {
+            loading = true;
+            const response = await fetch(`http://localhost:8080/groups/${groupId}/join-requests`, {
                 credentials: 'include'
             });
             
             if (response.ok) {
-                requests = await response.json() || [];
+                requests = await response.json();
             } else {
+                const errorData = await response.json();
+                error = errorData.error || 'Failed to load requests';
                 requests = [];
-                if (response.status !== 404) {  // Don't show error for 404
-                    const data = await response.json();
-                    throw new Error(data.error || 'Failed to load requests');
-                }
             }
         } catch (err) {
-            console.error('Failed to load requests:', err);
             error = err instanceof Error ? err.message : 'Failed to load requests';
             requests = [];
         } finally {
@@ -35,32 +46,25 @@
         }
     }
 
+    // Load requests when component mounts and when auth/hasAdminPrivileges changes
+    $: if ($auth.isAuthenticated && hasAdminPrivileges && groupId) {
+        loadRequests();
+    }
+
+    // Only show card if we have admin privileges and there are requests
+    $: showCard = hasAdminPrivileges && Array.isArray(requests) && requests.length > 0;
+
     async function handleRequest(requestId: number, action: 'accept' | 'reject') {
         try {
-            const response = await fetch(`http://localhost:8080/groups/${action}`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include',
-                body: JSON.stringify({ requestId })
-            });
-
-            if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.error || `Failed to ${action} request`);
-            }
-
+            error = '';
+            success = '';
+            await handleJoinRequest(groupId, requestId, action);
             success = `Request ${action}ed successfully`;
-            await loadPendingRequests();
+            await loadRequests();
         } catch (err) {
             error = err instanceof Error ? err.message : `Failed to ${action} request`;
         }
     }
-
-    onMount(loadPendingRequests);
-
-    $: showCard = isCreator && requests.length > 0;
 </script>
 
 {#if showCard}
@@ -84,8 +88,6 @@
                 <div class="text-center py-4">
                     <div class="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mx-auto"></div>
                 </div>
-            {:else if !requests || requests.length === 0}
-                <p class="text-gray-500">No pending requests</p>
             {:else}
                 <div class="space-y-2">
                     {#each requests as request}
@@ -96,24 +98,22 @@
                                     Requested {new Date(request.createdAt).toLocaleDateString()}
                                 </p>
                             </div>
-                            {#if isCreator}
-                                <div class="flex space-x-2">
-                                    <Button 
-                                        size="xs" 
-                                        color="green"
-                                        on:click={() => handleRequest(request.id, 'accept')}
-                                    >
-                                        Accept
-                                    </Button>
-                                    <Button 
-                                        size="xs" 
-                                        color="red"
-                                        on:click={() => handleRequest(request.id, 'reject')}
-                                    >
-                                        Reject
-                                    </Button>
-                                </div>
-                            {/if}
+                            <div class="flex space-x-2">
+                                <Button 
+                                    size="xs" 
+                                    color="green"
+                                    on:click={() => handleRequest(request.id, 'accept')}
+                                >
+                                    Accept
+                                </Button>
+                                <Button 
+                                    size="xs" 
+                                    color="red"
+                                    on:click={() => handleRequest(request.id, 'reject')}
+                                >
+                                    Reject
+                                </Button>
+                            </div>
                         </div>
                     {/each}
                 </div>

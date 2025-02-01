@@ -4,6 +4,7 @@
     import { auth } from '$lib/stores/auth';
     import { getFormattedDate } from '$lib/dateFormater';
     import { fade, slide } from 'svelte/transition';
+    import { groups } from '$lib/stores/groups';
 
     export let groupId: number;
     let events: any[] = [];
@@ -32,6 +33,25 @@
             events = [];
         } finally {
             loading = false;
+        }
+    }
+
+    async function createEvent() {
+        try {
+            if (!$auth?.user) return;
+            
+            await groups.createEvent(groupId, {
+                title: newEvent.title,
+                description: newEvent.description,
+                eventDate: newEvent.eventDate,
+                creatorId: $auth.user.id
+            });
+
+            await loadEvents();
+            showCreateModal = false;
+            newEvent = { title: '', description: '', eventDate: '' };
+        } catch (err) {
+            error = err instanceof Error ? err.message : 'Failed to create event';
         }
     }
 

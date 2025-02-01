@@ -90,11 +90,9 @@ export interface Message {
     senderAvatar?: string;
 }
 
-export interface EmojiPickerEvent extends CustomEvent {
-    detail: {
-        emoji: {
-            native: string;
-        };
+export interface EmojiPickerEvent {
+    emoji: {
+        native: string;
     };
 }
 
@@ -137,5 +135,31 @@ export interface Group {
     title: string;
     description: string;
     creator_id: number;
+    creator_username?: string;
     created_at?: string;
+    is_member?: boolean;
+}
+
+export interface GroupMember {
+    id: number;
+    username: string;
+    role: 'creator' | 'admin' | 'moderator' | 'member';
+}
+
+export interface GroupPost {
+    id: number;
+    title: string;
+    content: string;
+    author_id: number;
+    author: string;
+    created_at: string;
+    comments?: GroupComment[];
+}
+
+export interface GroupComment {
+    id: number;
+    content: string;
+    author_id: number;
+    author: string;
+    created_at: string;
 } 
