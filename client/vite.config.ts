@@ -10,5 +10,6 @@ export default defineConfig({
 	},
 	optimizeDeps: {
 		exclude: ['@sveltejs/kit']
-	}
+	},
+	publicDir: 'static'
 });

@@ -51,6 +51,7 @@
 @layer base {
     body {
         @apply bg-gray-50 text-gray-900 antialiased;
+        padding-top: 1rem;
     }
 
     h1, h2, h3, h4, h5, h6 {
@@ -245,4 +246,9 @@
     .dark\:custom-scrollbar::-webkit-scrollbar-thumb {
         background-color: var(--primary-700);
     }
+}
+
+/* Add this to your global styles */
+main {
+    padding-top: 1rem; /* Add some spacing after the navbar */
 }

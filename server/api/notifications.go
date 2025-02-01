@@ -1,141 +1,150 @@
 package api
 
 import (
-	"database/sql"
-	"encoding/json"
 	"log"
 	"net/http"
 	"social-network/pkg/db/sqlite"
 	"social-network/util"
 	"strconv"
-	"time"
 )
 
 func GetNotifications(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	// Get current user from session
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
-		log.Printf("Session error: %v", err)
-		w.WriteHeader(http.StatusUnauthorized)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "Unauthorized",
-		})
+		sendJSONError(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	// Get user ID from username
+	// Get user ID
 	var userID int
 	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
 	if err != nil {
-		log.Printf("Database error getting user ID: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "Failed to get user information",
-		})
+		log.Printf("Error getting user ID: %v", err)
+		sendJSONError(w, "Failed to get user information", http.StatusInternalServerError)
 		return
 	}
 
-	// Get notifications for the user with error handling
+	// Fetch notifications
 	rows, err := sqlite.DB.Query(`
         SELECT 
             n.id,
+            n.user_id,
             n.type,
             n.content,
-            n.created_at,
-            n.is_read,
-            n.from_user_id,
             n.group_id,
-            n.user_id
+            n.invitation_id,
+            n.read,
+            n.created_at,
+            g.title as group_name,
+            COALESCE(gm.role, '') as user_role
         FROM notifications n
+        LEFT JOIN groups g ON n.group_id = g.id
+        LEFT JOIN group_members gm ON g.id = gm.group_id AND gm.user_id = n.user_id
         WHERE n.user_id = ?
-        ORDER BY n.created_at DESC
-        LIMIT 50`, userID)
+        ORDER BY n.created_at DESC`,
+		userID)
 	if err != nil {
-		log.Printf("Database error querying notifications: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "Failed to fetch notifications",
-		})
+		log.Printf("Error fetching notifications: %v", err)
+		sendJSONError(w, "Failed to fetch notifications", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
 
-	notifications := []map[string]interface{}{}
+	var notifications []map[string]interface{}
 	for rows.Next() {
-		var n struct {
-			ID         int       `json:"id"`
-			Type       string    `json:"type"`
-			Content    string    `json:"content"`
-			CreatedAt  time.Time `json:"created_at"`
-			IsRead     bool      `json:"is_read"`
-			FromUserID sql.NullInt64
-			GroupID    sql.NullInt64
-			UserID     int
+		var notification struct {
+			ID           int64  `json:"id"`
+			UserID       int64  `json:"user_id"`
+			Type         string `json:"type"`
+			Content      string `json:"content"`
+			GroupID      int64  `json:"group_id"`
+			InvitationID int64  `json:"invitation_id"`
+			Read         bool   `json:"read"`
+			CreatedAt    string `json:"created_at"`
+			GroupName    string `json:"group_name"`
+			UserRole     string `json:"user_role"`
 		}
-
-		if err := rows.Scan(
-			&n.ID,
-			&n.Type,
-			&n.Content,
-			&n.CreatedAt,
-			&n.IsRead,
-			&n.FromUserID,
-			&n.GroupID,
-			&n.UserID,
-		); err != nil {
-			log.Printf("Error scanning notification row: %v", err)
+		if err := rows.Scan(&notification.ID, &notification.UserID, &notification.Type, &notification.Content, &notification.GroupID, &notification.InvitationID, &notification.Read, &notification.CreatedAt, &notification.GroupName, &notification.UserRole); err != nil {
 			continue
 		}
-
-		notification := map[string]interface{}{
-			"id":        n.ID,
-			"type":      n.Type,
-			"content":   n.Content,
-			"createdAt": n.CreatedAt.Format(time.RFC3339),
-			"isRead":    n.IsRead,
-			"userId":    n.UserID,
-		}
-
-		if n.FromUserID.Valid {
-			notification["fromUserId"] = n.FromUserID.Int64
-		}
-		if n.GroupID.Valid {
-			notification["groupId"] = n.GroupID.Int64
-		}
-
-		notifications = append(notifications, notification)
+		notifications = append(notifications, map[string]interface{}{
+			"id":           notification.ID,
+			"userId":       notification.UserID,
+			"type":         notification.Type,
+			"content":      notification.Content,
+			"groupId":      notification.GroupID,
+			"invitationId": notification.InvitationID,
+			"read":         notification.Read,
+			"createdAt":    notification.CreatedAt,
+			"groupName":    notification.GroupName,
+			"userRole":     notification.UserRole,
+		})
 	}
 
 	if err = rows.Err(); err != nil {
 		log.Printf("Error iterating notifications: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "Error processing notifications",
-		})
+		sendJSONError(w, "Error processing notifications", http.StatusInternalServerError)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(notifications)
+	// If no notifications found, return empty array instead of null
+	if notifications == nil {
+		notifications = make([]map[string]interface{}, 0)
+	}
+
+	sendJSONResponse(w, http.StatusOK, notifications)
 }
 
 func MarkNotificationAsRead(w http.ResponseWriter, r *http.Request) {
-	notificationIdString := r.PathValue("id")
-	notificationId, err := strconv.Atoi(notificationIdString)
+	w.Header().Set("Content-Type", "application/json")
+
+	notificationID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
-		http.Error(w, "Invalid user id", http.StatusBadRequest)
+		sendJSONError(w, "Invalid notification ID", http.StatusBadRequest)
 		return
 	}
 
-	markQuery := `
-UPDATE notifications
-SET is_read = 1
-WHERE id = ?
-`
-
-	_, err = sqlite.DB.Exec(markQuery, notificationId)
+	// Get current user from session to verify ownership
+	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
-		log.Fatal("[MarkNotificationAsRead] Error updating notification:", err)
+		sendJSONError(w, "Unauthorized", http.StatusUnauthorized)
+		return
 	}
+
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		sendJSONError(w, "Failed to get user information", http.StatusInternalServerError)
+		return
+	}
+
+	result, err := sqlite.DB.Exec(`
+        UPDATE notifications
+        SET read = true
+        WHERE id = ? AND user_id = ?`,
+		notificationID, userID)
+	if err != nil {
+		log.Printf("Error marking notification as read: %v", err)
+		sendJSONError(w, "Failed to mark notification as read", http.StatusInternalServerError)
+		return
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Printf("Error getting rows affected: %v", err)
+		sendJSONError(w, "Failed to verify update", http.StatusInternalServerError)
+		return
+	}
+
+	if rowsAffected == 0 {
+		sendJSONError(w, "Notification not found or not owned by user", http.StatusNotFound)
+		return
+	}
+
+	sendJSONResponse(w, http.StatusOK, map[string]string{
+		"message": "Notification marked as read",
+	})
 }
