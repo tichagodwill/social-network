@@ -188,7 +188,7 @@
                         </div>
                     </div>
                 {/each}
-            {:else if $posts.length === 0}
+            {:else if !$posts || $posts.length === 0}
                 <!-- Empty State -->
                 <div class="col-span-full text-center py-12">
                     <div class="mx-auto w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-4">

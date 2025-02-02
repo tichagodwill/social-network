@@ -168,10 +168,10 @@
 </script>
 
 <div class="container mx-auto px-4 py-24">
-    <!-- Profile Header -->
-    <div class="rounded-lg shadow-lg p-8 bg-gradient-to-r from-[rgba(239,86,47,1)] to-[rgba(239,86,47,0.8)] text-white">
+    <!-- Profile Header - Updated with your theme's primary colors -->
+    <div class="rounded-lg shadow-lg p-8 bg-gradient-to-r from-primary-500 to-primary-600 text-white">
         <div class="flex flex-col md:flex-row items-center md:items-start md:space-x-8">
-            <!-- Avatar -->
+            <!-- Avatar - Updated with new border color -->
             <div class="relative">
                 <Avatar
                   src={data.user?.avatar || generateAvatar(data.user?.username)}
@@ -181,7 +181,7 @@
                         expandedImageSrc = data.user?.avatar || generateAvatar(data.user?.username);
                         showExpandedImage = true;
                     }}
-                  class="cursor-pointer hover:opacity-80 transition-opacity border-4 border-white shadow-lg"
+                  class="cursor-pointer hover:opacity-80 transition-opacity border-4 border-white/20 shadow-lg"
                 />
                 {#if isOwnProfile}
                     <button
@@ -189,7 +189,7 @@
                       on:click={() => (showSettings())}
                       aria-label="Settings"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z" />
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
@@ -197,19 +197,17 @@
                 {/if}
             </div>
 
-            <!-- User Details -->
+            <!-- User Details - Updated text colors -->
             <div class="flex-1 text-center md:text-left mt-6 md:mt-0">
                 <div class="flex items-center justify-center md:justify-start space-x-3">
-                    <h1 class="text-4xl font-extrabold">{data.user?.username}</h1>
+                    <h1 class="text-4xl font-extrabold text-white">{data.user?.username}</h1>
                     <div class="relative group">
                         {#if privacySetting}
-                            <!-- Closed Eye Icon for Private -->
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-200 cursor-pointer" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white/80 cursor-pointer" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
                             </svg>
                         {:else}
-                            <!-- Open Eye Icon for Public -->
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-200 cursor-pointer" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white/80 cursor-pointer" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.522 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z" />
                             </svg>
@@ -220,29 +218,29 @@
                     </div>
                 </div>
                 {#if userDescription}
-                <p class="text-gray-200 dark:text-gray-300 mt-2">{userDescription}</p>
+                    <p class="text-white/90 mt-2">{userDescription}</p>
                 {/if}
                 {#if data.user?.firstName || data.user?.lastName}
-                <p class="text-gray-200 dark:text-gray-300 mt-2">
-                    {data.user?.firstName} {data.user?.lastName}
-                </p>
+                    <p class="text-white/90 mt-2">
+                        {data.user?.firstName} {data.user?.lastName}
+                    </p>
                 {/if}
                 {#if data.user?.email}
-                    <p class="text-gray-200 dark:text-gray-300 mt-2">
+                    <p class="text-white/90 mt-2">
                         {data.user?.email}
                     </p>
                 {/if}
                 {#if data.user?.dateOfBirth}
-                <p class="text-gray-200 dark:text-gray-300 mt-2">
-                    Date of Birth: {data.user?.dateOfBirth}
-                </p>
+                    <p class="text-white/90 mt-2">
+                        Date of Birth: {data.user?.dateOfBirth}
+                    </p>
                 {/if}
             </div>
 
-            <!-- Follow Button -->
+            <!-- Follow Button - Updated with primary colors -->
             {#if !isOwnProfile}
                 <Button
-                  class="mt-6 md:mt-0 transition-transform hover:scale-105"
+                  class="mt-6 md:mt-0 transition-transform hover:scale-105 bg-white text-primary-500 hover:bg-gray-50"
                   color={isFollowing ? 'alternative' : 'primary'}
                   disabled={hasPendingRequest || isLoading}
                   on:click={handleFollow}
@@ -250,7 +248,7 @@
                 >
                     {#if isLoading}
                         <span class="flex items-center">
-                            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
@@ -271,7 +269,7 @@
         </div>
     </div>
 
-    <!-- Tabs Section -->
+    <!-- Tabs Section - Updated with theme colors -->
     <Tabs class="mt-8">
         <TabItem title="Followers" active>
             <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
@@ -319,14 +317,13 @@
             </div>
         </TabItem>
 
-        <!-- My Posts Tab -->
         <TabItem title="My Posts">
             <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
                 <h3 class="text-2xl font-semibold mb-4">My Posts</h3>
                 {#if userPosts && userPosts.length > 0}
                     <div class="space-y-4">
                         {#each userPosts as post}
-                            <div class="p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                            <div class="p-4 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
                                 <p class="font-semibold text-lg">{post.title}</p>
                                 <p class="text-sm text-gray-600 dark:text-gray-400">{post.content}</p>
                                 {#if post.media}
@@ -389,7 +386,7 @@
         {/if}
     </Tabs>
 
-    <!-- Settings Modal -->
+    <!-- Settings Modal - Updated with theme colors -->
     <Modal bind:open={showSettingsModal} title="Settings">
         <div class="space-y-6">
             <!-- Profile Photo Update -->
@@ -403,7 +400,7 @@
                       on:change={handleFileUpload}
                       class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     />
-                    <div class="w-full px-4 py-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all flex items-center justify-between bg-white hover:bg-gray-50">
+                    <div class="w-full px-4 py-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all flex items-center justify-between bg-white hover:bg-gray-50">
                         <span class="text-gray-500">
                             {#if newProfilePhoto}
                                 New Photo Selected
@@ -411,7 +408,7 @@
                                 Choose an image...
                             {/if}
                         </span>
-                        <span class="text-blue-600 font-medium">Browse</span>
+                        <span class="text-primary-500 font-medium">Browse</span>
                     </div>
                 </div>
                 {#if newProfilePhoto}
@@ -457,7 +454,10 @@
             </div>
 
             <!-- Save Button -->
-            <Button on:click={updateSettings} class="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white">
+            <Button
+              on:click={updateSettings}
+              class="w-full bg-gradient-to-r from-primary-500 to-primary-600 text-white hover:from-primary-600 hover:to-primary-700"
+            >
                 Save Changes
             </Button>
         </div>
@@ -479,3 +479,24 @@
         </div>
     {/if}
 </div>
+
+<style lang="postcss">
+    /* Custom scrollbar styles from your theme */
+    :global(.custom-scrollbar) {
+        scrollbar-width: thin;
+        scrollbar-color: theme('colors.primary.300') theme('colors.gray.100');
+    }
+
+    :global(.custom-scrollbar::-webkit-scrollbar) {
+        width: 6px;
+    }
+
+    :global(.custom-scrollbar::-webkit-scrollbar-track) {
+        background: theme('colors.gray.100');
+    }
+
+    :global(.custom-scrollbar::-webkit-scrollbar-thumb) {
+        background-color: theme('colors.primary.300');
+        border-radius: 3px;
+    }
+</style>
