@@ -152,7 +152,8 @@
     // Function to fetch user posts
     async function loadUserPosts() {
         try {
-            const response = await fetch(`http://localhost:8080/user/${userId}/posts`, {
+            debugger
+            const response = await fetch(`http://localhost:8080/getMyPosts`, {
                 credentials: 'include'
             });
             if (response.ok) {
@@ -316,35 +317,54 @@
                 {/if}
             </div>
         </TabItem>
+        {#if isOwnProfile}
+            <TabItem title="My Posts">
+                <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-2xl font-semibold">My Posts</h3>
+                        <span class="text-sm text-gray-500 dark:text-gray-400">{userPosts?.length || 0} posts</span>
+                    </div>
 
-        <TabItem title="My Posts">
-            <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
-                <h3 class="text-2xl font-semibold mb-4">My Posts</h3>
-                {#if userPosts && userPosts.length > 0}
-                    <div class="space-y-4">
-                        {#each userPosts as post}
-                            <div class="p-4 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
-                                <p class="font-semibold text-lg">{post.title}</p>
-                                <p class="text-sm text-gray-600 dark:text-gray-400">{post.content}</p>
-                                {#if post.media}
-                                    <img
-                                      src={post.media}
-                                      alt="Post media"
-                                      class="mt-4 rounded-lg max-h-96 w-auto object-cover shadow-md cursor-pointer hover:opacity-80 transition-opacity"
-                                      on:click={() => {
+                    {#if userPosts && userPosts.length > 0}
+                        <div class="space-y-6">
+                            {#each userPosts as post}
+                                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                    <!-- Post Header -->
+                                    <div class="p-4">
+                                        <h4 class="text-xl font-semibold text-gray-900 dark:text-white mb-2">{post.title}</h4>
+                                        <p class="text-gray-600 dark:text-gray-300 whitespace-pre-wrap">{post.content}</p>
+
+                                        {#if post.media}
+                                            <div class="mt-4">
+                                                <img
+                                                  src={post.media}
+                                                  alt="Post media"
+                                                  class="rounded-lg h-48 w-auto object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                                                  on:click={() => {
                                             expandedImageSrc = post.media;
                                             showExpandedImage = true;
                                         }}
-                                    />
-                                {/if}
+                                                />
+                                            </div>
+                                        {/if}
+                                    </div>
+                                </div>
+                            {/each}
+                        </div>
+                    {:else}
+                        <div class="text-center py-12">
+                            <div class="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                                </svg>
                             </div>
-                        {/each}
-                    </div>
-                {:else}
-                    <p class="text-gray-500 dark:text-gray-400">No posts yet.</p>
-                {/if}
-            </div>
-        </TabItem>
+                            <h3 class="text-lg font-medium text-gray-900 dark:text-white">No posts yet</h3>
+                            <p class="text-gray-500 dark:text-gray-400 mt-1">Get started by creating your first post</p>
+                        </div>
+                    {/if}
+                </div>
+            </TabItem>
+        {/if}
 
         {#if isOwnProfile && data.Requests && data.Requests.length > 0}
             <TabItem title="Follow Requests">
