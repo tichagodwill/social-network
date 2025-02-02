@@ -85,6 +85,12 @@
             >
                 Profile
             </NavLi>
+            <NavLi
+                    href="/explore"
+                    class="nav-item {currentPath.startsWith('/explore') ? 'active' : ''}"
+            >
+                Explore
+            </NavLi>
 
             <div class="flex items-center space-x-2 md:ml-4">
                 <NotificationBell/>

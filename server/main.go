@@ -99,7 +99,10 @@ func main() {
 	mux.Handle("POST /comments", authMiddleware(http.HandlerFunc(api.CreateComment)))
 	mux.Handle("GET /comments/{postID}", authMiddleware(http.HandlerFunc(api.GetComments)))
 
-	// Group these related routes together and order them from most specific to least specific
+	//explore page
+	mux.Handle("POST /explore", authMiddleware(http.HandlerFunc(api.GetExplore)))
+
+	// Group these related routes together and order them from most specific to the least specific
 	// Basic group routes
 	mux.Handle("GET /groups", authMiddleware(http.HandlerFunc(api.ViewGroups)))
 	mux.Handle("POST /groups", authMiddleware(http.HandlerFunc(api.CreateGroup)))

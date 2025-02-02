@@ -272,10 +272,19 @@ func HandleFollowRequest(w http.ResponseWriter, r *http.Request) {
 	if req.Action {
 		action = "accepted"
 	} else {
-		action = "rejected"
+		// Remove the record if action is rejected
+		_, err := sqlite.DB.Exec("DELETE FROM followers WHERE id = ? AND followed_id = ?", req.RequestID, userID)
+		if err != nil {
+			http.Error(w, "Failed to remove follow request", http.StatusInternalServerError)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{
+			"message": "Follow request rejected and removed successfully",
+		})
+		return
 	}
 
-	//check if the user is the owner of the request
+	// Check if the user is the owner of the request
 	var isOwner bool
 	err = sqlite.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM followers WHERE id = ? AND followed_id = ?)", req.RequestID, userID).Scan(&isOwner)
 	if err != nil {
