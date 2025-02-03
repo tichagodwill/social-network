@@ -129,6 +129,16 @@
           </div>
         </div>
         <p class="text-lg leading-relaxed whitespace-pre-wrap text-gray-700">{post.content}</p>
+        {#if post.media}
+          <div class="mt-4">
+            <img
+              src={post.media}
+              alt="Post media"
+              class="rounded-lg max-h-[500px] w-auto mx-auto shadow-lg hover:shadow-xl transition-shadow duration-300"
+              in:fade={{ duration: 300 }}
+            />
+          </div>
+        {/if}
       </div>
     </div>
 
@@ -157,7 +167,7 @@
                 />
                 <div class="flex-1">
                   <div class="flex items-center justify-between mb-2">
-                    <span class="font-semibold text-gray-900">{comment.author_name}</span>
+                    <span class="font-semibold text-gray-900">{comment.author}</span>
                     <span class="text-sm text-gray-500">
                       {new Date(comment.created_at).toLocaleDateString()}
                     </span>

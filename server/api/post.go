@@ -557,11 +557,22 @@ func GetPostDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Now set the GroupID properly (can be nil if the database value is NULL)
+	//if post is set to group id is not null check if user in the group
 	if groupID != nil {
-		post.GroupID = *groupID
-	} else {
-		post.GroupID = 0 // Or set it to a default value if appropriate
+		// Check if user is in the group
+		var isMember bool
+		err = sqlite.DB.QueryRow(`
+			SELECT EXISTS(
+			SELECT 1 FROM group_members
+			WHERE group_id = ? AND user_id = ?)`,
+			*groupID, userID).Scan(&isMember)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "Failed to check group membership",
+			})
+			return
+		}
 	}
 
 	// Check if user has permission to view the post
@@ -593,22 +604,34 @@ func GetPostDetails(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch the author's username from the database
 	var authorName string
-	var authorAvatar string
+	var authorAvatar sql.NullString
 	err = sqlite.DB.QueryRow(`
-		SELECT username, avatar
-		FROM users
-		WHERE id = ?`,
+SELECT username, avatar
+FROM users
+WHERE id = ?`,
 		post.Author).Scan(&authorName, &authorAvatar)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "Author not found",
+			})
+			return
+		}
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
 			"error": "Failed to fetch author's username",
 		})
 		return
 	}
+	post.AuthorName = authorName
+	if authorAvatar.Valid {
+		post.AuthorAvatar = authorAvatar.String
+	} else {
+		post.AuthorAvatar = ""
+	}
 
 	post.AuthorName = authorName
-	post.AuthorAvatar = authorAvatar
 
 	//get the comments in that post
 	rows, err := sqlite.DB.Query(`
