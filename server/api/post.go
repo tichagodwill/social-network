@@ -175,7 +175,7 @@ func CreatePost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Handle private post viewers
-	if post.Privacy == 3 && len(post.SelectedUsers) > 0 {
+	if post.Privacy == 2 && len(post.SelectedUsers) > 0 {
 		// Insert into post_PrivateViews for each selected user
 		for _, selectedUserID := range post.SelectedUsers {
 			_, err = tx.Exec(
@@ -268,15 +268,19 @@ func GetPosts(w http.ResponseWriter, r *http.Request) {
 
 	// Updated query to handle all privacy cases
 	rows, err := sqlite.DB.Query(`
-        SELECT DISTINCT p.id, p.title, p.content, p.media, p.privacy, p.author, p.created_at, p.group_id
-        FROM posts p
-        LEFT JOIN followers f ON p.author = f.followed_id AND f.follower_id = ?
-        LEFT JOIN post_PrivateViews pv ON p.id = pv.post_id AND pv.user_id = ?
-        WHERE p.privacy = 1  -- Public posts
-        OR p.author = ?     -- User's own posts
-        OR (p.privacy = 2 AND f.follower_id IS NOT NULL)  -- Posts visible to followers
-        OR (p.privacy = 3 AND pv.user_id IS NOT NULL)    -- Private posts user can see
-        ORDER BY p.created_at DESC`,
+			-- Update the query to check for accepted followers status
+			SELECT DISTINCT p.id, p.title, p.content, p.media, p.privacy, p.author, p.created_at, p.group_id
+			FROM posts p
+			LEFT JOIN followers f ON p.author = f.followed_id 
+				AND f.follower_id = ? 
+				AND f.status = 'accepted'  -- Add status check
+			LEFT JOIN post_PrivateViews pv ON p.id = pv.post_id AND pv.user_id = ?
+			WHERE p.privacy = 0  -- Public posts
+			OR p.author = ?      -- User's own posts
+			OR (p.privacy = 1 AND f.follower_id IS NOT NULL)  -- Posts visible to followers
+			OR (p.privacy = 2 AND pv.user_id IS NOT NULL)     -- Private posts user can see
+			ORDER BY p.created_at DESC
+			`,
 		userID, userID, userID)
 
 	if err != nil {

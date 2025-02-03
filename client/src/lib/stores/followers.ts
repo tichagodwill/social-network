@@ -22,6 +22,8 @@ function createFollowersStore() {
 
     return {
         subscribe,
+        set,
+        update,
         followUser: async (userId: number) => {
             try {
                 const response = await fetch('http://localhost:8080/follow', {

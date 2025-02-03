@@ -151,7 +151,6 @@
     // Function to fetch user posts
     async function loadUserPosts() {
         try {
-            debugger
             const response = await fetch(`http://localhost:8080/getMyPosts`, {
                 credentials: 'include'
             });
