@@ -13,7 +13,7 @@ export const load: PageLoad = async ({params, fetch}) => {
         const user: User = transformUser(res.user);
         const Following: Followers[] | null = res.following ? transformFollowers(res.following) as Followers[] : null;
         const Followers: Followers[] | null = res.followers ? transformFollowers(res.followers) as Followers[] : null;
-        const Requests: Followers[] | null = res.followers ? transformFollowers(res.requests) as Followers[] : null;
+        const Requests: Followers[] | null = res.requests ? transformFollowers(res.requests) as Followers[] : null;
         return {
             user,
             params,

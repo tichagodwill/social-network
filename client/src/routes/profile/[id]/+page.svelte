@@ -45,7 +45,6 @@
             });
 
             if (response.ok) {
-                debugger
                 const followStatus = await response.json();
                 isFollowing = followStatus.isFollowing;
                 hasPendingRequest = followStatus.hasPendingRequest;

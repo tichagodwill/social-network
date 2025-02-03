@@ -50,7 +50,7 @@
         credentials: 'include',
         body: JSON.stringify({ search })
       });
-debugger
+
       if (response.ok) {
         users = await response.json();
       }
