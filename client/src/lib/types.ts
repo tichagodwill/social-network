@@ -6,7 +6,7 @@ export interface Post {
     privacy: number;
     author: number;
     authorName: string;
-    created_at?: string;
+    created_at: string;
     groupId?: number;
 
     // Additional helpful fields
@@ -15,7 +15,7 @@ export interface Post {
     lastEditedAt?: string;
     mediaType?: 'image' | 'gif';
     likes?: number;
-    comments?: number;
+    comments?: Comment[];
     privacyLabel?: 'Public' | 'Private' | 'Almost Private';
 }
 
@@ -32,7 +32,7 @@ export interface User {
     createdAt?: string;
 }
 
-export interface Followers{
+export interface Followers {
     id: number;
     userId: number;
     username: string;
@@ -136,7 +136,7 @@ export interface Group {
     description: string;
     creator_id: number;
     creator_username?: string;
-    created_at?: string;
+    created_at: string;
     is_member?: boolean;
 }
 
@@ -162,4 +162,14 @@ export interface GroupComment {
     author_id: number;
     author: string;
     created_at: string;
-} 
+}
+
+export interface Comment {
+    id: number;
+    content: string;
+    author_id: number;
+    author: string;
+    avatar:string;
+    created_at: string;
+    author_name:string;
+}

@@ -95,6 +95,8 @@ func main() {
 	mux.Handle("POST /posts", authMiddleware(http.HandlerFunc(api.CreatePost)))
 	mux.Handle("GET /posts/{id}", authMiddleware(http.HandlerFunc(api.ViewPost)))
 	mux.Handle("GET /posts", authMiddleware(http.HandlerFunc(api.GetPosts)))
+	mux.Handle("GET /posts/{id}/details", authMiddleware(http.HandlerFunc(api.GetPostDetails)))
+	mux.Handle("POST /posts/addComment", authMiddleware(http.HandlerFunc(api.AddPostComment)))
 
 	mux.Handle("POST /comments", authMiddleware(http.HandlerFunc(api.CreateComment)))
 	mux.Handle("GET /comments/{postID}", authMiddleware(http.HandlerFunc(api.GetComments)))
