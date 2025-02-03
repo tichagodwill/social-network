@@ -11,14 +11,12 @@ import (
 func GetNotifications(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Get current user from session
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
 		sendJSONError(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	// Get user ID
 	var userID int
 	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
 	if err != nil {
@@ -27,7 +25,6 @@ func GetNotifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch notifications
 	rows, err := sqlite.DB.Query(`
         SELECT 
             n.id,
@@ -35,9 +32,9 @@ func GetNotifications(w http.ResponseWriter, r *http.Request) {
             n.type,
             n.content,
             n.group_id,
-            n.invitation_id,
-            n.read,
+            n.is_read,
             n.created_at,
+            n.from_user_id,
             g.title as group_name,
             COALESCE(gm.role, '') as user_role
         FROM notifications n
@@ -56,41 +53,46 @@ func GetNotifications(w http.ResponseWriter, r *http.Request) {
 	var notifications []map[string]interface{}
 	for rows.Next() {
 		var notification struct {
-			ID           int64  `json:"id"`
-			UserID       int64  `json:"user_id"`
-			Type         string `json:"type"`
-			Content      string `json:"content"`
-			GroupID      int64  `json:"group_id"`
-			InvitationID int64  `json:"invitation_id"`
-			Read         bool   `json:"read"`
-			CreatedAt    string `json:"created_at"`
-			GroupName    string `json:"group_name"`
-			UserRole     string `json:"user_role"`
+			ID         int64  `json:"id"`
+			UserID     int64  `json:"user_id"`
+			Type       string `json:"type"`
+			Content    string `json:"content"`
+			GroupID    *int64 `json:"group_id"`
+			IsRead     bool   `json:"is_read"`
+			CreatedAt  string `json:"created_at"`
+			FromUserID *int64 `json:"from_user_id"`
+			GroupName  string `json:"group_name"`
+			UserRole   string `json:"user_role"`
 		}
-		if err := rows.Scan(&notification.ID, &notification.UserID, &notification.Type, &notification.Content, &notification.GroupID, &notification.InvitationID, &notification.Read, &notification.CreatedAt, &notification.GroupName, &notification.UserRole); err != nil {
+		if err := rows.Scan(
+			&notification.ID,
+			&notification.UserID,
+			&notification.Type,
+			&notification.Content,
+			&notification.GroupID,
+			&notification.IsRead,
+			&notification.CreatedAt,
+			&notification.FromUserID,
+			&notification.GroupName,
+			&notification.UserRole,
+		); err != nil {
+			log.Printf("Error scanning notification: %v", err)
 			continue
 		}
 		notifications = append(notifications, map[string]interface{}{
-			"id":           notification.ID,
-			"userId":       notification.UserID,
-			"type":         notification.Type,
-			"content":      notification.Content,
-			"groupId":      notification.GroupID,
-			"invitationId": notification.InvitationID,
-			"read":         notification.Read,
-			"createdAt":    notification.CreatedAt,
-			"groupName":    notification.GroupName,
-			"userRole":     notification.UserRole,
+			"id":         notification.ID,
+			"userId":     notification.UserID,
+			"type":       notification.Type,
+			"content":    notification.Content,
+			"groupId":    notification.GroupID,
+			"isRead":     notification.IsRead,
+			"createdAt":  notification.CreatedAt,
+			"fromUserId": notification.FromUserID,
+			"groupName":  notification.GroupName,
+			"userRole":   notification.UserRole,
 		})
 	}
 
-	if err = rows.Err(); err != nil {
-		log.Printf("Error iterating notifications: %v", err)
-		sendJSONError(w, "Error processing notifications", http.StatusInternalServerError)
-		return
-	}
-
-	// If no notifications found, return empty array instead of null
 	if notifications == nil {
 		notifications = make([]map[string]interface{}, 0)
 	}
@@ -107,7 +109,6 @@ func MarkNotificationAsRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get current user from session to verify ownership
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
 		sendJSONError(w, "Unauthorized", http.StatusUnauthorized)
@@ -123,7 +124,7 @@ func MarkNotificationAsRead(w http.ResponseWriter, r *http.Request) {
 
 	result, err := sqlite.DB.Exec(`
         UPDATE notifications
-        SET read = true
+        SET is_read = true
         WHERE id = ? AND user_id = ?`,
 		notificationID, userID)
 	if err != nil {
