@@ -13,6 +13,85 @@ import (
 	"social-network/util"
 )
 
+// getMyPosts fetches all posts created by the current user
+func GetMyPosts(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Get current user from session
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Get user ID
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		log.Printf("Error getting user ID: %v", err)
+		http.Error(w, "Failed to get user information", http.StatusInternalServerError)
+		return
+	}
+
+	// Fetch posts from the database
+	rows, err := sqlite.DB.Query(`
+		SELECT p.id, p.title, p.content, p.media, p.privacy, p.author, p.created_at, p.group_id
+		FROM posts p
+		WHERE p.author = ?
+		ORDER BY p.created_at DESC`,
+		userID)
+	if err != nil {
+		http.Error(w, "Failed to fetch posts", http.StatusInternalServerError)
+		log.Printf("Error fetching posts: %v", err)
+		return
+	}
+
+	defer rows.Close()
+
+	// Iterate through the results
+	var posts []m.Post
+	for rows.Next() {
+		var post m.Post
+		var groupID *int // Use a pointer for the nullable GroupID
+
+		if err := rows.Scan(&post.ID, &post.Title, &post.Content, &post.Media, &post.Privacy, &post.Author, &post.CreatedAt, &groupID); err != nil {
+			http.Error(w, "Error reading posts", http.StatusInternalServerError)
+			log.Printf("Error scanning post: %v", err)
+			return
+		}
+
+		// Fetch the author's username from the database
+		var authorName string
+		var authorAvatar string
+		err = sqlite.DB.QueryRow(`
+		SELECT username, avatar
+		FROM users
+		WHERE id = ?`,
+			post.Author).Scan(&authorName, &authorAvatar)
+		if err != nil {
+			http.Error(w, "Failed to fetch author's username", http.StatusInternalServerError)
+			log.Printf("Error fetching author's username: %v", err)
+			return
+		}
+
+		post.AuthorName = authorName
+		post.AuthorAvatar = authorAvatar
+
+		// Now set the GroupID properly (can be nil if the database value is NULL)
+		if groupID != nil {
+			post.GroupID = *groupID
+		} else {
+			post.GroupID = 0 // Or set it to a default value if appropriate
+		}
+
+		posts = append(posts, post)
+	}
+
+	// Return the posts as JSON
+	json.NewEncoder(w).Encode(posts)
+
+}
+
 func CreatePost(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
