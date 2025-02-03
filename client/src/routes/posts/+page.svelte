@@ -5,6 +5,7 @@
     import {Button, Card, Textarea, Radio} from 'flowbite-svelte';
     import {getFormattedDate} from '$lib/dateFormater';
     import {fade, fly} from 'svelte/transition';
+    import { followers } from '$lib/stores/followers'
 
     let newPostTitle = '';
     let newPostContent = '';
@@ -16,6 +17,17 @@
     let expandedImageSrc = '';
     let isLoadingPosts = true;
     let postsPerRow = 3;
+
+    // Add privacy type options
+    const privacyOptions = [
+        { value: 1, label: 'Public - Everyone can see', icon: 'globe' },
+        { value: 2, label: 'Almost Private - Only followers can see', icon: 'users' },
+        { value: 3, label: 'Private - Only selected users can see', icon: 'lock' }
+    ];
+
+    // Add state for selected users
+    let selectedUsers: number[] = [];
+    let privacyType = 1; // Default to public
 
     onMount(async () => {
         isLoadingPosts = true;
@@ -67,8 +79,14 @@
         }
     }
 
+
+    // Function to handle post submission
     async function handleSubmitPost() {
         if (!newPostTitle.trim() || !newPostContent.trim()) return;
+        if (privacyType === 3 && selectedUsers.length === 0) {
+            alert('Please select users who can view this private post');
+            return;
+        }
 
         isSubmitting = true;
         try {
@@ -80,23 +98,43 @@
             const postData = {
                 title: newPostTitle.trim(),
                 content: newPostContent.trim(),
-                privacy: Number(privacy),
-                media: mediaBase64 || undefined,
-                author: $auth?.user?.id || 0
+                privacy: privacyType,
+                selectedUsers: privacyType === 3 ? selectedUsers : undefined,
+                media: mediaBase64 || undefined
             };
 
             await posts.addPost(postData);
-            await posts.loadPosts();
 
+            // Reset form
             newPostTitle = '';
             newPostContent = '';
             mediaFile = null;
-            privacy = 1;
+            privacyType = 1;
+            selectedUsers = [];
             showModal = false;
         } catch (error) {
             console.error('Error adding post:', error);
         } finally {
             isSubmitting = false;
+        }
+    }
+
+    // Modify the loadFollowers function
+    async function loadFollowers() {
+        try {
+            const response = await fetch('http://localhost:8080/user/current/followers', {
+                credentials: 'include'
+            });
+            if (response.ok) {
+                const data = await response.json();
+                followers.set({
+                    followers: data.followers || [],
+                    following: data.following || [],
+                    requests: data.requests || []
+                });
+            }
+        } catch (error) {
+            console.error('Failed to load followers:', error);
         }
     }
 
@@ -378,15 +416,46 @@
                             <!-- Privacy Settings -->
                             <div class="space-y-2">
                                 <label class="block text-sm font-medium text-gray-700">Privacy Setting</label>
-                                <div class="flex items-center gap-6 bg-gray-50 p-4 rounded-lg">
-                                    <div class="flex items-center gap-2">
-                                        <Radio bind:group={privacy} value={1} name="privacy">Public</Radio>
-                                    </div>
-                                    <div class="flex items-center gap-2">
-                                        <Radio bind:group={privacy} value={0} name="privacy">Private</Radio>
-                                    </div>
+                                <div class="space-y-2">
+                                    {#each privacyOptions as option}
+                                        <label class="flex items-center p-3 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer">
+                                            <input
+                                              type="radio"
+                                              bind:group={privacyType}
+                                              value={option.value}
+                                              class="h-4 w-4 text-primary-600"
+                                            />
+                                            <span class="ml-2">{option.label}</span>
+                                        </label>
+                                    {/each}
                                 </div>
                             </div>
+
+                            <!-- User Selection for Private Posts -->
+                            {#if privacyType === 3}
+                                <div class="mt-4 p-4 bg-gray-50 rounded-lg">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Select Users Who Can See This Post
+                                    </label>
+                                    <div class="space-y-2 max-h-40 overflow-y-auto">
+                                        {#if $followers.following && $followers.following.length > 0}
+                                            {#each $followers.following as follower}
+                                                <label class="flex items-center space-x-3">
+                                                    <input
+                                                      type="checkbox"
+                                                      bind:group={selectedUsers}
+                                                      value={follower.id}
+                                                      class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                                                    />
+                                                    <span>{follower.username}</span>
+                                                </label>
+                                            {/each}
+                                        {:else}
+                                            <p class="text-gray-500">You're not following anyone yet</p>
+                                        {/if}
+                                    </div>
+                                </div>
+                            {/if}
 
                             <!-- Action Buttons -->
                             <div class="flex justify-end gap-3 pt-6 border-t">

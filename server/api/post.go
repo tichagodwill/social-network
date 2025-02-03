@@ -36,6 +36,7 @@ func CreatePost(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
 	var post m.Post
 	if err := json.NewDecoder(r.Body).Decode(&post); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -44,6 +45,7 @@ func CreatePost(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
 	post.Author = userID
 	// Validate required fields
 	if strings.TrimSpace(post.Title) == "" || strings.TrimSpace(post.Content) == "" {
@@ -59,8 +61,19 @@ func CreatePost(w http.ResponseWriter, r *http.Request) {
 		post.Privacy = 1 // 1 for public, 2 for private, 3 for followers only
 	}
 
-	// Insert the post into the database
-	result, err := sqlite.DB.Exec(
+	// Start a transaction
+	tx, err := sqlite.DB.Begin()
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to start transaction",
+		})
+		return
+	}
+	defer tx.Rollback() // Rollback if we don't commit
+
+	// Insert the post into the database using the transaction
+	result, err := tx.Exec(
 		"INSERT INTO posts (title, content, media, privacy, author, created_at) VALUES (?, ?, ?, ?, ?, datetime('now'))",
 		post.Title, post.Content, post.Media, post.Privacy, post.Author)
 	if err != nil {
@@ -82,12 +95,62 @@ func CreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return success response with post ID
+	// Handle private post viewers
+	if post.Privacy == 3 && len(post.SelectedUsers) > 0 {
+		// Insert into post_PrivateViews for each selected user
+		for _, selectedUserID := range post.SelectedUsers {
+			_, err = tx.Exec(
+				"INSERT INTO post_PrivateViews (post_id, user_id) VALUES (?, ?)",
+				postID, selectedUserID)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				json.NewEncoder(w).Encode(map[string]string{
+					"error": "Failed to set post privacy views",
+				})
+				return
+			}
+		}
+	}
+
+	// Commit the transaction
+	if err = tx.Commit(); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to commit transaction",
+		})
+		return
+	}
+
+	// After successfully creating the post, fetch the complete post data
+	var completePost m.Post
+	err = sqlite.DB.QueryRow(`
+        SELECT p.id, p.title, p.content, p.media, p.privacy, p.author, p.created_at,
+               u.username as authorName, u.avatar as authorAvatar
+        FROM posts p
+        JOIN users u ON p.author = u.id
+        WHERE p.id = ?`,
+		postID).Scan(
+		&completePost.ID,
+		&completePost.Title,
+		&completePost.Content,
+		&completePost.Media,
+		&completePost.Privacy,
+		&completePost.Author,
+		&completePost.CreatedAt,
+		&completePost.AuthorName,
+		&completePost.AuthorAvatar,
+	)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to fetch created post",
+		})
+		return
+	}
+
+	// Return the complete post data
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"message": "Post created successfully",
-		"id":      postID,
-	})
+	json.NewEncoder(w).Encode(completePost)
 }
 
 func GetPosts(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +177,7 @@ func GetPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check the database connection before running the query.
+	// Check the database connection
 	if sqlite.DB == nil {
 		log.Printf("Error: Database is not initialized")
 		w.WriteHeader(http.StatusInternalServerError)
@@ -123,27 +186,20 @@ func GetPosts(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	err = sqlite.DB.Ping() // Check the connection
-	if err != nil {
-		log.Printf("Error pinging database: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{
-			"error": "Database connection failed",
-		})
-		return
-	}
-	log.Printf("UserID: %v", userID)
 
-	// Fetch posts from the database
+	// Updated query to handle all privacy cases
 	rows, err := sqlite.DB.Query(`
-		SELECT p.id, p.title, p.content, p.media, p.privacy, p.author, p.created_at, p.group_id
-		FROM posts p
-		LEFT JOIN followers f ON p.author = f.followed_id
-		WHERE p.privacy = 1  -- Public posts
-		OR p.author = ?     -- User's own posts
-		OR (p.privacy = 3 AND f.follower_id = ?)  -- Posts visible to followers
-		ORDER BY p.created_at DESC`,
-		userID, userID)
+        SELECT DISTINCT p.id, p.title, p.content, p.media, p.privacy, p.author, p.created_at, p.group_id
+        FROM posts p
+        LEFT JOIN followers f ON p.author = f.followed_id AND f.follower_id = ?
+        LEFT JOIN post_PrivateViews pv ON p.id = pv.post_id AND pv.user_id = ?
+        WHERE p.privacy = 1  -- Public posts
+        OR p.author = ?     -- User's own posts
+        OR (p.privacy = 2 AND f.follower_id IS NOT NULL)  -- Posts visible to followers
+        OR (p.privacy = 3 AND pv.user_id IS NOT NULL)    -- Private posts user can see
+        ORDER BY p.created_at DESC`,
+		userID, userID, userID)
+
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
@@ -154,13 +210,21 @@ func GetPosts(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	// Iterate through the results
 	var posts []m.Post
 	for rows.Next() {
 		var post m.Post
-		var groupID *int // Use a pointer for the nullable GroupID
+		var groupID sql.NullInt64 // Handle nullable group_id
 
-		if err := rows.Scan(&post.ID, &post.Title, &post.Content, &post.Media, &post.Privacy, &post.Author, &post.CreatedAt, &groupID); err != nil {
+		if err := rows.Scan(
+			&post.ID,
+			&post.Title,
+			&post.Content,
+			&post.Media,
+			&post.Privacy,
+			&post.Author,
+			&post.CreatedAt,
+			&groupID,
+		); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			json.NewEncoder(w).Encode(map[string]string{
 				"error": "Error reading posts",
@@ -168,38 +232,81 @@ func GetPosts(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Error scanning post: %v", err)
 			return
 		}
-		// Fetch the author's username from the database
+
+		// Fetch author information
 		var authorName string
 		var authorAvatar string
 		err = sqlite.DB.QueryRow(`
-		SELECT username, avatar
-		FROM users
-		WHERE id = ?`,
+            SELECT username, avatar
+            FROM users
+            WHERE id = ?`,
 			post.Author).Scan(&authorName, &authorAvatar)
 		if err != nil {
-			w.WriteHeader(http.StatusInternalServerError)
-			json.NewEncoder(w).Encode(map[string]string{
-				"error": "Failed to fetch author's username",
-			})
-			log.Printf("Error fetching author's username: %v", err)
-			return
+			continue // Skip this post if we can't get author info
 		}
 
 		post.AuthorName = authorName
 		post.AuthorAvatar = authorAvatar
 
-		// Now set the GroupID properly (can be nil if the database value is NULL)
-		if groupID != nil {
-			post.GroupID = *groupID
-		} else {
-			post.GroupID = 0 // Or set it to a default value if appropriate
+		// Handle nullable group_id
+		if groupID.Valid {
+			post.GroupID = int(groupID.Int64)
 		}
 
 		posts = append(posts, post)
 	}
 
-	// Return the posts as JSON
+	if err = rows.Err(); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "Error iterating through posts",
+		})
+		return
+	}
+
 	json.NewEncoder(w).Encode(posts)
+}
+
+// Add this helper function
+func canUserViewPost(postID, userID int) (bool, error) {
+	var post m.Post
+	var isAllowed bool
+
+	// First get the post details
+	err := sqlite.DB.QueryRow(`
+        SELECT p.privacy, p.author 
+        FROM posts p 
+        WHERE p.id = ?`, postID).Scan(&post.Privacy, &post.Author)
+	if err != nil {
+		return false, err
+	}
+
+	// If user is the author or post is public, they can view it
+	if post.Author == userID || post.Privacy == 1 {
+		return true, nil
+	}
+
+	// For almost-private posts (followers only)
+	if post.Privacy == 2 {
+		err = sqlite.DB.QueryRow(`
+            SELECT EXISTS(
+                SELECT 1 FROM followers 
+                WHERE follower_id = ? AND followed_id = ?
+            )`, userID, post.Author).Scan(&isAllowed)
+		return isAllowed, err
+	}
+
+	// For private posts
+	if post.Privacy == 3 {
+		err = sqlite.DB.QueryRow(`
+            SELECT EXISTS(
+                SELECT 1 FROM post_PrivateViews 
+                WHERE post_id = ? AND user_id = ?
+            )`, postID, userID).Scan(&isAllowed)
+		return isAllowed, err
+	}
+
+	return false, nil
 }
 
 func ViewPost(w http.ResponseWriter, r *http.Request) {

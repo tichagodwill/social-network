@@ -56,9 +56,9 @@ func FollowUser(w http.ResponseWriter, r *http.Request) {
 	// Check if target user exists and get their privacy setting
 	var isPrivate bool
 	err = tx.QueryRow(`
-		SELECT is_private 
-		FROM users  
-		WHERE id = ?`, req.UserToFollowID).Scan(&isPrivate)
+        SELECT is_private 
+        FROM users  
+        WHERE id = ?`, req.UserToFollowID).Scan(&isPrivate)
 	if err == sql.ErrNoRows {
 		http.Error(w, "User to follow not found", http.StatusNotFound)
 		return
@@ -71,9 +71,9 @@ func FollowUser(w http.ResponseWriter, r *http.Request) {
 	// Check if already following
 	var existingStatus string
 	err = tx.QueryRow(`
-		SELECT status 
-		FROM followers 
-		WHERE follower_id = ? AND followed_id = ?`,
+        SELECT status 
+        FROM followers 
+        WHERE follower_id = ? AND followed_id = ?`,
 		followerID, req.UserToFollowID).Scan(&existingStatus)
 
 	if err == nil {
@@ -86,6 +86,9 @@ func FollowUser(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Follow request already pending", http.StatusBadRequest)
 			return
 		}
+	} else if err != sql.ErrNoRows {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
 	}
 
 	// Determine initial status based on privacy setting
@@ -94,13 +97,22 @@ func FollowUser(w http.ResponseWriter, r *http.Request) {
 		initialStatus = "accepted"
 	}
 
-	// Insert follow relationship
-	_, err = tx.Exec(`
-		INSERT INTO followers (follower_id, followed_id, status)
-		VALUES (?, ?, ?)
-		ON CONFLICT(follower_id, followed_id) 
-		DO UPDATE SET status = ?`,
-		followerID, req.UserToFollowID, initialStatus, initialStatus)
+	var _ sql.Result
+	if err == sql.ErrNoRows {
+		// No existing relationship, insert new one
+		_, err = tx.Exec(`
+            INSERT INTO followers (follower_id, followed_id, status)
+            VALUES (?, ?, ?)`,
+			followerID, req.UserToFollowID, initialStatus)
+	} else {
+		// Update existing relationship
+		_, err = tx.Exec(`
+            UPDATE followers 
+            SET status = ?
+            WHERE follower_id = ? AND followed_id = ?`,
+			initialStatus, followerID, req.UserToFollowID)
+	}
+
 	if err != nil {
 		http.Error(w, "Failed to create follow relationship", http.StatusInternalServerError)
 		return
@@ -109,8 +121,8 @@ func FollowUser(w http.ResponseWriter, r *http.Request) {
 	// Create notification for private accounts
 	if isPrivate {
 		_, err = tx.Exec(`
-			INSERT INTO notifications (user_id, type, content, from_user_id)
-			VALUES (?, 'follow_request', 'wants to follow you', ?)`,
+            INSERT INTO notifications (user_id, type, content, from_user_id)
+            VALUES (?, 'follow_request', 'wants to follow you', ?)`,
 			req.UserToFollowID, followerID)
 		if err != nil {
 			log.Printf("Failed to create notification: %v", err)
@@ -156,7 +168,7 @@ func UnfollowUser(w http.ResponseWriter, r *http.Request) {
 
 	result, err := sqlite.DB.Exec(`
 		DELETE FROM followers 
-		WHERE follower_id = ? AND followed_id = ? AND status = 'accepted'`,
+		WHERE follower_id = ? AND followed_id = ?`,
 		followerID, req.UserToUnfollowID)
 	if err != nil {
 		http.Error(w, "Failed to unfollow user", http.StatusInternalServerError)
@@ -206,7 +218,7 @@ func FollowStatus(w http.ResponseWriter, r *http.Request) {
 
 	// Check if the current user is following the specified user
 	var isFollowing bool
-	var pendeingRequest bool
+	var pendingRequest bool
 
 	err = sqlite.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM followers WHERE follower_id = ? AND followed_id = ? AND status = 'accepted')",
 		currentUserID, req.FollowedId).Scan(&isFollowing)
@@ -219,7 +231,7 @@ func FollowStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = sqlite.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM followers WHERE follower_id = ? AND followed_id = ? AND status = 'pending')",
-		currentUserID, req.FollowedId).Scan(&pendeingRequest)
+		currentUserID, req.FollowedId).Scan(&pendingRequest)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{
@@ -231,9 +243,8 @@ func FollowStatus(w http.ResponseWriter, r *http.Request) {
 	//return the status
 	json.NewEncoder(w).Encode(map[string]bool{
 		"isFollowing":       isFollowing,
-		"hasPendingRequest": pendeingRequest,
+		"hasPendingRequest": pendingRequest,
 	})
-
 }
 
 // HandleFollowRequest handles accepting or rejecting follow requests

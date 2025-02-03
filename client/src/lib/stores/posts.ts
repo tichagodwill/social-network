@@ -19,7 +19,7 @@ function createPostsStore() {
                 console.error('Failed to load posts:', error);
             }
         },
-        addPost: async (post: Omit<Post, 'id' | 'createdAt' | 'author'>) => {
+        addPost: async (postData: any) => {
             try {
                 const response = await fetch('http://localhost:8080/posts', {
                     method: 'POST',
@@ -27,18 +27,30 @@ function createPostsStore() {
                         'Content-Type': 'application/json'
                     },
                     credentials: 'include',
-                    body: JSON.stringify(post)
+                    body: JSON.stringify(postData)
                 });
-                
-                if (response.ok) {
-                    const newPost = await response.json();
-                    update(posts => [newPost, ...posts]);
+
+                if (!response.ok) {
+                    throw new Error('Failed to create post');
                 }
+
+                const newPost = await response.json();
+
+                // Update the posts store by adding the new post at the beginning
+                update(currentPosts => {
+                    if (!Array.isArray(currentPosts)) {
+                        currentPosts = [];
+                    }
+                    return [newPost, ...currentPosts];
+                });
+
+                return newPost;
             } catch (error) {
                 console.error('Failed to create post:', error);
+                throw error;
             }
         }
     };
 }
 
-export const posts = createPostsStore(); 
+export const posts = createPostsStore();
