@@ -1403,54 +1403,50 @@ func GetGroupRequests(w http.ResponseWriter, r *http.Request) {
 
 	groupID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
-		sendJSONResponse(w, http.StatusBadRequest, map[string]interface{}{
-			"error": "Invalid group ID",
-		})
+		sendJSONError(w, "Invalid group ID", http.StatusBadRequest)
 		return
 	}
 
-	// Get current user
+	// Get current user's role
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
-		sendJSONResponse(w, http.StatusUnauthorized, map[string]interface{}{
-			"error": "Unauthorized",
-		})
+		sendJSONError(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	var userID int
 	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
 	if err != nil {
-		sendJSONResponse(w, http.StatusInternalServerError, map[string]interface{}{
-			"error": "Failed to get user information",
-		})
+		sendJSONError(w, "Failed to get user information", http.StatusInternalServerError)
 		return
 	}
 
-	// Check if user has admin privileges
-	hasPrivileges, err := hasAdminPrivileges(groupID, userID)
+	// Check if user has permission to view requests
+	hasPermission, err := checkUserRole(groupID, userID, "admin")
 	if err != nil {
-		sendJSONResponse(w, http.StatusInternalServerError, map[string]interface{}{
-			"error": "Failed to verify permissions",
-		})
+		sendJSONError(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	if !hasPermission {
+		sendJSONError(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	if !hasPrivileges {
-		sendJSONResponse(w, http.StatusForbidden, map[string]interface{}{
-			"error": "Only group creator and admins can view requests",
-		})
-		return
-	}
-
+	// Get pending requests with user information
 	rows, err := sqlite.DB.Query(`
-		SELECT gi.id, gi.invitee_id, u.username, gi.created_at
+		SELECT 
+			gi.id,
+			u.username,
+			gi.created_at
 		FROM group_invitations gi
-		JOIN users u ON gi.invitee_id = u.id
-		WHERE gi.group_id = ? AND gi.status = 'pending'`, groupID)
+		JOIN users u ON u.id = gi.invitee_id
+		WHERE gi.group_id = ? 
+		AND gi.type = 'request'
+		AND gi.status = 'pending'
+		ORDER BY gi.created_at DESC`,
+		groupID)
 	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to fetch requests"})
+		sendJSONError(w, "Failed to fetch requests", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
@@ -1458,24 +1454,27 @@ func GetGroupRequests(w http.ResponseWriter, r *http.Request) {
 	var requests []map[string]interface{}
 	for rows.Next() {
 		var request struct {
-			ID        int       `json:"id"`
-			InviteeID int       `json:"invitee_id"`
-			Username  string    `json:"username"`
-			CreatedAt time.Time `json:"created_at"`
+			ID        int
+			Username  string
+			CreatedAt time.Time
 		}
-		if err := rows.Scan(&request.ID, &request.InviteeID, &request.Username, &request.CreatedAt); err != nil {
+		if err := rows.Scan(&request.ID, &request.Username, &request.CreatedAt); err != nil {
+			log.Printf("Error scanning request: %v", err)
 			continue
 		}
+
 		requests = append(requests, map[string]interface{}{
-			"id":        request.ID,
-			"inviteeId": request.InviteeID,
-			"username":  request.Username,
-			"createdAt": request.CreatedAt,
+			"id":         request.ID,
+			"username":   request.Username,
+			"created_at": request.CreatedAt,
 		})
 	}
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(requests)
+	if requests == nil {
+		requests = make([]map[string]interface{}, 0)
+	}
+
+	sendJSONResponse(w, http.StatusOK, requests)
 }
 
 // GetInvitationStatus checks if a user has a pending invitation or request for a group
@@ -1604,23 +1603,34 @@ func RequestJoinGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if isMember {
-		sendJSONError(w, "Already a member of this group", http.StatusBadRequest)
+		sendJSONError(w, "User is already a member", http.StatusBadRequest)
 		return
 	}
 
 	// Check for existing request
-	var hasPendingRequest bool
+	var hasRequest bool
 	err = tx.QueryRow(`
 		SELECT EXISTS(
 			SELECT 1 FROM group_invitations 
-			WHERE group_id = ? AND invitee_id = ? AND status = 'pending'
-		)`, groupID, userID).Scan(&hasPendingRequest)
+			WHERE group_id = ? AND invitee_id = ? AND type = 'request' AND status = 'pending'
+		)`, groupID, userID).Scan(&hasRequest)
 	if err != nil {
 		sendJSONError(w, "Database error", http.StatusInternalServerError)
 		return
 	}
-	if hasPendingRequest {
-		sendJSONError(w, "Already have a pending request", http.StatusBadRequest)
+	if hasRequest {
+		sendJSONError(w, "User already has a pending request", http.StatusBadRequest)
+		return
+	}
+
+	// Get group information
+	var group struct {
+		Title     string
+		CreatorID int
+	}
+	err = tx.QueryRow(`SELECT title, creator_id FROM groups WHERE id = ?`, groupID).Scan(&group.Title, &group.CreatorID)
+	if err != nil {
+		sendJSONError(w, "Failed to get group information", http.StatusInternalServerError)
 		return
 	}
 
@@ -1630,9 +1640,10 @@ func RequestJoinGroup(w http.ResponseWriter, r *http.Request) {
 			group_id, 
 			inviter_id, 
 			invitee_id, 
+			type,
 			status, 
 			created_at
-		) VALUES (?, ?, ?, 'pending', CURRENT_TIMESTAMP)`,
+		) VALUES (?, ?, ?, 'request', 'pending', CURRENT_TIMESTAMP)`,
 		groupID, userID, userID)
 	if err != nil {
 		sendJSONError(w, "Failed to create join request", http.StatusInternalServerError)
@@ -1645,39 +1656,34 @@ func RequestJoinGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create notifications for admins/creators
+	// Create notification for group creator
 	_, err = tx.Exec(`
 		INSERT INTO notifications (
-			user_id, 
-			type, 
-			content, 
+			user_id,
+			type,
+			content,
 			group_id,
-			invitation_id,
+			from_user_id,
+			is_read,
 			created_at
-		)
-		SELECT DISTINCT gm.user_id,
-			'join_request',
-			(SELECT username FROM users WHERE id = ?) || ' has requested to join ' || g.title,
-			g.id,
-			?,
-			CURRENT_TIMESTAMP
-		FROM group_members gm
-		JOIN groups g ON g.id = gm.group_id
-		WHERE g.id = ? 
-		AND (gm.role = 'creator' OR gm.role = 'admin')`,
-		userID, requestID, groupID)
-
+		) VALUES (?, ?, ?, ?, ?, false, CURRENT_TIMESTAMP)`,
+		group.CreatorID,
+		"group_join_request",
+		fmt.Sprintf("%s has requested to join %s", username, group.Title),
+		groupID,
+		userID)
 	if err != nil {
-		log.Printf("Failed to create admin notifications: %v", err)
+		log.Printf("Failed to create notification: %v", err)
 	}
 
 	if err = tx.Commit(); err != nil {
-		sendJSONError(w, "Failed to complete request", http.StatusInternalServerError)
+		sendJSONError(w, "Failed to complete join request", http.StatusInternalServerError)
 		return
 	}
 
-	sendJSONResponse(w, http.StatusOK, map[string]string{
-		"message": "Join request sent successfully",
+	sendJSONResponse(w, http.StatusOK, map[string]interface{}{
+		"message":   "Join request sent successfully",
+		"requestId": requestID,
 	})
 }
 

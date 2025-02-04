@@ -6,10 +6,12 @@
     import type { GroupMember } from '$lib/types';
     import { inviteToGroup } from '$lib/api/groupApi';
     import { createEventDispatcher } from 'svelte';
+    import GroupJoinRequests from './GroupJoinRequests.svelte';
 
     export let groupId: number;
     export let members: GroupMember[] = [];
     export let isCreator: boolean = false;
+    export let role: string = '';
 
     let showInviteModal = false;
     let showRemoveModal = false;
@@ -116,7 +118,7 @@
             success = 'Join request sent successfully';
             setTimeout(() => success = '', 3000);
         } catch (err) {
-            error = err instanceof Error ? err.message : 'Failed to request join';
+            error = err instanceof Error ? err.message : 'Failed to create join request';
             console.error('Join request error:', error);
         } finally {
             loading = false;
@@ -260,6 +262,11 @@
             checkMembershipStatus();
         }
     });
+
+    function handleMemberAdded() {
+        // Refresh the members list
+        fetchMembers();
+    }
 </script>
 
 <Card>
@@ -507,4 +514,14 @@
     .role-moderator {
         @apply bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300;
     }
-</style> 
+</style>
+
+{#if isCreator || role === 'admin'}
+    <GroupJoinRequests
+        {groupId}
+        {isCreator}
+        {isMember}
+        {role}
+        on:memberAdded={handleMemberAdded}
+    />
+{/if} 
