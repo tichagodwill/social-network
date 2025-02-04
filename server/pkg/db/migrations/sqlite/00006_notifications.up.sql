@@ -1,9 +1,5 @@
 PRAGMA foreign_keys = ON;
 
--- Drop existing tables and indexes if they exist
-DROP TABLE IF EXISTS notifications;
-DROP TABLE IF EXISTS likes;
-
 -- First create the notifications table
 CREATE TABLE notifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -26,23 +26,19 @@ func GetNotifications(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := sqlite.DB.Query(`
-        SELECT 
-            n.id,
-            n.user_id,
-            n.type,
-            n.content,
-            n.group_id,
-            n.is_read,
-            n.created_at,
-            n.from_user_id,
-            g.title as group_name,
-            COALESCE(gm.role, '') as user_role
-        FROM notifications n
-        LEFT JOIN groups g ON n.group_id = g.id
-        LEFT JOIN group_members gm ON g.id = gm.group_id AND gm.user_id = n.user_id
-        WHERE n.user_id = ?
-        ORDER BY n.created_at DESC`,
-		userID)
+    SELECT 
+        n.id,
+        n.user_id,
+        n.content,
+        n.from_user_id,
+        n.is_read,
+        n.created_at,
+        n.group_id,
+        g.title AS group_title
+    FROM notifications n
+    LEFT JOIN groups g ON n.group_id = g.id
+    WHERE n.user_id = ? AND n.is_read = false
+    ORDER BY n.created_at DESC`, userID)
 	if err != nil {
 		log.Printf("Error fetching notifications: %v", err)
 		sendJSONError(w, "Failed to fetch notifications", http.StatusInternalServerError)
@@ -53,43 +49,39 @@ func GetNotifications(w http.ResponseWriter, r *http.Request) {
 	var notifications []map[string]interface{}
 	for rows.Next() {
 		var notification struct {
-			ID         int64  `json:"id"`
-			UserID     int64  `json:"user_id"`
-			Type       string `json:"type"`
-			Content    string `json:"content"`
-			GroupID    *int64 `json:"group_id"`
-			IsRead     bool   `json:"is_read"`
-			CreatedAt  string `json:"created_at"`
-			FromUserID *int64 `json:"from_user_id"`
-			GroupName  string `json:"group_name"`
-			UserRole   string `json:"user_role"`
+			ID         int64   `json:"id"`
+			ToUserID   int64   `json:"to_user_id"`
+			Content    string  `json:"content"`
+			FromUserID *int64  `json:"from_user_id"`
+			Read       bool    `json:"read"`
+			CreatedAt  string  `json:"created_at"`
+			GroupID    *int64  `json:"group_id"`
+			GroupTitle *string `json:"group_title"`
 		}
+
 		if err := rows.Scan(
 			&notification.ID,
-			&notification.UserID,
-			&notification.Type,
+			&notification.ToUserID,
 			&notification.Content,
-			&notification.GroupID,
-			&notification.IsRead,
-			&notification.CreatedAt,
 			&notification.FromUserID,
-			&notification.GroupName,
-			&notification.UserRole,
+			&notification.Read,
+			&notification.CreatedAt,
+			&notification.GroupID,
+			&notification.GroupTitle,
 		); err != nil {
 			log.Printf("Error scanning notification: %v", err)
 			continue
 		}
+
 		notifications = append(notifications, map[string]interface{}{
 			"id":         notification.ID,
-			"userId":     notification.UserID,
-			"type":       notification.Type,
+			"toUserId":   notification.ToUserID,
 			"content":    notification.Content,
-			"groupId":    notification.GroupID,
-			"isRead":     notification.IsRead,
-			"createdAt":  notification.CreatedAt,
 			"fromUserId": notification.FromUserID,
-			"groupName":  notification.GroupName,
-			"userRole":   notification.UserRole,
+			"read":       notification.Read,
+			"createdAt":  notification.CreatedAt,
+			"groupId":    notification.GroupID,
+			"groupTitle": notification.GroupTitle,
 		})
 	}
 
