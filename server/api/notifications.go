@@ -6,7 +6,22 @@ import (
 	"social-network/pkg/db/sqlite"
 	"social-network/util"
 	"strconv"
+	"time"
 )
+
+type Notification struct {
+	ID           int       `json:"id"`
+	Type         string    `json:"type"`
+	Content      string    `json:"content"`
+	UserID       int       `json:"user_id"`
+	GroupID      int       `json:"group_id"`
+	InvitationID int       `json:"invitation_id"`
+	FromUserID   *int      `json:"from_user_id,omitempty"`
+	IsRead       bool      `json:"is_read"`
+	CreatedAt    time.Time `json:"created_at"`
+	UserRole     string    `json:"user_role,omitempty"`
+	IsProcessed  bool      `json:"is_processed"`
+}
 
 func GetNotifications(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -28,21 +43,24 @@ func GetNotifications(w http.ResponseWriter, r *http.Request) {
 	rows, err := sqlite.DB.Query(`
         SELECT 
             n.id,
-            n.user_id,
             n.type,
             n.content,
+            n.user_id,
             n.group_id,
+            n.invitation_id,
+            n.from_user_id,
             n.is_read,
             n.created_at,
-            n.from_user_id,
-            g.title as group_name,
-            COALESCE(gm.role, '') as user_role
+            COALESCE(gm.role, '') as user_role,
+            CASE 
+                WHEN gi.status != 'pending' OR gi.status IS NULL THEN true
+                ELSE false
+            END as is_processed
         FROM notifications n
-        LEFT JOIN groups g ON n.group_id = g.id
-        LEFT JOIN group_members gm ON g.id = gm.group_id AND gm.user_id = n.user_id
+        LEFT JOIN group_members gm ON n.group_id = gm.group_id AND gm.user_id = n.user_id
+        LEFT JOIN group_invitations gi ON n.invitation_id = gi.id
         WHERE n.user_id = ?
-        ORDER BY n.created_at DESC`,
-		userID)
+        ORDER BY n.created_at DESC`, userID)
 	if err != nil {
 		log.Printf("Error fetching notifications: %v", err)
 		sendJSONError(w, "Failed to fetch notifications", http.StatusInternalServerError)
@@ -52,46 +70,42 @@ func GetNotifications(w http.ResponseWriter, r *http.Request) {
 
 	var notifications []map[string]interface{}
 	for rows.Next() {
-		var notification struct {
-			ID         int64  `json:"id"`
-			UserID     int64  `json:"user_id"`
-			Type       string `json:"type"`
-			Content    string `json:"content"`
-			GroupID    *int64 `json:"group_id"`
-			IsRead     bool   `json:"is_read"`
-			CreatedAt  string `json:"created_at"`
-			FromUserID *int64 `json:"from_user_id"`
-			GroupName  string `json:"group_name"`
-			UserRole   string `json:"user_role"`
-		}
+		var notification Notification
 		if err := rows.Scan(
 			&notification.ID,
-			&notification.UserID,
 			&notification.Type,
 			&notification.Content,
+			&notification.UserID,
 			&notification.GroupID,
+			&notification.InvitationID,
+			&notification.FromUserID,
 			&notification.IsRead,
 			&notification.CreatedAt,
-			&notification.FromUserID,
-			&notification.GroupName,
 			&notification.UserRole,
+			&notification.IsProcessed,
 		); err != nil {
 			log.Printf("Error scanning notification: %v", err)
 			continue
 		}
+
+		log.Printf("Processing notification: %+v", notification)
+
 		notifications = append(notifications, map[string]interface{}{
-			"id":         notification.ID,
-			"userId":     notification.UserID,
-			"type":       notification.Type,
-			"content":    notification.Content,
-			"groupId":    notification.GroupID,
-			"isRead":     notification.IsRead,
-			"createdAt":  notification.CreatedAt,
-			"fromUserId": notification.FromUserID,
-			"groupName":  notification.GroupName,
-			"userRole":   notification.UserRole,
+			"id":           notification.ID,
+			"type":         notification.Type,
+			"content":      notification.Content,
+			"groupId":      notification.GroupID,
+			"invitationId": notification.InvitationID,
+			"userId":       notification.UserID,
+			"fromUserId":   notification.FromUserID,
+			"isRead":       notification.IsRead,
+			"createdAt":    notification.CreatedAt.Format(time.RFC3339),
+			"userRole":     notification.UserRole,
+			"isProcessed":  notification.IsProcessed,
 		})
 	}
+
+	log.Printf("Sending notifications: %+v", notifications)
 
 	if notifications == nil {
 		notifications = make([]map[string]interface{}, 0)

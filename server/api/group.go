@@ -706,25 +706,23 @@ func GetGroupPost(w http.ResponseWriter, r *http.Request) {
 func InviteToGroup(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Get current user from session
+	groupID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		sendJSONError(w, "Invalid group ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get current user
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
 		sendJSONError(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	// Get user ID
-	var userID int
-	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	var inviterID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&inviterID)
 	if err != nil {
 		sendJSONError(w, "Failed to get user information", http.StatusInternalServerError)
-		return
-	}
-
-	// Get group ID from URL
-	groupID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		sendJSONError(w, "Invalid group ID", http.StatusBadRequest)
 		return
 	}
 
@@ -773,16 +771,43 @@ func InviteToGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create new invitation
+	// Check for existing invitation
+	var hasInvitation bool
+	err = tx.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM group_invitations 
+			WHERE group_id = ? AND invitee_id = ? AND status = 'pending'
+		)`, groupID, inviteeID).Scan(&hasInvitation)
+	if err != nil {
+		sendJSONError(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	if hasInvitation {
+		sendJSONError(w, "User already has a pending invitation", http.StatusBadRequest)
+		return
+	}
+
+	// Get group information
+	var group struct {
+		Title string
+	}
+	err = tx.QueryRow(`SELECT title FROM groups WHERE id = ?`, groupID).Scan(&group.Title)
+	if err != nil {
+		sendJSONError(w, "Failed to get group information", http.StatusInternalServerError)
+		return
+	}
+
+	// Create invitation
 	result, err := tx.Exec(`
 		INSERT INTO group_invitations (
 			group_id, 
 			inviter_id, 
 			invitee_id, 
+			type,
 			status, 
 			created_at
-		) VALUES (?, ?, ?, 'pending', CURRENT_TIMESTAMP)`,
-		groupID, userID, inviteeID)
+		) VALUES (?, ?, ?, 'invitation', 'pending', CURRENT_TIMESTAMP)`,
+		groupID, inviterID, inviteeID)
 	if err != nil {
 		sendJSONError(w, "Failed to create invitation", http.StatusInternalServerError)
 		return
@@ -790,30 +815,60 @@ func InviteToGroup(w http.ResponseWriter, r *http.Request) {
 
 	invitationID, err := result.LastInsertId()
 	if err != nil {
-		log.Printf("Failed to get invitation ID: %v", err)
+		sendJSONError(w, "Failed to get invitation ID", http.StatusInternalServerError)
+		return
 	}
 
-	// Create notification ONLY for the invitee
+	// Add debug logging
+	log.Printf("Created invitation with ID: %d", invitationID)
+
+	// Create notification with the invitation ID
 	_, err = tx.Exec(`
 		INSERT INTO notifications (
-			user_id, 
-			type, 
-			content, 
+			user_id,
+			type,
+			content,
 			group_id,
 			invitation_id,
+			from_user_id,
+			is_read,
 			created_at
-		) VALUES (
-			?, 
-			'group_invitation',
-			(SELECT 'You have been invited to join ' || title FROM groups WHERE id = ?),
-			?,
-			?,
-			CURRENT_TIMESTAMP
-		)`,
-		inviteeID, groupID, groupID, invitationID)
+		) VALUES (?, ?, ?, ?, ?, ?, false, CURRENT_TIMESTAMP)`,
+		inviteeID,
+		"group_invitation",
+		fmt.Sprintf("%s has invited you to join %s", username, group.Title),
+		groupID,
+		invitationID,
+		inviterID)
+
+	// Add debug logging
+	log.Printf("Created notification for invitation ID: %d", invitationID)
 
 	if err != nil {
-		log.Printf("Failed to create invitation notification: %v", err)
+		sendJSONError(w, "Failed to create notification", http.StatusInternalServerError)
+		return
+	}
+
+	// Send WebSocket notification
+	if err == nil {
+		notification := map[string]interface{}{
+			"type": "notification",
+			"data": map[string]interface{}{
+				"id":           invitationID,
+				"type":         "group_invitation",
+				"content":      fmt.Sprintf("%s has invited you to join %s", username, group.Title),
+				"groupId":      groupID,
+				"invitationId": invitationID,
+				"fromUserId":   inviterID,
+				"userId":       inviteeID,
+				"createdAt":    time.Now().Format(time.RFC3339),
+				"isRead":       false,
+				"isProcessed":  false,
+			},
+		}
+
+		// Send to specific user (the invitee)
+		SendNotification([]uint64{uint64(inviteeID)}, notification)
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -1633,25 +1688,54 @@ func HandleInvitation(w http.ResponseWriter, r *http.Request) {
 	// Get parameters from URL
 	groupID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
+		log.Printf("Invalid group ID: %v, raw value: %s", err, r.PathValue("id"))
 		sendJSONError(w, "Invalid group ID", http.StatusBadRequest)
 		return
 	}
 
-	invitationID, err := strconv.Atoi(r.PathValue("inviteId"))
+	invitationID, err := strconv.Atoi(r.PathValue("invitationId"))
 	if err != nil {
+		log.Printf("Invalid invitation ID: %v, raw value: %s", err, r.PathValue("invitationId"))
 		sendJSONError(w, "Invalid invitation ID", http.StatusBadRequest)
 		return
 	}
 
 	action := r.PathValue("action")
 	if action != "accept" && action != "reject" {
+		log.Printf("Invalid action: %s", action)
 		sendJSONError(w, "Invalid action", http.StatusBadRequest)
+		return
+	}
+
+	// Debug log all request details
+	log.Printf("Processing invitation request: method=%s, path=%s, groupID=%d, invitationID=%d, action=%s",
+		r.Method, r.URL.Path, groupID, invitationID, action)
+
+	// Verify the invitation exists first
+	var exists bool
+	err = sqlite.DB.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 
+			FROM group_invitations 
+			WHERE id = ? AND group_id = ?
+		)`, invitationID, groupID).Scan(&exists)
+
+	if err != nil {
+		log.Printf("Error checking invitation existence: %v", err)
+		sendJSONError(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	if !exists {
+		log.Printf("Invitation not found: id=%d, groupID=%d", invitationID, groupID)
+		sendJSONError(w, "Invitation not found", http.StatusNotFound)
 		return
 	}
 
 	// Get current user
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
+		log.Printf("Unauthorized: %v", err)
 		sendJSONError(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -1659,6 +1743,7 @@ func HandleInvitation(w http.ResponseWriter, r *http.Request) {
 	var userID int
 	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
 	if err != nil {
+		log.Printf("Failed to get user ID: %v", err)
 		sendJSONError(w, "Failed to get user information", http.StatusInternalServerError)
 		return
 	}
@@ -1666,6 +1751,7 @@ func HandleInvitation(w http.ResponseWriter, r *http.Request) {
 	// Start transaction
 	tx, err := sqlite.DB.Begin()
 	if err != nil {
+		log.Printf("Failed to start transaction: %v", err)
 		sendJSONError(w, "Database error", http.StatusInternalServerError)
 		return
 	}
@@ -1674,16 +1760,24 @@ func HandleInvitation(w http.ResponseWriter, r *http.Request) {
 	// Verify invitation exists and belongs to this user
 	var invitation struct {
 		Status string
+		Type   string
 	}
 	err = tx.QueryRow(`
-		SELECT status 
+		SELECT status, type 
 		FROM group_invitations 
 		WHERE id = ? AND group_id = ? AND invitee_id = ? AND status = 'pending'`,
-		invitationID, groupID, userID).Scan(&invitation.Status)
+		invitationID, groupID, userID).Scan(&invitation.Status, &invitation.Type)
+
+	// Debug log the invitation check
+	log.Printf("Checking invitation: id=%d, groupID=%d, userID=%d, err=%v",
+		invitationID, groupID, userID, err)
+
 	if err != nil {
 		if err == sql.ErrNoRows {
+			log.Printf("Invitation not found or already processed: %v", err)
 			sendJSONError(w, "Invitation not found or already processed", http.StatusNotFound)
 		} else {
+			log.Printf("Database error checking invitation: %v", err)
 			sendJSONError(w, "Database error", http.StatusInternalServerError)
 		}
 		return
@@ -1721,6 +1815,39 @@ func HandleInvitation(w http.ResponseWriter, r *http.Request) {
 		groupID, invitationID)
 	if err != nil {
 		log.Printf("Failed to delete notification: %v", err)
+	}
+
+	// Get the invitation details including inviter_id and group title
+	var inviterID int
+	var groupTitle string
+	err = tx.QueryRow(`
+		SELECT i.inviter_id, g.title 
+		FROM group_invitations i 
+		JOIN groups g ON i.group_id = g.id 
+		WHERE i.id = ?`, invitationID).Scan(&inviterID, &groupTitle)
+	if err != nil {
+		log.Printf("Failed to get invitation details: %v", err)
+		sendJSONError(w, "Failed to get invitation details", http.StatusInternalServerError)
+		return
+	}
+
+	// Create a notification for the inviter about the action
+	_, err = tx.Exec(`
+		INSERT INTO notifications (
+			user_id,
+			type,
+			content,
+			group_id,
+			from_user_id,
+			created_at
+		) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		inviterID,
+		"invitation_response",
+		fmt.Sprintf("%s has %sed your invitation to join %s", username, action, groupTitle),
+		groupID,
+		inviterID)
+	if err != nil {
+		log.Printf("Failed to create response notification: %v", err)
 	}
 
 	if err = tx.Commit(); err != nil {
