@@ -137,7 +137,7 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 
 			// this can be made into a switch to handle future message types. but for now it's chat only
 			if connectionType.Type == "chat" {
-				var chatMessage m.Chat_message
+				var chatMessage m.ChatMessage
 				if err := json.Unmarshal(message, &chatMessage); err != nil {
 					log.Printf("WebSocket chat json unmarshal error: %v", err)
 					break

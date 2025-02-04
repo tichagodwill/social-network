@@ -79,8 +79,7 @@ export interface FileEvent extends Event {
 export interface Message {
     id: number;
     senderId: number;
-    recipientId?: number;
-    groupId?: number;
+    recipientId: number;
     content: string;
     fileUrl?: string;
     fileName?: string;
@@ -138,6 +137,14 @@ export interface Group {
     creator_username?: string;
     created_at: string;
     is_member?: boolean;
+}
+
+export interface Group_Message {
+    id: number;
+    title: string;
+    description: string;
+    members: number[];
+    createdAt: string;
 }
 
 export interface GroupMember {

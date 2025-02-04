@@ -2,19 +2,26 @@ package models
 
 import "time"
 
-type Chat_message struct {
+// models/messages.go
+type ChatMessage struct {
+	ID          int       `json:"id"`
 	SenderID    int       `json:"senderId"`
 	RecipientID int       `json:"recipientId"`
-	Content     string    `json:"content,omitempty"`
-	UserName    string    `json:"user_name,omitempty"`
+	Content     string    `json:"content"`
 	CreatedAt   time.Time `json:"createdAt"`
+	// Additional fields for frontend
+	SenderName   string `json:"senderName,omitempty"`
+	SenderAvatar string `json:"senderAvatar,omitempty"`
 }
 
-type Group_messages struct {
+type GroupMessage struct {
 	ID        int       `json:"id"`
-	GroupID   int       `json:"group_id"`
-	UserID    int       `json:"user_id"`
-	Content   string    `json:"content,omitempty"`
+	GroupID   int       `json:"groupId"`
+	UserID    int       `json:"userId"`
+	Content   string    `json:"content"`
 	Media     string    `json:"media,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	CreatedAt time.Time `json:"createdAt"`
+	// Additional fields for frontend
+	UserName   string `json:"userName,omitempty"`
+	UserAvatar string `json:"userAvatar,omitempty"`
 }
