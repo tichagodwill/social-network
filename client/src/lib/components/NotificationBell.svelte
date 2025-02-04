@@ -1,14 +1,16 @@
 <script lang="ts">
     import { Bell } from 'lucide-svelte';
     import { Button, Dropdown, DropdownItem } from 'flowbite-svelte';
-    import { onMount } from 'svelte';
+    import { onMount, onDestroy } from 'svelte';
     import { goto } from '$app/navigation';
     import { auth } from '$lib/stores/auth'; // Import auth store
+    import { handleInvitation } from '$lib/api/groupApi';
 
     let notifications: any[] = [];
     let unreadCount = 0;
     let loading = false;
     let isOpen = false;
+    let socket: WebSocket | null = null;
 
     // Add a toast notification system
     let toast = { message: '', type: '', visible: false };
@@ -25,6 +27,11 @@
                (notification.user_role === 'creator' || notification.user_role === 'admin');
     }
 
+    // Function to check if current user is the recipient of the notification
+    function isRecipient(notification: any): boolean {
+        return notification.user_id === $auth?.user?.id;
+    }
+
     function showToast(message: string, type: 'success' | 'error' | 'info') {
         toast = { message, type, visible: true };
         setTimeout(() => {
@@ -39,50 +46,67 @@
             });
             if (response.ok) {
                 const data = await response.json();
-                notifications = data.notifications || [];
-                unreadCount = notifications.filter(n => !n.read).length;
+                console.log('Raw notifications data:', JSON.stringify(data, null, 2));
+                notifications = data || [];
+                unreadCount = notifications.filter(n => !n.isRead).length;
             }
         } catch (error) {
             console.error('Error fetching notifications:', error);
+            showToast('Failed to load notifications', 'error');
         }
     }
 
-    async function handleInvitation(notification: any, action: 'accept' | 'reject') {
+    async function handleInviteResponse(notification: any, action: 'accept' | 'reject') {
         try {
             loading = true;
-            const response = await fetch(
-                `http://localhost:8080/groups/${notification.group_id}/invitations/${notification.invitation_id}/${action}`, 
-                {
-                    method: 'POST',
-                    credentials: 'include',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
+            
+            console.log('Processing notification:', notification);
+            
+            const groupId = notification.groupId;
+            const invitationId = notification.invitationId;
+            
+            console.log('Attempting to handle invitation:', { 
+                groupId, 
+                invitationId, 
+                action,
+                notification 
+            });
 
-            if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.error || `Failed to ${action} invitation`);
+            if (!groupId || !invitationId) {
+                console.error('Missing data:', { notification });
+                throw new Error(`Missing required invitation data. group_id: ${groupId}, invitation_id: ${invitationId}`);
             }
 
-            // Remove this notification
+            const result = await handleInvitation(groupId, invitationId, action);
+            console.log('Invitation handled successfully:', result);
+
+            // Remove this notification from the list
             notifications = notifications.filter(n => n.id !== notification.id);
-            unreadCount = notifications.filter(n => !n.read).length;
+            unreadCount = notifications.filter(n => !n.isRead).length;
 
             // Show success message
-            const message = action === 'accept' ? 'Invitation accepted! Redirecting...' : 'Invitation rejected';
-            showToast(message, action === 'accept' ? 'success' : 'info');
+            showToast(
+                action === 'accept' ? 
+                    'Invitation accepted! Redirecting to group...' : 
+                    'Invitation rejected',
+                action === 'accept' ? 'success' : 'info'
+            );
 
             if (action === 'accept') {
                 // Redirect to the group page after a short delay
                 setTimeout(() => {
-                    goto(`/groups/${notification.group_id}`);
+                    goto(`/groups/${groupId}`);
                 }, 1500);
             }
+
+            // Close the dropdown after handling
+            isOpen = false;
         } catch (error) {
             console.error('Error handling invitation:', error);
-            showToast(error.message || `Failed to ${action} invitation`, 'error');
+            showToast(
+                error instanceof Error ? error.message : `Failed to ${action} invitation`, 
+                'error'
+            );
         } finally {
             loading = false;
         }
@@ -150,11 +174,76 @@
         return true; // Show other types of notifications to everyone
     }
 
+    function initializeWebSocket() {
+        socket = new WebSocket('ws://localhost:8080/ws');
+
+        socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'notification') {
+                    // Add new notification to the list
+                    notifications = [data.data, ...notifications];
+                    unreadCount += 1;
+                    
+                    // Show a toast for new notifications
+                    showToast('New notification received', 'info');
+                }
+            } catch (error) {
+                console.error('Error processing WebSocket message:', error);
+            }
+        };
+
+        socket.onerror = (error) => {
+            console.error('WebSocket error:', error);
+        };
+
+        socket.onclose = () => {
+            // Attempt to reconnect after a delay
+            setTimeout(initializeWebSocket, 5000);
+        };
+    }
+
+    function formatDate(dateString: string): string {
+        try {
+            if (!dateString) throw new Error('No date provided');
+            const date = new Date(dateString);
+            if (isNaN(date.getTime())) {
+                throw new Error('Invalid date');
+            }
+            return new Intl.DateTimeFormat('en-US', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: 'numeric',
+                second: 'numeric',
+                hour12: true
+            }).format(date);
+        } catch (error) {
+            console.error('Error formatting date:', error, 'for string:', dateString);
+            return 'Date unavailable';
+        }
+    }
+
     onMount(() => {
         fetchNotifications();
+        initializeWebSocket();
+        
         // Set up polling for new notifications
-        const interval = setInterval(fetchNotifications, 30000); // Poll every 30 seconds
-        return () => clearInterval(interval);
+        const interval = setInterval(fetchNotifications, 10000);
+        
+        return () => {
+            clearInterval(interval);
+            if (socket) {
+                socket.close();
+            }
+        };
+    });
+
+    onDestroy(() => {
+        if (socket) {
+            socket.close();
+        }
     });
 </script>
 
@@ -184,17 +273,17 @@
             {:else}
                 {#each notifications as notification}
                     {#if notification.type === 'group_invitation'}
-                        <div class="notification-item p-3 border-l-4 border-blue-500 bg-blue-50 dark:bg-blue-900/20 rounded">
+                        <div class="notification-item p-3 border-l-4 border-blue-500 bg-blue-50 dark:bg-blue-900/20 rounded mb-2">
                             <p class="text-sm font-medium text-blue-800 dark:text-blue-200 mb-2">
                                 {notification.content}
                             </p>
-                            {#if notification.userId === $auth?.user?.id}
+                            {#if !notification.isProcessed}
                                 <div class="flex gap-2">
                                     <Button 
                                         size="xs" 
                                         color="green"
                                         disabled={loading}
-                                        on:click={() => handleInvitation(notification, 'accept')}
+                                        on:click={() => handleInviteResponse(notification, 'accept')}
                                     >
                                         {loading ? 'Processing...' : 'Accept'}
                                     </Button>
@@ -202,14 +291,17 @@
                                         size="xs" 
                                         color="red"
                                         disabled={loading}
-                                        on:click={() => handleInvitation(notification, 'reject')}
+                                        on:click={() => handleInviteResponse(notification, 'reject')}
                                     >
                                         {loading ? 'Processing...' : 'Reject'}
                                     </Button>
                                 </div>
                             {/if}
+                            <div class="text-xs text-gray-500 mt-1">
+                                {formatDate(notification.createdAt)}
+                            </div>
                         </div>
-                    {:else if notification.type === 'join_request' && (notification.userRole === 'creator' || notification.userRole === 'admin')}
+                    {:else if notification.type === 'join_request' && isGroupAdmin(notification)}
                         <div class="notification-item p-3 border-l-4 border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 rounded">
                             <p class="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-2">
                                 {notification.content}
@@ -239,7 +331,7 @@
                         </div>
                     {/if}
                     <div class="text-xs text-gray-500 mt-1">
-                        {new Date(notification.created_at).toLocaleString()}
+                        {formatDate(notification.createdAt)}
                     </div>
                 {/each}
             {/if}

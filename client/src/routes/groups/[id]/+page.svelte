@@ -264,9 +264,9 @@
                 {#if hasAdminPrivileges()}
                     <GroupJoinRequests 
                         {groupId}
-                        isCreator={isCreator()}
-                        isMember={isMember()}
-                        role={userRole}
+                        isCreator={group.creator_id === $auth.user?.id}
+                        isMember={group.is_member}
+                        role={group.role}
                     />
                 {/if}
                 <GroupMembership 
