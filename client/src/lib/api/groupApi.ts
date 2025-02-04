@@ -29,24 +29,52 @@ export async function fetchGroups() {
 }
 
 export async function inviteToGroup(groupId: number, username: string) {
+    const response = await fetch(`http://localhost:8080/groups/${groupId}/invitations`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({ username })
+    });
+
+    if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to send invitation');
+    }
+
+    return response.json();
+}
+
+export async function handleInvitation(groupId: number, invitationId: number, action: 'accept' | 'reject') {
     try {
-        const response = await fetch(`http://localhost:8080/groups/${groupId}/invitations`, {
+        console.log('Making invitation request:', { groupId, invitationId, action });
+        
+        const url = `http://localhost:8080/groups/${groupId}/invitations/${invitationId}/${action}`;
+        console.log('Request URL:', url);
+
+        const response = await fetch(url, {
             method: 'POST',
+            credentials: 'include',
             headers: {
                 'Content-Type': 'application/json'
-            },
-            credentials: 'include',
-            body: JSON.stringify({ username })
+            }
         });
 
+        const data = await response.json();
+        
         if (!response.ok) {
-            const data = await response.json();
-            throw new Error(data.error || 'Failed to send invitation');
+            console.error('Server error response:', {
+                status: response.status,
+                statusText: response.statusText,
+                data
+            });
+            throw new Error(data.error || `Failed to ${action} invitation`);
         }
 
-        return response.json();
+        return data;
     } catch (error) {
-        console.error('Error inviting member:', error);
+        console.error('Error handling invitation:', error);
         throw error;
     }
 }

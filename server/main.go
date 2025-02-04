@@ -121,7 +121,7 @@ func main() {
 	// Group invitation routes
 	mux.Handle("POST /groups/{id}/invitations", authMiddleware(http.HandlerFunc(api.InviteToGroup)))
 	mux.Handle("GET /groups/{id}/invitations/status", authMiddleware(http.HandlerFunc(api.GetInvitationStatus)))
-	mux.Handle("POST /groups/{id}/invitations/{inviteId}/{action}", authMiddleware(http.HandlerFunc(api.HandleInvitation)))
+	mux.Handle("POST /groups/{id}/invitations/{invitationId}/{action}", authMiddleware(http.HandlerFunc(api.HandleInvitation)))
 
 	// Group join request routes
 	mux.Handle("GET /groups/{id}/join-requests", authMiddleware(http.HandlerFunc(api.GetGroupRequests)))
