@@ -163,27 +163,60 @@
     }
 
     :global(.group-card) {
-        @apply transition-all duration-300 hover:shadow-lg hover:scale-[1.01] bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900;
+        @apply transition-all duration-300 
+               bg-gradient-to-br from-white via-gray-50 to-gray-100
+               dark:from-gray-800 dark:via-gray-800 dark:to-gray-900
+               w-full max-w-none mx-auto mb-8 mt-8
+               border border-gray-200 dark:border-gray-700
+               shadow-lg hover:shadow-xl
+               backdrop-blur-sm
+               relative
+               overflow-hidden;
     }
 
     :global(.group-title) {
-        @apply text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400;
+        @apply text-4xl font-bold bg-clip-text text-transparent 
+               bg-gradient-to-r from-blue-600 via-purple-500 to-indigo-600 
+               dark:from-blue-400 dark:via-purple-300 dark:to-indigo-400 
+               break-words mb-4 
+               relative z-10;
     }
 
     :global(.group-description) {
-        @apply text-gray-600 dark:text-gray-300 leading-relaxed;
+        @apply text-gray-700 dark:text-gray-300 
+               leading-relaxed text-lg
+               whitespace-pre-wrap break-words 
+               max-w-none mx-auto
+               relative z-10
+               bg-white/50 dark:bg-gray-800/50
+               rounded-lg p-6
+               backdrop-blur-sm
+               border border-gray-100 dark:border-gray-700;
     }
 
     :global(.action-button) {
-        @apply transform transition-all duration-300 hover:scale-105 hover:shadow-md;
+        @apply transform transition-all duration-300 
+               hover:scale-105 hover:shadow-md
+               relative z-10;
     }
 
-    :global(.content-section) {
-        @apply bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 transition-all duration-300 hover:shadow-xl;
+    /* Add decorative elements */
+    :global(.group-card::before) {
+        content: '';
+        @apply absolute top-0 right-0 w-64 h-64
+               bg-gradient-to-br from-blue-500/10 to-purple-500/10
+               dark:from-blue-400/5 dark:to-purple-400/5
+               rounded-full -translate-y-32 translate-x-32
+               blur-3xl;
     }
 
-    :global(.loading-spinner) {
-        @apply animate-spin rounded-full h-12 w-12 border-t-4 border-b-4 border-blue-500;
+    :global(.group-card::after) {
+        content: '';
+        @apply absolute bottom-0 left-0 w-64 h-64
+               bg-gradient-to-tr from-indigo-500/10 to-cyan-500/10
+               dark:from-indigo-400/5 dark:to-cyan-400/5
+               rounded-full translate-y-32 -translate-x-32
+               blur-3xl;
     }
 </style>
 
@@ -193,7 +226,7 @@
     </div>
 {/if}
 
-<div class="max-w-4xl mx-auto p-4 space-y-8">
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
     {#if loading}
         <div class="text-center p-8 {fadeIn}">
             <div class="loading-spinner mx-auto"></div>
@@ -219,17 +252,19 @@
             </Button>
         </div>
     {:else}
-        <Card class="group-card {slideIn}">
-            <div class="space-y-6">
-                <h1 class="group-title">{group.title}</h1>
-                <p class="group-description">{group.description}</p>
+        <Card class="group-card {slideIn} w-full max-w-none mb-8 mt-8">
+            <div class="space-y-6 max-w-7xl mx-auto p-8">
+                <h1 class="group-title break-words">{group.title}</h1>
+                <p class="group-description whitespace-pre-wrap break-words">{group.description}</p>
                 
                 {#if isCreator()}
-                    <div class="flex space-x-4">
+                    <div class="flex flex-wrap gap-4 mt-8">
                         <Button 
                             gradient
                             color="blue" 
-                            class="action-button bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-600 hover:to-blue-600" 
+                            class="action-button bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 
+                                   hover:from-blue-600 hover:via-indigo-600 hover:to-purple-600
+                                   shadow-md hover:shadow-xl" 
                             on:click={() => {
                                 editForm = {
                                     title: group.title,
