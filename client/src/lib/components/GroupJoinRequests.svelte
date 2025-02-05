@@ -3,6 +3,7 @@
     import { auth } from '$lib/stores/auth';
     import { handleJoinRequest } from '$lib/api/groupApi';
     import { createEventDispatcher } from 'svelte';
+    import { fade } from 'svelte/transition';
 
     export let groupId: number;
     export let isCreator: boolean;
@@ -51,7 +52,7 @@
             requests = requests.filter(r => r.id !== requestId);
             success = `Request ${action}ed successfully`;
             
-            // Notify parent component to refresh members list if request was accepted
+            // Simply dispatch the event without any data
             if (action === 'accept') {
                 dispatch('memberAdded');
             }
