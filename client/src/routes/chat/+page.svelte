@@ -18,43 +18,63 @@
     let chatInput: ChatInput;
     let dragDropActive = false;
     let contact = null;
-    const userId = $auth.user!.id;
+    let messagesContainer: HTMLElement;
+    const userId = $auth.user?.id;
+
+    // Auto-scroll to bottom when new messages arrive
+    $: if ($chat.messages && messagesContainer) {
+        setTimeout(() => {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }, 0);
+    }
+
+    // Watch for changes in loadContact prop and contacts
+    $: if (loadContact && userId && $chat.contacts.length > 0) {
+        const selectedContact = $chat.contacts.find(c => c.id === loadContact);
+        if (selectedContact && (!contact || contact.id !== selectedContact.id)) {
+            selectContact(selectedContact);
+        }
+    }
 
     onMount(async () => {
-        chat.initialize();
-        await chat.loadContacts(userId);
+        if (!userId) return;
         
-        if (loadContact) {
-            // Find the contact in the loaded contacts
-            contact = $chat.contacts.find(c => c.id === loadContact);
+        try {
+            console.log('Initializing chat...');
+            await chat.initialize();
             
-            // If contact is not found in the list, they might not be following each other yet
-            if (!contact) {
-                const result = await chat.getOrCreateDirectChat(loadContact);
-                if (!result.error) {
-                    // Reload contacts to get the updated list
-                    await chat.loadContacts(userId);
-                    contact = $chat.contacts.find(c => c.id === loadContact);
+            console.log('Loading contacts...');
+            const contacts = await chat.loadContacts(userId);
+            console.log('Loaded contacts:', contacts);
+            
+            if (loadContact && contacts.length > 0) {
+                console.log('Looking for contact:', loadContact);
+                const selectedContact = contacts.find(c => c.id === loadContact);
+                if (selectedContact) {
+                    console.log('Found contact, selecting:', selectedContact);
+                    await selectContact(selectedContact);
+                } else {
+                    console.log('Contact not found in list');
                 }
             }
-            
-            if (contact) {
-                chat.loadMessages(userId, loadContact);
-            }
+        } catch (error) {
+            console.error('Error initializing chat:', error);
         }
     });
 
     onDestroy(() => chat.cleanup());
 
     function handleSend() {
-        if (!newMessage.trim() || !contact) return;
+        if (!newMessage.trim() || !contact || !userId) return;
         chat.sendMessage(newMessage, userId, contact.id);
         newMessage = '';
+        chatInput.focus();
     }
 
     const handleFileUpload = (event: CustomEvent<FileUploadResponse>) => {
+        if (!contact || !userId) return;
         const { url, fileName, fileType } = event.detail;
-        if (contact) chat.sendMessage('', userId, contact.id, { url, fileName, fileType });
+        chat.sendMessage('', userId, contact.id, { url, fileName, fileType });
     };
 
     const handleEmojiSelect = (event: EmojiPickerEvent) => {
@@ -64,9 +84,27 @@
         chatInput.focus();
     };
 
-    const selectContact = (selectedContact) => {
-        contact = selectedContact;
-        chat.loadMessages(userId, selectedContact.id);
+    const selectContact = async (selectedContact) => {
+        if (!userId) return;
+        
+        try {
+            // Try to create/get direct chat first
+            const result = await chat.getOrCreateDirectChat(selectedContact.id);
+            if (result.error) {
+                console.error('Failed to create chat:', result.error);
+                return;
+            }
+            
+            contact = selectedContact;
+            await chat.loadMessages(userId, selectedContact.id);
+            
+            // Update the URL without reloading the page
+            const url = new URL(window.location.href);
+            url.pathname = `/chat/${selectedContact.id}`;
+            window.history.pushState({}, '', url.toString());
+        } catch (error) {
+            console.error('Failed to load messages:', error);
+        }
     };
 </script>
 
@@ -119,7 +157,11 @@
                     </div>
 
                     <!-- Messages -->
-                    <div class="flex-1 overflow-y-auto px-6 py-4" id="messages">
+                    <div 
+                        class="flex-1 overflow-y-auto px-6 py-4" 
+                        id="messages"
+                        bind:this={messagesContainer}
+                    >
                         {#each $chat.messages as message, i}
                             {@const isFirstInGroup = i === 0 || $chat.messages[i - 1].senderId !== message.senderId}
                             {@const isLastInGroup = i === $chat.messages.length - 1 || $chat.messages[i + 1].senderId !== message.senderId}
