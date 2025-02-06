@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
+    import { onMount, onDestroy } from 'svelte';
     import { Button, Card, Modal, Label, Input, Textarea } from 'flowbite-svelte';
     import { auth } from '$lib/stores/auth';
     import { getFormattedDate } from '$lib/dateFormater';
@@ -17,6 +17,34 @@
         eventDate: ''
     };
 
+    // Add response tracking
+    let responsesByEvent: { [key: number]: { going: number, notGoing: number } } = {};
+    let userResponses: { [key: number]: string } = {};
+
+    let socket: WebSocket;
+
+    function connectWebSocket() {
+        socket = new WebSocket('ws://localhost:8080/ws');
+        
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            if (data.type === 'eventRSVP' && data.groupId === groupId) {
+                // Update the response counts for the specific event
+                responsesByEvent[data.eventId] = {
+                    going: data.going,
+                    notGoing: data.notGoing
+                };
+                // Force reactivity
+                responsesByEvent = { ...responsesByEvent };
+            }
+        };
+
+        socket.onclose = () => {
+            // Implement reconnection logic if needed
+            setTimeout(connectWebSocket, 1000);
+        };
+    }
+
     async function loadEvents() {
         try {
             loading = true;
@@ -24,13 +52,32 @@
                 credentials: 'include'
             });
             if (response.ok) {
-                events = await response.json() || [];
+                const data = await response.json();
+                events = data.map(event => ({
+                    ...event,
+                    eventDate: new Date(event.eventDate) // Parse the ISO date string
+                }));
+                
+                // Initialize response counts and user responses
+                events.forEach(event => {
+                    responsesByEvent[event.id] = {
+                        going: event.responses?.going || 0,
+                        notGoing: event.responses?.notGoing || 0
+                    };
+                    if (event.userResponse) {
+                        userResponses[event.id] = event.userResponse;
+                    }
+                });
+
+                // Force reactivity
+                responsesByEvent = { ...responsesByEvent };
+                userResponses = { ...userResponses };
             } else {
                 events = [];
             }
-        } catch (error) {
-            console.error('Failed to load events:', error);
-            events = [];
+        } catch (err) {
+            console.error('Failed to load events:', err);
+            error = err instanceof Error ? err.message : 'Failed to load events';
         } finally {
             loading = false;
         }
@@ -99,43 +146,84 @@
         }
     }
 
-    async function respondToEvent(eventId: number, status: 'going' | 'not_going') {
+    async function respondToEvent(eventId: number, rsvpStatus: 'going' | 'not_going') {
         try {
-            const response = await fetch(`http://localhost:8080/groups/events/${eventId}/respond`, {
+            console.log('1. Starting RSVP request:', { eventId, rsvpStatus });
+            
+            const fetchResponse = await fetch(`http://localhost:8080/groups/${groupId}/events/${eventId}/respond`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
                 credentials: 'include',
-                body: JSON.stringify({
-                    userId: $auth.user?.id,
-                    status
-                })
+                body: JSON.stringify({ status: rsvpStatus })
             });
+            
+            console.log('2. Response status:', fetchResponse.status);
+            console.log('3. Response headers:', Object.fromEntries(fetchResponse.headers.entries()));
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error || 'Failed to respond to event');
+            const responseText = await fetchResponse.text();
+            console.log('4. Raw response:', responseText);
+
+            let responseData;
+            try {
+                responseData = JSON.parse(responseText);
+            } catch (e) {
+                throw new Error(responseText || 'Failed to parse server response');
             }
 
-            await loadEvents();
-        } catch (err) {
-            console.error('Failed to respond to event:', err);
+            if (!fetchResponse.ok) {
+                throw new Error(responseData.error || 'Failed to respond to event');
+            }
+
+            // Update local state
+            userResponses[eventId] = rsvpStatus;
+            responsesByEvent[eventId] = {
+                going: responseData.going,
+                notGoing: responseData.notGoing
+            };
+
+            // Force reactivity
+            responsesByEvent = { ...responsesByEvent };
+            userResponses = { ...userResponses };
+
+        } catch (error) {
+            console.error('Error in respondToEvent:', error);
+            throw error;
         }
     }
 
-    onMount(loadEvents);
+    onMount(() => {
+        loadEvents();
+        connectWebSocket();
+    });
+
+    onDestroy(() => {
+        if (socket) {
+            socket.close();
+        }
+    });
 </script>
 
 <style>
     .event-card {
         transform: translateY(0);
         transition: all 0.3s ease;
+        margin-bottom: 1rem;
     }
 
     .event-card:hover {
         transform: translateY(-4px);
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    .event-card .admin-buttons {
+        opacity: 0;
+        transition: opacity 0.2s ease;
+    }
+
+    .event-card:hover .admin-buttons {
+        opacity: 1;
     }
 
     .event-badge {
@@ -173,6 +261,29 @@
         50% {
             opacity: .5;
         }
+    }
+
+    .response-stats {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.5rem 1rem;
+        background-color: rgb(243, 244, 246);
+        border-radius: 0.5rem;
+        font-weight: 500;
+    }
+
+    .response-stats-count {
+        color: rgb(79, 70, 229);
+        font-weight: 600;
+        margin-left: 0.25rem;
+    }
+
+    :global(.dark) .response-stats {
+        background-color: rgb(31, 41, 55);
+    }
+
+    :global(.dark) .response-stats-count {
+        color: rgb(129, 140, 248);
     }
 </style>
 
@@ -224,7 +335,7 @@
             </Card>
         {:else}
             {#each events as event (event.id)}
-                <div transition:slide>
+                <div transition:slide class="mb-4">
                     <Card class="event-card">
                         <div class="space-y-4">
                             <div class="flex justify-between items-start">
@@ -245,31 +356,31 @@
                                 {event.description}
                             </p>
 
-                            <div class="flex flex-wrap gap-4 items-center pt-2">
-                                <Button 
-                                    size="sm"
-                                    gradient
-                                    color="green"
-                                    class="transform hover:scale-105 transition-transform duration-200"
-                                    on:click={() => respondToEvent(event.id, 'going')}
-                                >
-                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                                    </svg>
-                                    Going ({event.goingCount || 0})
-                                </Button>
-                                <Button 
-                                    size="sm"
-                                    gradient
-                                    color="red"
-                                    class="transform hover:scale-105 transition-transform duration-200"
-                                    on:click={() => respondToEvent(event.id, 'not_going')}
-                                >
-                                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                    </svg>
-                                    Not Going ({event.notGoingCount || 0})
-                                </Button>
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div class="flex flex-wrap gap-2">
+                                    <Button 
+                                        size="sm"
+                                        color={userResponses[event.id] === 'going' ? 'green' : 'light'}
+                                        on:click={() => respondToEvent(event.id, 'going')}
+                                        class="flex-1 sm:flex-none justify-center"
+                                    >
+                                        Going ({responsesByEvent[event.id]?.going || 0})
+                                    </Button>
+                                    <Button 
+                                        size="sm"
+                                        color={userResponses[event.id] === 'not_going' ? 'red' : 'light'}
+                                        on:click={() => respondToEvent(event.id, 'not_going')}
+                                        class="flex-1 sm:flex-none justify-center"
+                                    >
+                                        Not Going ({responsesByEvent[event.id]?.notGoing || 0})
+                                    </Button>
+                                </div>
+                                <div class="response-stats">
+                                    <span>Total Responses:</span>
+                                    <span class="response-stats-count">
+                                        {(responsesByEvent[event.id]?.going || 0) + (responsesByEvent[event.id]?.notGoing || 0)}
+                                    </span>
+                                </div>
                             </div>
                         </div>
                     </Card>
