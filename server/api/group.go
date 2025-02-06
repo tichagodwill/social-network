@@ -350,46 +350,25 @@ func GetGroupPosts(w http.ResponseWriter, r *http.Request) {
 func CreateGroupPostComment(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	// Parse path parameters
-	groupID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		http.Error(w, "Invalid group ID", http.StatusBadRequest)
-		return
-	}
+	// Get path parameters
+	groupID := r.PathValue("id")
+	postID := r.PathValue("postId")
+	log.Printf("Creating comment for group %s, post %s", groupID, postID)
 
-	postID, err := strconv.Atoi(r.PathValue("postId"))
-	if err != nil {
-		http.Error(w, "Invalid post ID", http.StatusBadRequest)
-		return
-	}
-
-	// Get current user
+	// Get current user from session
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		log.Printf("Auth error: %v", err)
+		http.Error(w, `{"error": "Unauthorized"}`, http.StatusUnauthorized)
 		return
 	}
 
+	// Get user ID
 	var userID int
 	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
 	if err != nil {
-		http.Error(w, "User not found", http.StatusNotFound)
-		return
-	}
-
-	// Verify post exists and belongs to the group
-	var postExists bool
-	err = sqlite.DB.QueryRow(`
-		SELECT EXISTS(
-			SELECT 1 FROM group_posts 
-			WHERE id = ? AND group_id = ?
-		)`, postID, groupID).Scan(&postExists)
-	if err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		return
-	}
-	if !postExists {
-		http.Error(w, "Post not found", http.StatusNotFound)
+		log.Printf("Error getting user ID: %v", err)
+		http.Error(w, `{"error": "Failed to get user information"}`, http.StatusInternalServerError)
 		return
 	}
 
@@ -398,72 +377,137 @@ func CreateGroupPostComment(w http.ResponseWriter, r *http.Request) {
 		Content string `json:"content"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&commentData); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		log.Printf("Error decoding request: %v", err)
+		http.Error(w, `{"error": "Invalid request body"}`, http.StatusBadRequest)
 		return
 	}
+	log.Printf("Comment data: %+v", commentData)
 
 	// Validate content
 	if strings.TrimSpace(commentData.Content) == "" {
-		http.Error(w, "Comment content is required", http.StatusBadRequest)
+		http.Error(w, `{"error": "Comment content is required"}`, http.StatusBadRequest)
 		return
 	}
 
-	// Start transaction
+	// Convert string IDs to integers
+	groupIDInt, err := strconv.Atoi(groupID)
+	if err != nil {
+		log.Printf("Invalid group ID: %v", err)
+		http.Error(w, `{"error": "Invalid group ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	postIDInt, err := strconv.Atoi(postID)
+	if err != nil {
+		log.Printf("Invalid post ID: %v", err)
+		http.Error(w, `{"error": "Invalid post ID"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Begin transaction
 	tx, err := sqlite.DB.Begin()
 	if err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
+		log.Printf("Error starting transaction: %v", err)
+		http.Error(w, `{"error": "Database error"}`, http.StatusInternalServerError)
 		return
 	}
 	defer tx.Rollback()
 
-	// Create comment
-	result, err := tx.Exec(`
-		INSERT INTO group_post_comments (post_id, author_id, content, created_at)
-		VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
-		postID, userID, commentData.Content)
+	// First verify the post exists
+	log.Printf("Checking post existence for group %d, post %d", groupIDInt, postIDInt)
+	var postExists bool
+	err = tx.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM group_posts 
+			WHERE id = ? AND group_id = ?
+		)`, postIDInt, groupIDInt).Scan(&postExists)
 	if err != nil {
-		http.Error(w, "Failed to create comment", http.StatusInternalServerError)
+		log.Printf("Error checking post: %v", err)
+		http.Error(w, `{"error": "Database error"}`, http.StatusInternalServerError)
+		return
+	}
+	if !postExists {
+		log.Printf("Post not found: group %d, post %d", groupIDInt, postIDInt)
+		http.Error(w, `{"error": "Post not found or doesn't belong to this group"}`, http.StatusNotFound)
 		return
 	}
 
-	commentID, _ := result.LastInsertId()
-
-	// Get the created comment with author info
-	var comment struct {
-		ID        int64  `json:"id"`
-		Content   string `json:"content"`
-		AuthorID  int64  `json:"author_id"`
-		Author    string `json:"author"`
-		CreatedAt string `json:"created_at"`
+	// Insert comment
+	log.Printf("Inserting comment: post_id=%d, author_id=%d, content=%s",
+		postIDInt, userID, commentData.Content)
+	result, err := tx.Exec(`
+		INSERT INTO group_post_comments (post_id, author_id, content, created_at)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
+		postIDInt, userID, commentData.Content)
+	if err != nil {
+		log.Printf("Error inserting comment: %v", err)
+		http.Error(w, `{"error": "Failed to create comment"}`, http.StatusInternalServerError)
+		return
 	}
 
+	commentID, err := result.LastInsertId()
+	if err != nil {
+		log.Printf("Error getting comment ID: %v", err)
+		http.Error(w, `{"error": "Database error"}`, http.StatusInternalServerError)
+		return
+	}
+	log.Printf("Created comment with ID: %d", commentID)
+
+	// Get complete comment data
+	var createdComment m.GroupPostComment
 	err = tx.QueryRow(`
-		SELECT c.id, c.content, c.author_id, u.username, c.created_at
+		SELECT 
+			c.id,
+			c.post_id,
+			c.author_id,
+			u.username as author,
+			c.content,
+			c.created_at,
+			c.created_at as updated_at
 		FROM group_post_comments c
 		JOIN users u ON c.author_id = u.id
 		WHERE c.id = ?`,
-		commentID).Scan(&comment.ID, &comment.Content, &comment.AuthorID, &comment.Author, &comment.CreatedAt)
+		commentID).Scan(
+		&createdComment.ID,
+		&createdComment.PostID,
+		&createdComment.AuthorID,
+		&createdComment.Author,
+		&createdComment.Content,
+		&createdComment.CreatedAt,
+		&createdComment.UpdatedAt,
+	)
 	if err != nil {
-		http.Error(w, "Failed to fetch created comment", http.StatusInternalServerError)
+		log.Printf("Error retrieving comment: %v", err)
+		http.Error(w, `{"error": "Database error"}`, http.StatusInternalServerError)
 		return
 	}
 
 	if err = tx.Commit(); err != nil {
-		http.Error(w, "Failed to complete comment creation", http.StatusInternalServerError)
+		log.Printf("Error committing transaction: %v", err)
+		http.Error(w, `{"error": "Database error"}`, http.StatusInternalServerError)
 		return
 	}
 
+	// Return the created comment
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(comment)
+	json.NewEncoder(w).Encode(createdComment)
 }
 
 func getPostComments(postID int) ([]m.GroupPostComment, error) {
 	rows, err := sqlite.DB.Query(`
-		SELECT c.id, c.post_id, c.author_id, u.username, c.content, c.created_at, c.updated_at
+		SELECT 
+			c.id,
+			c.post_id,
+			c.author_id,
+			u.username as author,
+			c.content,
+			c.created_at,
+			c.created_at as updated_at
 		FROM group_post_comments c
 		JOIN users u ON c.author_id = u.id
 		WHERE c.post_id = ?
-		ORDER BY c.created_at ASC`, postID)
+		ORDER BY c.created_at DESC`,
+		postID)
 	if err != nil {
 		return nil, err
 	}
@@ -473,13 +517,21 @@ func getPostComments(postID int) ([]m.GroupPostComment, error) {
 	for rows.Next() {
 		var comment m.GroupPostComment
 		err := rows.Scan(
-			&comment.ID, &comment.PostID, &comment.AuthorID, &comment.Author,
-			&comment.Content, &comment.CreatedAt, &comment.UpdatedAt)
+			&comment.ID,
+			&comment.PostID,
+			&comment.AuthorID,
+			&comment.Author,
+			&comment.Content,
+			&comment.CreatedAt,
+			&comment.UpdatedAt,
+		)
 		if err != nil {
+			log.Printf("Error scanning comment: %v", err)
 			continue
 		}
 		comments = append(comments, comment)
 	}
+
 	return comments, nil
 }
 
