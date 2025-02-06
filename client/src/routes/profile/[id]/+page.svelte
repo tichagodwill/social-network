@@ -16,7 +16,7 @@
     let errorMessage = '';
     let showSettingsModal = false;
     let newProfilePhoto: string = data.user?.avatar ?? "";
-    let privacySetting: boolean = data.user?.isPrivate === true;
+    let privacySetting: string = data.user?.isPrivate ? "private" : "public";
     let userDescription: string = data.user?.aboutMe || '';
     let userPosts: Array<any> = [];
     let showExpandedImage = false;
@@ -66,16 +66,35 @@
         }
     });
 
+    // Function to add pulse animation to button
+    function addPulseAnimation(element: HTMLElement) {
+        element.classList.add('button-pulse');
+        setTimeout(() => {
+            element.classList.remove('button-pulse');
+        }, 300);
+    }
+
     // Function to handle follow/unfollow
-    async function handleFollow() {
+    async function handleFollow(event: MouseEvent) {
+        const button = event.currentTarget as HTMLElement;
         isLoading = true;
         errorMessage = '';
         try {
-            const result = await followers.followUser(userId);
-            if (result?.status === 'pending') {
-                hasPendingRequest = true;
-            } else if (result?.status === 'accepted') {
-                isFollowing = true;
+            addPulseAnimation(button);
+            if (isFollowing) {
+                const success = await followers.unfollowUser(userId);
+                if (success) {
+                    isFollowing = false;
+                } else {
+                    errorMessage = 'Failed to unfollow user';
+                }
+            } else {
+                const result = await followers.followUser(userId);
+                if (result?.status === 'pending') {
+                    hasPendingRequest = true;
+                } else if (result?.status === 'accepted') {
+                    isFollowing = true;
+                }
             }
         } catch (error) {
             errorMessage = 'Failed to update follow status';
@@ -113,7 +132,7 @@
     // Function to show settings modal
     function showSettings() {
         newProfilePhoto = data.user?.avatar ?? "";
-        privacySetting = data.user?.isPrivate === true;
+        privacySetting = data.user?.isPrivate ? "private" : "public";
         userDescription = data.user?.aboutMe || '';
         showSettingsModal = true;
     }
@@ -132,7 +151,7 @@
                 body: JSON.stringify({
                     image: imageToSend,
                     description: userDescription,
-                    privacy: privacySetting
+                    privacy: privacySetting === "private"
                 }),
                 credentials: 'include'
             });
@@ -201,7 +220,7 @@
                 <div class="flex items-center justify-center md:justify-start space-x-3">
                     <h1 class="text-4xl font-extrabold text-white">{data.user?.username}</h1>
                     <div class="relative group">
-                        {#if privacySetting}
+                        {#if privacySetting === "private"}
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white/80 cursor-pointer" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
                             </svg>
@@ -212,7 +231,7 @@
                             </svg>
                         {/if}
                         <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-black text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                            {privacySetting ? 'Private' : 'Public'}
+                            {privacySetting === "private" ? 'Private' : 'Public'}
                         </div>
                     </div>
                 </div>
@@ -239,10 +258,10 @@
             <!-- Follow Button - Updated with primary colors -->
             {#if !isOwnProfile}
                 <Button
-                  class="mt-6 md:mt-0 transition-transform hover:scale-105 bg-white text-primary-500 hover:bg-gray-50"
-                  color={isFollowing ? 'alternative' : 'primary'}
+                  class="mt-6 md:mt-0 hover:scale-105 transform transition-all duration-200 ease-in-out relative group {isFollowing ? 'bg-blue-500 text-white hover:!bg-red-600' : 'bg-blue-500 hover:bg-blue-600'}"
+                  color="none"
                   disabled={hasPendingRequest || isLoading}
-                  on:click={handleFollow}
+                  on:click={(event) => handleFollow(event)}
                   aria-label="Follow/Unfollow Button"
                 >
                     {#if isLoading}
@@ -256,9 +275,27 @@
                     {:else if hasPendingRequest}
                         <Badge color="yellow">Request Pending</Badge>
                     {:else if isFollowing}
-                        <Badge color="green">Following</Badge>
+                        <div class="flex items-center space-x-1">
+                            {#if !isLoading}
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transition-transform duration-200 {isFollowing ? 'group-hover:scale-110' : ''}" viewBox="0 0 20 20" fill="currentColor">
+                                    {#if isFollowing}
+                                        <path fill-rule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clip-rule="evenodd" />
+                                    {:else}
+                                        <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z" />
+                                    {/if}
+                                </svg>
+                            {/if}
+                            <span class="transition-all duration-200 group-hover:font-medium">
+                                {#if isFollowing}
+                                    <span class="group-hover:hidden transition-opacity duration-200 text-white">Following</span>
+                                    <span class="hidden group-hover:inline text-white transition-all duration-200 font-semibold">Unfollow</span>
+                                {:else}
+                                    <span class="text-white">Follow</span>
+                                {/if}
+                            </span>
+                        </div>
                     {:else}
-                        Follow
+                        <span class="text-white">Follow</span>
                     {/if}
                 </Button>
                 {#if errorMessage}
@@ -463,10 +500,10 @@
                 <label class="block text-sm font-medium mb-2">Privacy Setting</label>
                 <div class="flex items-center gap-6 bg-gray-50 p-4 rounded-lg">
                     <div class="flex items-center gap-2">
-                        <Radio bind:group={privacySetting} value={false} name="privacy">Public</Radio>
+                        <Radio bind:group={privacySetting} value={"public"} name="privacy">Public</Radio>
                     </div>
                     <div class="flex items-center gap-2">
-                        <Radio bind:group={privacySetting} value={true} name="privacy">Private</Radio>
+                        <Radio bind:group={privacySetting} value={"private"} name="privacy">Private</Radio>
                     </div>
                 </div>
             </div>
@@ -499,6 +536,22 @@
 </div>
 
 <style lang="postcss">
+    @keyframes pulse {
+        0% {
+            transform: scale(1);
+        }
+        50% {
+            transform: scale(1.05);
+        }
+        100% {
+            transform: scale(1);
+        }
+    }
+
+    :global(.button-pulse) {
+        animation: pulse 0.3s ease-in-out;
+    }
+
     /* Custom scrollbar styles from your theme */
     :global(.custom-scrollbar) {
         scrollbar-width: thin;

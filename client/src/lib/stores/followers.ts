@@ -45,6 +45,28 @@ function createFollowersStore() {
                 console.error('Failed to follow user:', error);
             }
         },
+        unfollowUser: async (userId: number) => {
+            try {
+                const response = await fetch('http://localhost:8080/unfollow', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        userToUnfollowId: userId,
+                    }),
+                });
+                if (response.ok) {
+                    return true;
+                }
+                return false;
+            } catch (error) {
+                console.error('Failed to unfollow user:', error);
+                return false;
+            }
+        },
+
         handleRequest: async (requestId: number, action: boolean) => {
             try {
                 const response = await fetch(`http://localhost:8080/follow/handle-request`, {
@@ -69,4 +91,4 @@ function createFollowersStore() {
     };
 }
 
-export const followers = createFollowersStore(); 
+export const followers = createFollowersStore();
