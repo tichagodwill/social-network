@@ -964,31 +964,27 @@ func GroupLeave(w http.ResponseWriter, r *http.Request) {
 func GetGroupEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	groupIDStr := r.PathValue("id")
-	groupID, err := strconv.Atoi(groupIDStr)
+	groupID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid group ID"})
+		http.Error(w, "Invalid group ID", http.StatusBadRequest)
 		return
 	}
 
-	// First check if the group exists
-	var exists bool
-	err = sqlite.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM groups WHERE id = ?)", groupID).Scan(&exists)
+	// Get current user
+	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
-		log.Printf("Error checking group existence: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to check group"})
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	if !exists {
-		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Group not found"})
+	// Get user ID
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		http.Error(w, "Failed to get user information", http.StatusInternalServerError)
 		return
 	}
 
-	// Get events with response counts
 	rows, err := sqlite.DB.Query(`
 		SELECT 
 			e.id,
@@ -996,65 +992,69 @@ func GetGroupEvents(w http.ResponseWriter, r *http.Request) {
 			e.description,
 			e.event_date,
 			e.creator_id,
-			COALESCE(
-				(SELECT COUNT(*) FROM event_responses 
-				WHERE event_id = e.id AND status = 'going'), 0
-			) as going_count,
-			COALESCE(
-				(SELECT COUNT(*) FROM event_responses 
-				WHERE event_id = e.id AND status = 'not_going'), 0
-			) as not_going_count
+			COALESCE(ur.rsvp_status, '') as user_response,
+			COALESCE(r_going.going_count, 0) as going_count,
+			COALESCE(r_not_going.not_going_count, 0) as not_going_count
 		FROM group_events e
+		LEFT JOIN group_event_RSVP ur ON e.id = ur.event_id AND ur.user_id = ?
+		LEFT JOIN (
+			SELECT event_id, COUNT(*) as going_count 
+			FROM group_event_RSVP 
+			WHERE rsvp_status = 'going' 
+			GROUP BY event_id
+		) r_going ON e.id = r_going.event_id
+		LEFT JOIN (
+			SELECT event_id, COUNT(*) as not_going_count 
+			FROM group_event_RSVP 
+			WHERE rsvp_status = 'not_going' 
+			GROUP BY event_id
+		) r_not_going ON e.id = r_not_going.event_id
 		WHERE e.group_id = ?
-		ORDER BY e.event_date DESC`, groupID)
+		ORDER BY e.event_date DESC`,
+		userID, groupID)
 	if err != nil {
-		log.Printf("Error fetching events: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to fetch events"})
+		log.Printf("Error querying events: %v", err)
+		http.Error(w, "Failed to get events", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
 
 	var events []map[string]interface{}
 	for rows.Next() {
-		var event struct {
-			ID            int       `json:"id"`
-			Title         string    `json:"title"`
-			Description   string    `json:"description"`
-			EventDate     time.Time `json:"eventDate"`
-			CreatorID     int       `json:"creatorId"`
-			GoingCount    int       `json:"goingCount"`
-			NotGoingCount int       `json:"notGoingCount"`
-		}
+		var (
+			id        int
+			title     string
+			desc      string
+			date      time.Time
+			creatorID int
+			userResp  string
+			going     int
+			notGoing  int
+		)
 
-		if err := rows.Scan(
-			&event.ID,
-			&event.Title,
-			&event.Description,
-			&event.EventDate,
-			&event.CreatorID,
-			&event.GoingCount,
-			&event.NotGoingCount,
-		); err != nil {
-			log.Printf("Error scanning event row: %v", err)
+		if err := rows.Scan(&id, &title, &desc, &date, &creatorID, &userResp, &going, &notGoing); err != nil {
+			log.Printf("Error scanning event: %v", err)
 			continue
 		}
 
-		events = append(events, map[string]interface{}{
-			"id":            event.ID,
-			"title":         event.Title,
-			"description":   event.Description,
-			"eventDate":     event.EventDate.Format(time.RFC3339),
-			"creatorId":     event.CreatorID,
-			"goingCount":    event.GoingCount,
-			"notGoingCount": event.NotGoingCount,
-		})
+		event := map[string]interface{}{
+			"id":           id,
+			"title":        title,
+			"description":  desc,
+			"eventDate":    date.Format(time.RFC3339), // Format the date as ISO string
+			"creatorId":    creatorID,
+			"userResponse": userResp,
+			"responses": map[string]int{
+				"going":    going,
+				"notGoing": notGoing,
+			},
+		}
+		events = append(events, event)
 	}
 
 	if err = rows.Err(); err != nil {
 		log.Printf("Error iterating events: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "Error processing events"})
+		http.Error(w, "Error processing events", http.StatusInternalServerError)
 		return
 	}
 
@@ -1063,7 +1063,6 @@ func GetGroupEvents(w http.ResponseWriter, r *http.Request) {
 		events = make([]map[string]interface{}, 0)
 	}
 
-	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(events)
 }
 
@@ -1126,8 +1125,141 @@ func CreateGroupEvent(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Update the RespondToGroupEvent function to use these helpers
 func RespondToGroupEvent(w http.ResponseWriter, r *http.Request) {
-	// Implementation for responding to a group event
+	log.Println("1. Starting RespondToGroupEvent handler")
+
+	// Get parameters from URL
+	groupID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		log.Printf("2. Invalid group ID: %v", err)
+		http.Error(w, "Invalid group ID", http.StatusBadRequest)
+		return
+	}
+	log.Printf("3. Group ID: %d", groupID)
+
+	eventID, err := strconv.Atoi(r.PathValue("eventId"))
+	if err != nil {
+		log.Printf("4. Invalid event ID: %v", err)
+		http.Error(w, "Invalid event ID", http.StatusBadRequest)
+		return
+	}
+	log.Printf("5. Event ID: %d", eventID)
+
+	// Get current user
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		log.Printf("6. Auth error: %v", err)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	log.Printf("7. Username: %s", username)
+
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		log.Printf("8. User lookup error: %v", err)
+		http.Error(w, "Failed to get user information", http.StatusInternalServerError)
+		return
+	}
+	log.Printf("9. User ID: %d", userID)
+
+	// Parse request body
+	var requestBody struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+		log.Printf("10. Invalid request body: %v", err)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	log.Printf("11. Request status: %s", requestBody.Status)
+
+	// Validate status
+	if requestBody.Status != "going" && requestBody.Status != "not_going" {
+		log.Printf("12. Invalid status value: %s", requestBody.Status)
+		http.Error(w, "Invalid status. Must be 'going' or 'not_going'", http.StatusBadRequest)
+		return
+	}
+
+	// Start transaction
+	tx, err := sqlite.DB.Begin()
+	if err != nil {
+		log.Printf("13. Transaction start error: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	// Verify event exists
+	var eventExists bool
+	err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM group_events WHERE id = ? AND group_id = ?)",
+		eventID, groupID).Scan(&eventExists)
+	if err != nil {
+		log.Printf("14. Error checking event: %v", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	if !eventExists {
+		log.Printf("15. Event not found")
+		http.Error(w, "Event not found", http.StatusNotFound)
+		return
+	}
+
+	// Update or insert RSVP
+	_, err = tx.Exec(`
+		INSERT INTO group_event_RSVP (event_id, user_id, rsvp_status)
+		VALUES (?, ?, ?)
+		ON CONFLICT(event_id, user_id) 
+		DO UPDATE SET rsvp_status = ?`,
+		eventID, userID, requestBody.Status, requestBody.Status)
+	if err != nil {
+		log.Printf("16. RSVP update error: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Failed to update RSVP",
+		})
+		return
+	}
+
+	// Get updated counts
+	var going, notGoing int
+	err = tx.QueryRow(`
+		SELECT 
+			COUNT(CASE WHEN rsvp_status = 'going' THEN 1 END) as going,
+			COUNT(CASE WHEN rsvp_status = 'not_going' THEN 1 END) as not_going
+		FROM group_event_RSVP 
+		WHERE event_id = ?`,
+		eventID).Scan(&going, &notGoing)
+	if err != nil {
+		log.Printf("17. Count query error: %v", err)
+		http.Error(w, "Failed to get updated counts", http.StatusInternalServerError)
+		return
+	}
+	log.Printf("18. Counts - Going: %d, Not Going: %d", going, notGoing)
+
+	if err = tx.Commit(); err != nil {
+		log.Printf("19. Transaction commit error: %v", err)
+		http.Error(w, "Failed to complete action", http.StatusInternalServerError)
+		return
+	}
+
+	// Send response
+	w.Header().Set("Content-Type", "application/json")
+	response := map[string]interface{}{
+		"message":  "RSVP updated successfully",
+		"going":    going,
+		"notGoing": notGoing,
+	}
+	log.Printf("20. Sending response: %+v", response)
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("21. Error encoding response: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	log.Println("22. Handler completed successfully")
 }
 
 func UpdateGroup(w http.ResponseWriter, r *http.Request) {
