@@ -20,22 +20,25 @@ func GetContact(w http.ResponseWriter, r *http.Request) {
 
 	var users []models.User
 
+	// Get users that either follow you or you follow them
 	rows, err := sqlite.DB.Query(`
-    SELECT 
+    SELECT DISTINCT
         u.id, u.Email, u.Username, u.first_name, u.last_name, 
         u.date_of_birth, u.Avatar, u.about_me, u.is_private, u.created_at
-    FROM followers f
-    LEFT JOIN users u ON u.id = f.follower_id
-    WHERE f.followed_id = ?
-    AND f.status = 'accepted'
-`, userId)
+    FROM users u
+    INNER JOIN followers f ON 
+        (f.follower_id = u.id AND f.followed_id = ?) OR 
+        (f.follower_id = ? AND f.followed_id = u.id)
+    WHERE f.status = 'accepted'
+    `, userId, userId)
+
 	if err != nil {
 		if err == sql.ErrNoRows {
-			http.Error(w, "No followers found", http.StatusBadRequest)
+			http.Error(w, "No contacts found", http.StatusBadRequest)
 			return
 		}
 		http.Error(w, "Something went wrong", http.StatusInternalServerError)
-		log.Printf("Error getting followers: %v", err)
+		log.Printf("Error getting contacts: %v", err)
 		return
 	}
 
@@ -44,7 +47,7 @@ func GetContact(w http.ResponseWriter, r *http.Request) {
 		err := rows.Scan(&u.ID, &u.Email, &u.Username, &u.FirstName, &u.LastName, &u.DateOfBirth, &u.Avatar, &u.AboutMe, &u.IsPrivate, &u.CreatedAt)
 		if err != nil {
 			http.Error(w, "Something went wrong", http.StatusInternalServerError)
-			log.Printf("Error scanning follower: %v", err)
+			log.Printf("Error scanning contact: %v", err)
 			return
 		}
 

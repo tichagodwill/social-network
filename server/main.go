@@ -150,6 +150,7 @@ func main() {
 
 	mux.Handle("GET /contact/{userID}", authMiddleware(http.HandlerFunc(api.GetContact)))
 	mux.Handle("GET /messages/{userId}/{contactId}", authMiddleware(http.HandlerFunc(api.GetMessages)))
+	mux.Handle("POST /chat/direct", authMiddleware(http.HandlerFunc(api.CreateOrGetDirectChat)))
 
 	mux.Handle("GET /user/{userID}", authMiddleware(http.HandlerFunc(api.UserProfile)))
 	mux.Handle("POST /updateProfile", authMiddleware(http.HandlerFunc(api.UpdateProfile)))

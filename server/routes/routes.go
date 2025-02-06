@@ -15,10 +15,13 @@ func SetupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /groups/{id}/invitations", api.InviteToGroup)
 	mux.HandleFunc("POST /groups/{id}/invitations/{invitationId}/{action}", api.HandleInvitation)
 	
-	// Group membership routes
-	mux.HandleFunc("GET /groups/{id}/members", api.GetGroupMembers)
-	
-	// Notification routes
+// Group membership routes
+mux.HandleFunc("GET /groups/{id}/members", api.GetGroupMembers)
+
+// Chat routes
+mux.HandleFunc("POST /chat/direct", api.CreateOrGetDirectChat)
+
+// Notification routes
 	mux.HandleFunc("GET /notifications", api.GetNotifications)
 	mux.HandleFunc("GET /notifications/{id}/read", api.MarkNotificationAsRead)
-} 
+}

@@ -3,6 +3,7 @@
     import { followers } from '$lib/stores/followers';
     import { auth } from '$lib/stores/auth';
     import { goto } from '$app/navigation';
+    import { chat } from '$lib/stores/chat';
     import { Button, Avatar, Badge, Tabs, TabItem, Modal, Input, Radio } from 'flowbite-svelte';
     import type { PageData } from './$types';
     import {error} from "@sveltejs/kit";
@@ -22,6 +23,7 @@
     let userPosts: Array<any> = [];
     let showExpandedImage = false;
     let expandedImageSrc = '';
+    let showUnfollowModal = false;
 
     $: if ($auth.user) {
         isOwnProfile = $auth.user.id === userId;
@@ -78,30 +80,70 @@
     // Function to handle follow/unfollow
     async function handleFollow(event: MouseEvent) {
         const button = event.currentTarget as HTMLElement;
+        
+        // If already following, show confirmation modal
+        if (isFollowing) {
+            showUnfollowModal = true;
+            return;
+        }
+
         isLoading = true;
         errorMessage = '';
         try {
             addPulseAnimation(button);
-            if (isFollowing) {
-                const success = await followers.unfollowUser(userId);
-                if (success) {
-                    isFollowing = false;
-                } else {
-                    errorMessage = 'Failed to unfollow user';
-                }
-            } else {
-                const result = await followers.followUser(userId);
-                if (result?.status === 'pending') {
-                    hasPendingRequest = true;
-                } else if (result?.status === 'accepted') {
-                    isFollowing = true;
-                }
+            const result = await followers.followUser(userId);
+            if (result?.status === 'pending') {
+                hasPendingRequest = true;
+            } else if (result?.status === 'accepted') {
+                isFollowing = true;
             }
         } catch (error) {
             errorMessage = 'Failed to update follow status';
             console.error(errorMessage, error);
         } finally {
             isLoading = false;
+        }
+    }
+
+    // Function to handle unfollow confirmation
+    async function handleUnfollow() {
+        isLoading = true;
+        errorMessage = '';
+        try {
+            const success = await followers.unfollowUser(userId);
+            if (success) {
+                isFollowing = false;
+            } else {
+                errorMessage = 'Failed to unfollow user';
+            }
+        } catch (error) {
+            errorMessage = 'Failed to update follow status';
+            console.error(errorMessage, error);
+        } finally {
+            isLoading = false;
+            showUnfollowModal = false;
+        }
+    }
+
+    // Check if messaging is allowed (if either user follows the other)
+    let canMessage = false;
+    $: if (data.Following && data.Followers && $auth.user) {
+        canMessage = true; // Always allow clicking the message button
+    }
+
+    // Function to handle opening chat
+    async function handleMessageClick() {
+        try {
+            // Get or create chat with the user
+            const result = await chat.getOrCreateDirectChat(userId);
+            if (result?.chatId) {
+                goto(`/chat/${result.chatId}`);
+            } else if (result?.error) {
+                errorMessage = result.error;
+            }
+        } catch (error) {
+            console.error('Failed to open chat:', error);
+            errorMessage = 'Failed to open chat';
         }
     }
 
@@ -268,7 +310,7 @@
                 >
                     {#if isLoading}
                         <span class="flex items-center">
-                            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
@@ -278,37 +320,24 @@
                         <Badge color="yellow">Request Pending</Badge>
                     {:else if isFollowing}
                         <div class="flex items-center space-x-1">
-                            {#if !isLoading}
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transition-transform duration-200 {isFollowing ? 'group-hover:scale-110' : ''}" viewBox="0 0 20 20" fill="currentColor">
-                                    {#if isFollowing}
-                                        <path fill-rule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clip-rule="evenodd" />
-                                    {:else}
-                                        <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z" />
-                                    {/if}
-                                </svg>
-                            {/if}
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transition-transform duration-200 {isFollowing ? 'group-hover:scale-110' : ''}" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clip-rule="evenodd" />
+                            </svg>
                             <span class="transition-all duration-200 group-hover:font-medium">
-                                {#if isFollowing}
-                                    <span class="group-hover:hidden transition-opacity duration-200 text-white">Following</span>
-                                    <span class="hidden group-hover:inline text-white transition-all duration-200 font-semibold">Unfollow</span>
-                                {:else}
-                                    <span class="text-white">Follow</span>
-                                {/if}
+                                <span class="group-hover:hidden transition-opacity duration-200 text-white">Following</span>
+                                <span class="hidden group-hover:inline text-white transition-all duration-200 font-semibold">Unfollow</span>
                             </span>
                         </div>
                     {:else}
                         <span class="text-white">Follow</span>
                     {/if}
-                    </Button>
-                    {#if errorMessage}
-                        <p class="text-red-500 text-sm mt-2">{errorMessage}</p>
-                    {/if}
+                </Button>
 
-                    <!-- Message Button -->
+                <!-- Message Button - Always enabled -->
+                <div class="flex flex-col">
                     <Button
                         class="hover:scale-105 transform transition-all duration-200 ease-in-out bg-blue-500 hover:bg-blue-600 text-white"
-                        color="none"
-                        on:click={() => goto(`/chat/${userId}`)}
+                        on:click={handleMessageClick}
                     >
                         <div class="flex items-center space-x-2">
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -317,239 +346,265 @@
                             <span>Message</span>
                         </div>
                     </Button>
-                </div>
-            {/if}
-        </div>
-    </div>
-
-    <!-- Tabs Section - Updated with theme colors -->
-    <Tabs class="mt-8">
-        <TabItem title="Followers" active>
-            <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
-                <h3 class="text-2xl font-semibold mb-4">Followers</h3>
-                {#if data.Followers && data.Followers.length > 0}
-                    <div class="space-y-4">
-                        {#each data.Followers as Followers}
-                            <div class="flex items-center space-x-4 hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
-                                <Avatar src={Followers.avatar || generateAvatar(Followers.username)} alt="Following Avatar" />
-                                <div>
-                                    <p class="font-semibold text-lg">{Followers.username}</p>
-                                    <p class="text-sm text-gray-600 dark:text-gray-400">
-                                        {Followers.firstName} {Followers.lastName}
-                                    </p>
-                                </div>
-                            </div>
-                        {/each}
-                    </div>
-                {:else}
-                    <p class="text-gray-500 dark:text-gray-400">Not following anyone yet.</p>
-                {/if}
-            </div>
-        </TabItem>
-
-        <TabItem title="Following">
-            <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
-                <h3 class="text-2xl font-semibold mb-4">Following</h3>
-                {#if data.Following && data.Following.length > 0}
-                    <div class="space-y-4">
-                        {#each data.Following as following}
-                            <div class="flex items-center space-x-4 hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
-                                <Avatar src={following.avatar || generateAvatar(following.username)} alt="Following Avatar" />
-                                <div>
-                                    <p class="font-semibold text-lg">{following.username}</p>
-                                    <p class="text-sm text-gray-600 dark:text-gray-400">
-                                        {following.firstName} {following.lastName}
-                                    </p>
-                                </div>
-                            </div>
-                        {/each}
-                    </div>
-                {:else}
-                    <p class="text-gray-500 dark:text-gray-400">Not following anyone yet.</p>
-                {/if}
-            </div>
-        </TabItem>
-        {#if isOwnProfile}
-            <TabItem title="My Posts">
-                <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
-                    <div class="flex justify-between items-center mb-6">
-                        <h3 class="text-2xl font-semibold">My Posts</h3>
-                        <span class="text-sm text-gray-500 dark:text-gray-400">{userPosts?.length || 0} posts</span>
-                    </div>
-
-                    {#if userPosts && userPosts.length > 0}
-                        <div class="space-y-6">
-                            {#each userPosts as post}
-                                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                                    <!-- Post Header -->
-                                    <div class="p-4">
-                                        <h4 class="text-xl font-semibold text-gray-900 dark:text-white mb-2">{post.title}</h4>
-                                        <p class="text-gray-600 dark:text-gray-300 whitespace-pre-wrap">{post.content}</p>
-
-                                        {#if post.media}
-                                            <div class="mt-4">
-                                                <img
-                                                  src={post.media}
-                                                  alt="Post media"
-                                                  class="rounded-lg h-48 w-auto object-cover cursor-pointer hover:opacity-95 transition-opacity"
-                                                  on:click={() => {
-                                            expandedImageSrc = post.media;
-                                            showExpandedImage = true;
-                                        }}
-                                                />
-                                            </div>
-                                        {/if}
-                                    </div>
-                                </div>
-                            {/each}
-                        </div>
-                    {:else}
-                        <div class="text-center py-12">
-                            <div class="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-                                </svg>
-                            </div>
-                            <h3 class="text-lg font-medium text-gray-900 dark:text-white">No posts yet</h3>
-                            <p class="text-gray-500 dark:text-gray-400 mt-1">Get started by creating your first post</p>
+                    {#if errorMessage}
+                        <div class="text-red-500 text-sm mt-2 bg-red-100 p-2 rounded-lg">
+                            {errorMessage}
                         </div>
                     {/if}
                 </div>
-            </TabItem>
+            </div>
         {/if}
+    </div>
+</div>
 
-        {#if isOwnProfile && data.Requests && data.Requests.length > 0}
-            <TabItem title="Follow Requests">
-                <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
-                    <h3 class="text-2xl font-semibold mb-4">Follow Requests</h3>
-                    {#each data.Requests as request}
-                        <div class="flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
-                            <div class="flex items-center space-x-4">
-                                <Avatar src={request.avatar|| generateAvatar(request.username)} alt="Request Avatar" />
-                                <div>
-                                    <p class="font-semibold text-lg">{request.username}</p>
-                                    <p class="text-sm text-gray-600 dark:text-gray-400">
-                                        {request.firstName} {request.lastName}
-                                    </p>
-                                </div>
-                            </div>
-                            <div class="space-x-2">
-                                <Button
-                                        size="sm"
-                                        color="primary"
-                                        on:click={() => followers.handleRequest(request.id, true)}
-                                        aria-label="Accept Request Button"
-                                >
-                                    Accept
-                                </Button>
-                                <Button
-                                        size="sm"
-                                        color="alternative"
-                                        on:click={() => followers.handleRequest(request.id, false)}
-                                        aria-label="Decline Request Button"
-                                >
-                                    Decline
-                                </Button>
+<!-- Tabs Section - Updated with theme colors -->
+<Tabs class="mt-8">
+    <TabItem title="Followers" active>
+        <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-2xl font-semibold mb-4">Followers</h3>
+            {#if data.Followers && data.Followers.length > 0}
+                <div class="space-y-4">
+                    {#each data.Followers as Followers}
+                        <div class="flex items-center space-x-4 hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
+                            <Avatar src={Followers.avatar || generateAvatar(Followers.username)} alt="Following Avatar" />
+                            <div>
+                                <p class="font-semibold text-lg">{Followers.username}</p>
+                                <p class="text-sm text-gray-600 dark:text-gray-400">
+                                    {Followers.firstName} {Followers.lastName}
+                                </p>
                             </div>
                         </div>
                     {/each}
                 </div>
-            </TabItem>
-        {/if}
-    </Tabs>
+            {:else}
+                <p class="text-gray-500 dark:text-gray-400">Not following anyone yet.</p>
+            {/if}
+        </div>
+    </TabItem>
 
-    <!-- Settings Modal - Updated with theme colors -->
-    <Modal bind:open={showSettingsModal} title="Settings">
-        <div class="space-y-6">
-            <!-- Profile Photo Update -->
-            <div>
-                <label class="block text-sm font-medium mb-2">Profile Photo</label>
-                <div class="relative">
-                    <input
-                      id="profile-photo"
-                      type="file"
-                      accept="image/*"
-                      on:change={handleFileUpload}
-                      class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    />
-                    <div class="w-full px-4 py-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all flex items-center justify-between bg-white hover:bg-gray-50">
-                        <span class="text-gray-500">
-                            {#if newProfilePhoto}
-                                New Photo Selected
-                            {:else}
-                                Choose an image...
-                            {/if}
-                        </span>
-                        <span class="text-primary-500 font-medium">Browse</span>
-                    </div>
+    <TabItem title="Following">
+        <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
+            <h3 class="text-2xl font-semibold mb-4">Following</h3>
+            {#if data.Following && data.Following.length > 0}
+                <div class="space-y-4">
+                    {#each data.Following as following}
+                        <div class="flex items-center space-x-4 hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
+                            <Avatar src={following.avatar || generateAvatar(following.username)} alt="Following Avatar" />
+                            <div>
+                                <p class="font-semibold text-lg">{following.username}</p>
+                                <p class="text-sm text-gray-600 dark:text-gray-400">
+                                    {following.firstName} {following.lastName}
+                                </p>
+                            </div>
+                        </div>
+                    {/each}
                 </div>
-                {#if newProfilePhoto}
-                    <div class="mt-4">
-                        <img
-                          src={newProfilePhoto}
-                          alt="Profile Photo"
-                          class="w-20 h-20 rounded-full cursor-pointer hover:opacity-80 transition-opacity"
-                          on:click={() => {
-                                expandedImageSrc = newProfilePhoto;
-                                showExpandedImage = true;
-                            }}
-                        />
-                        <Button on:click={clearPhoto} color="red" size="sm" class="mt-2">
-                            Clear Image
-                        </Button>
+            {:else}
+                <p class="text-gray-500 dark:text-gray-400">Not following anyone yet.</p>
+            {/if}
+        </div>
+    </TabItem>
+    {#if isOwnProfile}
+        <TabItem title="My Posts">
+            <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-semibold">My Posts</h3>
+                    <span class="text-sm text-gray-500 dark:text-gray-400">{userPosts?.length || 0} posts</span>
+                </div>
+
+                {#if userPosts && userPosts.length > 0}
+                    <div class="space-y-6">
+                        {#each userPosts as post}
+                            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                <!-- Post Header -->
+                                <div class="p-4">
+                                    <h4 class="text-xl font-semibold text-gray-900 dark:text-white mb-2">{post.title}</h4>
+                                    <p class="text-gray-600 dark:text-gray-300 whitespace-pre-wrap">{post.content}</p>
+
+                                    {#if post.media}
+                                        <div class="mt-4">
+                                            <img
+                                              src={post.media}
+                                              alt="Post media"
+                                              class="rounded-lg h-48 w-auto object-cover cursor-pointer hover:opacity-95 transition-opacity"
+                                              on:click={() => {
+                                        expandedImageSrc = post.media;
+                                        showExpandedImage = true;
+                                    }}
+                                            />
+                                        </div>
+                                    {/if}
+                                </div>
+                            </div>
+                        {/each}
+                    </div>
+                {:else}
+                    <div class="text-center py-12">
+                        <div class="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-medium text-gray-900 dark:text-white">No posts yet</h3>
+                        <p class="text-gray-500 dark:text-gray-400 mt-1">Get started by creating your first post</p>
                     </div>
                 {/if}
             </div>
+        </TabItem>
+    {/if}
 
-            <!-- Description Update -->
-            <div>
-                <label class="block text-sm font-medium mb-2">Description</label>
-                <Input
-                  type="text"
-                  bind:value={userDescription}
-                  placeholder="Enter your description"
-                  class="w-full"
-                />
+    {#if isOwnProfile && data.Requests && data.Requests.length > 0}
+        <TabItem title="Follow Requests">
+            <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
+                <h3 class="text-2xl font-semibold mb-4">Follow Requests</h3>
+                {#each data.Requests as request}
+                    <div class="flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
+                        <div class="flex items-center space-x-4">
+                            <Avatar src={request.avatar|| generateAvatar(request.username)} alt="Request Avatar" />
+                            <div>
+                                <p class="font-semibold text-lg">{request.username}</p>
+                                <p class="text-sm text-gray-600 dark:text-gray-400">
+                                    {request.firstName} {request.lastName}
+                                </p>
+                            </div>
+                        </div>
+                        <div class="space-x-2">
+                            <Button
+                                    size="sm"
+                                    color="primary"
+                                    on:click={() => followers.handleRequest(request.id, true)}
+                                    aria-label="Accept Request Button"
+                            >
+                                Accept
+                            </Button>
+                            <Button
+                                    size="sm"
+                                    color="alternative"
+                                    on:click={() => followers.handleRequest(request.id, false)}
+                                    aria-label="Decline Request Button"
+                            >
+                                Decline
+                            </Button>
+                        </div>
+                    </div>
+                {/each}
             </div>
+        </TabItem>
+    {/if}
+</Tabs>
 
-            <!-- Privacy Settings -->
-            <div>
-                <label class="block text-sm font-medium mb-2">Privacy Setting</label>
-                <div class="flex items-center gap-6 bg-gray-50 p-4 rounded-lg">
-                    <div class="flex items-center gap-2">
-                        <Radio bind:group={privacySetting} value={"public"} name="privacy">Public</Radio>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <Radio bind:group={privacySetting} value={"private"} name="privacy">Private</Radio>
-                    </div>
+<!-- Settings Modal - Updated with theme colors -->
+<Modal bind:open={showSettingsModal} title="Settings">
+    <div class="space-y-6">
+        <!-- Profile Photo Update -->
+        <div>
+            <label class="block text-sm font-medium mb-2">Profile Photo</label>
+            <div class="relative">
+                <input
+                  id="profile-photo"
+                  type="file"
+                  accept="image/*"
+                  on:change={handleFileUpload}
+                  class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                />
+                <div class="w-full px-4 py-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all flex items-center justify-between bg-white hover:bg-gray-50">
+                    <span class="text-gray-500">
+                        {#if newProfilePhoto}
+                            New Photo Selected
+                        {:else}
+                            Choose an image...
+                        {/if}
+                    </span>
+                    <span class="text-primary-500 font-medium">Browse</span>
                 </div>
             </div>
-
-            <!-- Save Button -->
-            <Button
-              on:click={updateSettings}
-              class="w-full bg-gradient-to-r from-primary-500 to-primary-600 text-white hover:from-primary-600 hover:to-primary-700"
-            >
-                Save Changes
-            </Button>
+            {#if newProfilePhoto}
+                <div class="mt-4">
+                    <img
+                      src={newProfilePhoto}
+                      alt="Profile Photo"
+                      class="w-20 h-20 rounded-full cursor-pointer hover:opacity-80 transition-opacity"
+                      on:click={() => {
+                            expandedImageSrc = newProfilePhoto;
+                            showExpandedImage = true;
+                        }}
+                    />
+                    <Button on:click={clearPhoto} color="red" size="sm" class="mt-2">
+                        Clear Image
+                    </Button>
+                </div>
+            {/if}
         </div>
-    </Modal>
 
-    <!-- Expanded Image Modal -->
-    {#if showExpandedImage}
-        <div
-          class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
-          on:click={() => showExpandedImage = false}
-        >
-            <div class="max-w-4xl w-full">
-                <img
-                  src={expandedImageSrc}
-                  alt="Expanded Image"
-                  class="rounded-lg max-h-[90vh] w-auto object-contain"
-                />
+        <!-- Description Update -->
+        <div>
+            <label class="block text-sm font-medium mb-2">Description</label>
+            <Input
+              type="text"
+              bind:value={userDescription}
+              placeholder="Enter your description"
+              class="w-full"
+            />
+        </div>
+
+        <!-- Privacy Settings -->
+        <div>
+            <label class="block text-sm font-medium mb-2">Privacy Setting</label>
+            <div class="flex items-center gap-6 bg-gray-50 p-4 rounded-lg">
+                <div class="flex items-center gap-2">
+                    <Radio bind:group={privacySetting} value={"public"} name="privacy">Public</Radio>
+                </div>
+                <div class="flex items-center gap-2">
+                    <Radio bind:group={privacySetting} value={"private"} name="privacy">Private</Radio>
+                </div>
             </div>
         </div>
-    {/if}
+
+        <!-- Save Button -->
+        <Button
+          on:click={updateSettings}
+          class="w-full bg-gradient-to-r from-primary-500 to-primary-600 text-white hover:from-primary-600 hover:to-primary-700"
+        >
+            Save Changes
+        </Button>
+    </div>
+</Modal>
+
+<!-- Unfollow Confirmation Modal -->
+<Modal bind:open={showUnfollowModal} size="xs">
+    <div class="text-center">
+        <svg class="mx-auto mb-4 text-gray-400 w-12 h-12 dark:text-gray-200" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 11V6m0 8h.01M19 10a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/>
+        </svg>
+        <h3 class="mb-5 text-lg font-normal text-gray-500 dark:text-gray-400">
+            Are you sure you want to unfollow this user?
+        </h3>
+        <div class="flex justify-center gap-4">
+            <Button color="red" on:click={handleUnfollow}>
+                Yes, unfollow
+            </Button>
+            <Button color="alternative" on:click={() => showUnfollowModal = false}>
+                No, cancel
+            </Button>
+        </div>
+    </div>
+</Modal>
+
+<!-- Expanded Image Modal -->
+{#if showExpandedImage}
+    <div
+      class="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+      on:click={() => showExpandedImage = false}
+    >
+        <div class="max-w-4xl w-full">
+            <img
+              src={expandedImageSrc}
+              alt="Expanded Image"
+              class="rounded-lg max-h-[90vh] w-auto object-contain"
+            />
+        </div>
+    </div>
+{/if}
 </div>
 
 <style lang="postcss">

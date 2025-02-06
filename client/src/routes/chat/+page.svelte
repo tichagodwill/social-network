@@ -20,12 +20,27 @@
     let contact = null;
     const userId = $auth.user!.id;
 
-    onMount(() => {
+    onMount(async () => {
         chat.initialize();
-        chat.loadContacts(userId);
+        await chat.loadContacts(userId);
+        
         if (loadContact) {
-            chat.loadMessages(userId, loadContact);
+            // Find the contact in the loaded contacts
             contact = $chat.contacts.find(c => c.id === loadContact);
+            
+            // If contact is not found in the list, they might not be following each other yet
+            if (!contact) {
+                const result = await chat.getOrCreateDirectChat(loadContact);
+                if (!result.error) {
+                    // Reload contacts to get the updated list
+                    await chat.loadContacts(userId);
+                    contact = $chat.contacts.find(c => c.id === loadContact);
+                }
+            }
+            
+            if (contact) {
+                chat.loadMessages(userId, loadContact);
+            }
         }
     });
 
@@ -68,9 +83,9 @@
                 <div class="p-4 overflow-y-auto h-[calc(100vh-16rem)]">
                     {#each $chat.contacts as c}
                         <button
-                          class="w-full text-left p-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl mb-3 flex items-center space-x-3 transition-all
-                                   {contact?.id === c.id ? 'bg-primary-50 dark:bg-primary-900/20 border-l-4 border-primary-500' : ''}"
-                          on:click={() => selectContact(c)}
+                            class="w-full text-left p-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl mb-3 flex items-center space-x-3 transition-all
+                            {contact?.id === c.id ? 'bg-primary-50 dark:bg-primary-900/20 border-l-4 border-primary-500' : ''}"
+                            on:click={() => selectContact(c)}
                         >
                             <div class="relative">
                                 <Avatar src={c.avatar || defualtProfileImg} size="md" class="ring-2 ring-gray-100" />
@@ -104,16 +119,31 @@
                     </div>
 
                     <!-- Messages -->
-                    <div class="flex-1 overflow-y-auto p-6" id="messages">
-                        {#each $chat.messages as message}
-                            <div class="mb-6 flex" class:justify-end={message.senderId === userId}>
-                                <div class="flex {message.senderId === userId ? 'flex-row-reverse' : 'flex-row'} items-end space-x-2">
+                    <div class="flex-1 overflow-y-auto px-6 py-4" id="messages">
+                        {#each $chat.messages as message, i}
+                            {@const isFirstInGroup = i === 0 || $chat.messages[i - 1].senderId !== message.senderId}
+                            {@const isLastInGroup = i === $chat.messages.length - 1 || $chat.messages[i + 1].senderId !== message.senderId}
+                            
+                            <div class="mb-2 last:mb-0 flex" class:justify-end={message.senderId === userId}>
+                                <div class="flex {message.senderId === userId ? 'flex-row-reverse' : 'flex-row'} items-end max-w-[75%]">
                                     {#if message.senderId !== userId}
-                                        <Avatar src={message.senderAvatar || defualtProfileImg} size="sm" />
+                                        {#if isFirstInGroup}
+                                            <Avatar src={message.senderAvatar || defualtProfileImg} size="sm" class="mb-1 mr-2" />
+                                        {:else}
+                                            <div class="w-8 mr-2"></div> <!-- Placeholder for alignment -->
+                                        {/if}
                                     {/if}
-                                    <div class="max-w-[70%] {message.senderId === userId ? 'bg-primary-500 text-white' : 'bg-gray-100 dark:bg-gray-700'} rounded-2xl p-4 shadow-sm">
+                                    
+                                    <div class="
+                                        {message.senderId === userId ? 'bg-primary-500 text-white' : 'bg-gray-100 dark:bg-gray-700'} 
+                                        p-3 shadow-sm
+                                        {message.senderId === userId ? 'rounded-l-2xl' : 'rounded-r-2xl'}
+                                        {isFirstInGroup ? (message.senderId === userId ? 'rounded-tr-2xl' : 'rounded-tl-2xl') : ''}
+                                        {isLastInGroup ? (message.senderId === userId ? 'rounded-br-2xl' : 'rounded-bl-2xl') : ''}
+                                        relative w-full
+                                    ">
                                         <MessageContent {message} />
-                                        <p class="text-xs {message.senderId === userId ? 'text-primary-100' : 'text-gray-500'} mt-2">
+                                        <p class="text-[10px] {message.senderId === userId ? 'text-primary-100' : 'text-gray-400'} mt-1">
                                             {getLastDate(new Date(message.createdAt))}
                                         </p>
                                     </div>
@@ -124,19 +154,23 @@
 
                     <!-- Input Area -->
                     <div class="p-4 bg-gray-50 dark:bg-gray-900 border-t dark:border-gray-700">
-                        <div class="flex space-x-2">
-                            <ChatInput
-                              bind:this={chatInput}
-                              bind:value={newMessage}
-                              placeholder="Type your message..."
-                              class="flex-1 rounded-xl border-gray-200 focus:ring-primary-500 focus:border-primary-500"
-                              on:keypress={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                            />
+                        <div class="flex items-end space-x-2">
+                            <div class="flex-1 bg-white dark:bg-gray-800 rounded-xl shadow-sm">
+                                <ChatInput
+                                    bind:this={chatInput}
+                                    bind:value={newMessage}
+                                    placeholder="Type your message..."
+                                    class="w-full border-0 focus:ring-0 rounded-xl bg-transparent"
+                                    on:keypress={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
+                                />
+                            </div>
                             <div class="flex space-x-2">
                                 <FileUpload on:upload={handleFileUpload} />
                                 <EmojiPicker on:emoji-select={handleEmojiSelect} />
                                 <Button gradient color="primary" size="lg" on:click={handleSend}>
-                                    Send
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                        <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+                                    </svg>
                                 </Button>
                             </div>
                         </div>
