@@ -21,12 +21,13 @@ func GetContact(w http.ResponseWriter, r *http.Request) {
 	var users []models.User
 
 	rows, err := sqlite.DB.Query(`
-SELECT
-    u.id, u.Email, u.Username, u.first_name, u.last_name, u.date_of_birth, u.Avatar, u.about_me, u.is_private, u.created_at
-FROM followers
-LEFT JOIN main.users u on u.id = followers.follower_id
-WHERE following_id = ?
-  AND status = 'accepted'
+    SELECT 
+        u.id, u.Email, u.Username, u.first_name, u.last_name, 
+        u.date_of_birth, u.Avatar, u.about_me, u.is_private, u.created_at
+    FROM followers f
+    LEFT JOIN users u ON u.id = f.follower_id
+    WHERE f.followed_id = ?
+    AND f.status = 'accepted'
 `, userId)
 	if err != nil {
 		if err == sql.ErrNoRows {

@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
 	m "social-network/models"
@@ -10,6 +9,8 @@ import (
 	"social-network/util"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 var (
@@ -137,7 +138,7 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 
 			// this can be made into a switch to handle future message types. but for now it's chat only
 			if connectionType.Type == "chat" {
-				var chatMessage m.Chat_message
+				var chatMessage m.ChatMessage
 				if err := json.Unmarshal(message, &chatMessage); err != nil {
 					log.Printf("WebSocket chat json unmarshal error: %v", err)
 					break
@@ -149,6 +150,31 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 				if err := conn.WriteMessage(messageType, message); err != nil {
 					log.Printf("WebSocket write error: %v", err)
 					break
+				}
+			}
+
+			// Add this to your existing socket message types
+			type EventRSVPMessage struct {
+				Type     string `json:"type"`
+				GroupID  int    `json:"groupId"`
+				EventID  int    `json:"eventId"`
+				Status   string `json:"status"`
+				Going    int    `json:"going"`
+				NotGoing int    `json:"notGoing"`
+			}
+
+			// In your WebSocketHandler function, add handling for event responses
+			if connectionType.Type == "eventRSVP" {
+				var rsvpMessage EventRSVPMessage
+				if err := json.Unmarshal(message, &rsvpMessage); err != nil {
+					log.Printf("WebSocket event RSVP unmarshal error: %v", err)
+					break
+				}
+
+				// Broadcast the RSVP update to all connected clients
+				broadcast <- m.BroadcastMessage{
+					Data:        rsvpMessage,
+					TargetUsers: nil, // Broadcast to all users
 				}
 			}
 

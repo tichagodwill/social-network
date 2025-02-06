@@ -61,11 +61,11 @@ type GroupPost struct {
 }
 
 type GroupPostComment struct {
-	ID        int       `json:"id"`
-	PostID    int       `json:"post_id"`
-	AuthorID  int       `json:"author_id"`
-	Author    string    `json:"author"`
-	Content   string    `json:"content"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        int    `json:"id"`
+	PostID    int    `json:"post_id"`
+	AuthorID  int    `json:"author_id"`
+	Author    string `json:"author"`
+	Content   string `json:"content"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }

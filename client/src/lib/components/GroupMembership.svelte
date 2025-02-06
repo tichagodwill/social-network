@@ -6,10 +6,12 @@
     import type { GroupMember } from '$lib/types';
     import { inviteToGroup } from '$lib/api/groupApi';
     import { createEventDispatcher } from 'svelte';
+    import GroupJoinRequests from './GroupJoinRequests.svelte';
 
     export let groupId: number;
     export let members: GroupMember[] = [];
     export let isCreator: boolean = false;
+    export let role: string = '';
 
     let showInviteModal = false;
     let showRemoveModal = false;
@@ -116,7 +118,7 @@
             success = 'Join request sent successfully';
             setTimeout(() => success = '', 3000);
         } catch (err) {
-            error = err instanceof Error ? err.message : 'Failed to request join';
+            error = err instanceof Error ? err.message : 'Failed to create join request';
             console.error('Join request error:', error);
         } finally {
             loading = false;
@@ -239,19 +241,18 @@
     }
 
     async function checkMembershipStatus() {
-        if (!$auth.isAuthenticated) return;
-        
         try {
-            const response = await fetch(`http://localhost:8080/groups/${groupId}/members/status`, {
+            const response = await fetch(`http://localhost:8080/groups/${groupId}/members/role`, {
                 credentials: 'include'
             });
-
+            
             if (response.ok) {
                 const data = await response.json();
-                wasRemoved = data.wasRemoved;
+                role = data.role;
+                console.log('Role received:', data.role);
             }
-        } catch (err) {
-            console.error('Failed to check membership status:', err);
+        } catch (error) {
+            console.error('Error checking membership status:', error);
         }
     }
 
@@ -260,9 +261,46 @@
             checkMembershipStatus();
         }
     });
+
+    function handleMemberAdded() {
+        // Refresh the members list
+        fetchMembers();
+    }
+
+    // Add more detailed debug logging
+    $: console.log('Current role (raw):', role);
+    $: console.log('Role type:', typeof role);
+    $: console.log('Is admin check:', role?.toLowerCase() === 'admin');
+
+    // Add this function
+    async function fetchMembers() {
+        try {
+            const response = await fetch(`http://localhost:8080/groups/${groupId}/members`, {
+                credentials: 'include'
+            });
+            
+            if (response.ok) {
+                members = await response.json();
+            }
+        } catch (error) {
+            console.error('Error fetching members:', error);
+        }
+    }
 </script>
 
-<Card>
+{#if role?.toLowerCase() === 'admin'}
+    <GroupJoinRequests
+        {groupId}
+        {isCreator}
+        {isMember}
+        {role}
+        on:memberAdded={() => {
+            fetchMembers();
+        }}
+    />
+{/if}
+
+<Card class="mb-4">
     <div class="space-y-4">
         {#if hasRequest}
             <div class="p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">

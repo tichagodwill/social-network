@@ -166,7 +166,7 @@
     }
 </script>
 
-<div class="container mx-auto px-4 py-24">
+<div class="container mx-auto px-4 py-10">
     <!-- Profile Header - Updated with your theme's primary colors -->
     <div class="rounded-lg shadow-lg p-8 bg-gradient-to-r from-primary-500 to-primary-600 text-white">
         <div class="flex flex-col md:flex-row items-center md:items-start md:space-x-8">

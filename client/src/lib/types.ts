@@ -61,15 +61,24 @@ export interface FollowRequest {
 
 export interface Notification {
     id: number;
-    toUserId: number;
-    fromUserId: number;
+    type: string;
     content: string;
-    type: 'follow_request' | 'group_invite' | 'group_event' | 'post_like' | 'comment' | 'chat';
-    isRead: boolean;
-    createdAt: string;
+    group_id?: number;
+    invitation_id?: number;
+    user_id?: number;
+    from_user_id?: number;
+    is_read?: boolean;
+    created_at?: string;
+    user_role?: string;
+    is_processed?: boolean;
     groupId?: number;
-    eventId?: number;
-    postId?: number;
+    invitationId?: number;
+    userId?: number;
+    fromUserId?: number;
+    isRead?: boolean;
+    createdAt?: string;
+    userRole?: string;
+    isProcessed?: boolean;
 }
 
 export interface FileEvent extends Event {
@@ -79,8 +88,7 @@ export interface FileEvent extends Event {
 export interface Message {
     id: number;
     senderId: number;
-    recipientId?: number;
-    groupId?: number;
+    recipientId: number;
     content: string;
     fileUrl?: string;
     fileName?: string;
@@ -138,6 +146,14 @@ export interface Group {
     creator_username?: string;
     created_at: string;
     is_member?: boolean;
+}
+
+export interface Group_Message {
+    id: number;
+    title: string;
+    description: string;
+    members: number[];
+    createdAt: string;
 }
 
 export interface GroupMember {

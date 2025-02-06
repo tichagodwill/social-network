@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -41,6 +40,9 @@ func authMiddleware(next http.Handler) http.Handler {
 }
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile) // Add file and line number to logs
+	log.Println("Server starting...")
+
 	// Open the database connection
 	err := sqlite.OpenDB("./social-network.db")
 	if err != nil {
@@ -121,7 +123,7 @@ func main() {
 	// Group invitation routes
 	mux.Handle("POST /groups/{id}/invitations", authMiddleware(http.HandlerFunc(api.InviteToGroup)))
 	mux.Handle("GET /groups/{id}/invitations/status", authMiddleware(http.HandlerFunc(api.GetInvitationStatus)))
-	mux.Handle("POST /groups/{id}/invitations/{inviteId}/{action}", authMiddleware(http.HandlerFunc(api.HandleInvitation)))
+	mux.Handle("POST /groups/{id}/invitations/{invitationId}/{action}", authMiddleware(http.HandlerFunc(api.HandleInvitation)))
 
 	// Group join request routes
 	mux.Handle("GET /groups/{id}/join-requests", authMiddleware(http.HandlerFunc(api.GetGroupRequests)))
@@ -161,6 +163,6 @@ func main() {
 	// Wrap the entire mux with CORS middleware
 	handler := middleware.CORS(mux)
 
-	fmt.Println("Server running on localhost:8080")
+	log.Println("Server running on localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", handler))
 }

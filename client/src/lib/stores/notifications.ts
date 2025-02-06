@@ -1,5 +1,6 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 import type { Notification } from '$lib/types';
+import { auth } from '$lib/stores/auth';
 
 interface NotificationState {
     notifications: Notification[];
@@ -22,11 +23,14 @@ function createNotificationStore() {
             socket.addEventListener('message', (event) => {
                 const data = JSON.parse(event.data);
                 if (data.type === 'notification') {
-                    update(state => ({
-                        ...state,
-                        notifications: [data.notification, ...state.notifications],
-                        unreadCount: state.unreadCount + 1
-                    }));
+                    const notification = data.data;
+                    if (notification.userId === get(auth).user?.id) {
+                        update(state => ({
+                            ...state,
+                            notifications: [notification, ...state.notifications],
+                            unreadCount: state.unreadCount + 1
+                        }));
+                    }
                 }
             });
         },

@@ -3,6 +3,8 @@
 	import { AngleDownOutline, CloseOutline, DotsHorizontalOutline, AngleUpOutline, PaperPlaneSolid, FaceGrinOutline, ImageOutline } from 'flowbite-svelte-icons'
 	import placeholder from '$lib/assets/angy.png'
 	import { getFormattedDate } from '$lib/dateFormater'
+	import { auth } from '$lib/stores/auth'
+	import { onMount } from 'svelte'
 
 	export let Class=''
 
@@ -16,10 +18,70 @@
 
 	export let showThread = false
 
+	export let id: number
+	export let comments: any[] = []
+	let newComment = ''
+	let loading = false
+
+	export let groupId: number
+
 	const postDate = getFormattedDate(date)
 
 	if (userImg.length == 0)
 		userImg = placeholder
+
+	async function loadComments() {
+		try {
+			const response = await fetch(`http://localhost:8080/groups/${groupId}/posts/${id}/comments`, {
+				credentials: 'include'
+			})
+			if (response.ok) {
+				const data = await response.json()
+				comments = data
+				console.log('Loaded comments:', comments)
+			}
+		} catch (error) {
+			console.error('Failed to load comments:', error)
+		}
+	}
+
+	async function handleSubmitComment() {
+		if (!newComment.trim()) return
+		
+		const commentData = {
+			content: newComment
+		}
+		
+		try {
+			loading = true
+			const response = await fetch(`http://localhost:8080/groups/${groupId}/posts/${id}/comments`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				credentials: 'include',
+				body: JSON.stringify(commentData)
+			})
+
+			const data = await response.json()
+			console.log('Comment response:', data)
+
+			if (!response.ok) {
+				throw new Error(data.error || 'Failed to create comment')
+			}
+
+			newComment = ''
+			await loadComments()
+		} catch (error) {
+			console.error('Failed to post comment:', error)
+		} finally {
+			loading = false
+		}
+	}
+
+	onMount(() => {
+		loadComments()
+	})
 </script>
 
 <div class='{Class}'>
@@ -62,8 +124,8 @@
 
 	<div class="pl-8">
 		{#if enableReplay}
-			<form>
-				<label for="chat" class="sr-only">Replay</label>
+			<form on:submit|preventDefault={handleSubmitComment}>
+				<label for="chat" class="sr-only">Reply</label>
 				<div class="flex items-center px-3 py-2 rounded-lg bg-gray-50 dark:bg-gray-700">
 					<ToolbarButton color="dark" class="text-gray-500 dark:text-gray-400" on:click={() => {enableReplay = false}}>
 						<CloseOutline class="" />
@@ -77,9 +139,20 @@
 						<FaceGrinOutline class="w-6 h-6" />
 						<span class="sr-only">Add emoji</span>
 					</ToolbarButton>
-					<Textarea id="chat" class="bg-white dark:bg-gray-800 ml-1" rows="1" placeholder="Your replay...">
-				</Textarea>
-					<ToolbarButton type="submit" color="blue" class="rounded-full text-primary-600 dark:text-primary-500 ml-4">
+					<Textarea 
+						id="chat" 
+						class="bg-white dark:bg-gray-800 ml-1" 
+						rows="1" 
+						placeholder="Your reply..."
+						bind:value={newComment}
+						disabled={loading}
+					/>
+					<ToolbarButton 
+						type="submit" 
+						color="blue" 
+						class="rounded-full text-primary-600 dark:text-primary-500 ml-4"
+						disabled={loading}
+					>
 						<PaperPlaneSolid class="w-6 h-6 rotate-90" />
 					</ToolbarButton>
 				</div>
@@ -87,7 +160,24 @@
 		{/if}
 
 		{#if showThread}
-			<slot />
+			{#each comments as comment (comment.id)}
+				<div class="mt-4">
+					<div class="flex items-start gap-2">
+						<img 
+							class="w-6 h-6 rounded-full" 
+							src={comment.avatar || placeholder} 
+							alt="{comment.author} avatar" 
+						/>
+						<div class="flex-1">
+							<p class="font-semibold text-sm">{comment.author}</p>
+							<p class="text-sm">{comment.content}</p>
+							<p class="text-xs text-gray-500 mt-1">
+								{getFormattedDate(new Date(comment.created_at))}
+							</p>
+						</div>
+					</div>
+				</div>
+			{/each}
 		{/if}
 	</div>
 </div>

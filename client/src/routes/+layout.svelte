@@ -16,7 +16,7 @@
     });
 </script>
 
-<div class="min-h-screen bg-gray-50 dark:bg-gray-900">
+<div class="min-h-100 bg-gray-50 dark:bg-gray-900">
     {#if loading}
         <div class="flex items-center justify-center min-h-screen">
             <Spinner size="12" />

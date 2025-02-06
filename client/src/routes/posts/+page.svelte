@@ -155,7 +155,7 @@
 </script>
 
 <div class="min-h-screen bg-gradient-to-b from-gray-50 to-white">
-  <div class="max-w-[90vw] mx-auto px-4 py-8 pt-20">
+  <div class="max-w-[90vw] mx-auto px-4 py-8 pt-10">
     <!-- Feed Header -->
     {#if $auth.isAuthenticated}
       <div
