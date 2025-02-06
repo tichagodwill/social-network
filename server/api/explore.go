@@ -69,6 +69,12 @@ func GetExplore(w http.ResponseWriter, r *http.Request) {
 		users = append(users, user)
 	}
 
+	//if there are no users
+	if len(users) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	// return the users
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(users)

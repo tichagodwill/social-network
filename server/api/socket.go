@@ -128,44 +128,114 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 
 		switch messageType {
 		case websocket.TextMessage:
-
-			// getting the request type. from this we can unmarshall into the actual message
 			var connectionType m.ConnectionType
 			if err := json.Unmarshal(message, &connectionType); err != nil {
 				log.Printf("WebSocket json unmarshal error: %v", err)
 				break
 			}
 
-			// this can be made into a switch to handle future message types. but for now it's chat only
-			if connectionType.Type == "chat" {
+			switch connectionType.Type {
+			case "chat":
 				var chatMessage m.ChatMessage
 				if err := json.Unmarshal(message, &chatMessage); err != nil {
 					log.Printf("WebSocket chat json unmarshal error: %v", err)
 					break
 				}
 
-				SaveMessage(chatMessage)
+				// Set initial status and timestamp
+				chatMessage.Status = "sent"
+				if chatMessage.CreatedAt.IsZero() {
+					chatMessage.CreatedAt = time.Now()
+				}
 
-				// Echo the message back (for real this time)
-				if err := conn.WriteMessage(messageType, message); err != nil {
-					log.Printf("WebSocket write error: %v", err)
+				// Save the message
+				if err := SaveMessage(chatMessage); err != nil {
+					log.Printf("Error saving message: %v", err)
 					break
 				}
-			}
 
-			// Add this to your existing socket message types
-			type EventRSVPMessage struct {
-				Type     string `json:"type"`
-				GroupID  int    `json:"groupId"`
-				EventID  int    `json:"eventId"`
-				Status   string `json:"status"`
-				Going    int    `json:"going"`
-				NotGoing int    `json:"notGoing"`
-			}
+				// Send to recipient if online
+				socketManager.Mu.RLock()
+				if recipientConn, ok := socketManager.Sockets[uint64(chatMessage.RecipientID)]; ok {
+					// Update status to delivered
+					chatMessage.Status = "delivered"
+					if err := recipientConn.WriteJSON(chatMessage); err != nil {
+						log.Printf("Error sending to recipient: %v", err)
+					} else {
+						// Update status in database
+						_, err := sqlite.DB.Exec(
+							"UPDATE chat_messages SET status = 'delivered' WHERE id = ?",
+							chatMessage.ID,
+						)
+						if err != nil {
+							log.Printf("Error updating message status: %v", err)
+						}
+					}
+				}
+				socketManager.Mu.RUnlock()
 
+				// Send confirmation back to sender
+				if err := conn.WriteJSON(chatMessage); err != nil {
+					log.Printf("Error sending confirmation to sender: %v", err)
+				}
+
+			case "read":
+				var readReceipt struct {
+					MessageIDs []int `json:"messageIds"`
+					SenderID   int   `json:"senderId"`
+				}
+				if err := json.Unmarshal(message, &readReceipt); err != nil {
+					log.Printf("Error unmarshaling read receipt: %v", err)
+					break
+				}
+
+				// Update messages as read
+				_, err := sqlite.DB.Exec(
+					"UPDATE chat_messages SET status = 'read' WHERE id IN (?) AND sender_id = ?",
+					readReceipt.MessageIDs, readReceipt.SenderID,
+				)
+				if err != nil {
+					log.Printf("Error updating read status: %v", err)
+					break
+				}
+
+				// Notify sender about read messages
+				socketManager.Mu.RLock()
+				if senderConn, ok := socketManager.Sockets[uint64(readReceipt.SenderID)]; ok {
+					if err := senderConn.WriteJSON(map[string]interface{}{
+						"type":       "read",
+						"messageIds": readReceipt.MessageIDs,
+					}); err != nil {
+						log.Printf("Error sending read receipt: %v", err)
+					}
+				}
+				socketManager.Mu.RUnlock()
+
+			case "typing":
+				var typingStatus struct {
+					RecipientID int  `json:"recipientId"`
+					IsTyping    bool `json:"isTyping"`
+				}
+				if err := json.Unmarshal(message, &typingStatus); err != nil {
+					log.Printf("Error unmarshaling typing status: %v", err)
+					break
+				}
+
+				// Forward typing status to recipient
+				socketManager.Mu.RLock()
+				if recipientConn, ok := socketManager.Sockets[uint64(typingStatus.RecipientID)]; ok {
+					if err := recipientConn.WriteJSON(map[string]interface{}{
+						"type":     "typing",
+						"senderId": userID,
+						"isTyping": typingStatus.IsTyping,
+					}); err != nil {
+						log.Printf("Error sending typing status: %v", err)
+					}
+				}
+				socketManager.Mu.RUnlock()
 			// In your WebSocketHandler function, add handling for event responses
-			if connectionType.Type == "eventRSVP" {
-				var rsvpMessage EventRSVPMessage
+			case "eventRSVP":
+				var rsvpMessage m.EventRSVPMessage
 				if err := json.Unmarshal(message, &rsvpMessage); err != nil {
 					log.Printf("WebSocket event RSVP unmarshal error: %v", err)
 					break
@@ -177,7 +247,6 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 					TargetUsers: nil, // Broadcast to all users
 				}
 			}
-
 		case websocket.BinaryMessage:
 			log.Printf("Received Binary Message: %v\n", message)
 		case websocket.CloseMessage:

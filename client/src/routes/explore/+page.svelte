@@ -153,8 +153,8 @@
         <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
       </div>
     {/if}
-
-    {#if users.length === 0 && !isLoading}
+    {users}
+    {#if (users == null || users.length === 0) && !isLoading}
       <div class="text-center py-12 px-4">
         <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />

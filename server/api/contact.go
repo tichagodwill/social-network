@@ -54,6 +54,12 @@ func GetContact(w http.ResponseWriter, r *http.Request) {
 		users = append(users, u)
 	}
 
+	//if no contacts found
+	if len(users) == 0 {
+		http.Error(w, "No contacts found", http.StatusNotFound)
+		return
+	}
+
 	if err := json.NewEncoder(w).Encode(&users); err != nil {
 		http.Error(w, "Error sending data", http.StatusInternalServerError)
 	}
