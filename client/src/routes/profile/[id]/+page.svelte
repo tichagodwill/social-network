@@ -2,6 +2,7 @@
     import { onMount } from 'svelte';
     import { followers } from '$lib/stores/followers';
     import { auth } from '$lib/stores/auth';
+    import { goto } from '$app/navigation';
     import { Button, Avatar, Badge, Tabs, TabItem, Modal, Input, Radio } from 'flowbite-svelte';
     import type { PageData } from './$types';
     import {error} from "@sveltejs/kit";
@@ -255,9 +256,10 @@
                 {/if}
             </div>
 
-            <!-- Follow Button - Updated with primary colors -->
+            <!-- Action Buttons -->
             {#if !isOwnProfile}
-                <Button
+                <div class="flex flex-col md:flex-row gap-3 mt-6 md:mt-0">
+                    <Button
                   class="mt-6 md:mt-0 hover:scale-105 transform transition-all duration-200 ease-in-out relative group {isFollowing ? 'bg-blue-500 text-white hover:!bg-red-600' : 'bg-blue-500 hover:bg-blue-600'}"
                   color="none"
                   disabled={hasPendingRequest || isLoading}
@@ -297,10 +299,25 @@
                     {:else}
                         <span class="text-white">Follow</span>
                     {/if}
-                </Button>
-                {#if errorMessage}
-                    <p class="text-red-500 text-sm mt-2">{errorMessage}</p>
-                {/if}
+                    </Button>
+                    {#if errorMessage}
+                        <p class="text-red-500 text-sm mt-2">{errorMessage}</p>
+                    {/if}
+
+                    <!-- Message Button -->
+                    <Button
+                        class="hover:scale-105 transform transition-all duration-200 ease-in-out bg-blue-500 hover:bg-blue-600 text-white"
+                        color="none"
+                        on:click={() => goto(`/chat/${userId}`)}
+                    >
+                        <div class="flex items-center space-x-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clip-rule="evenodd" />
+                            </svg>
+                            <span>Message</span>
+                        </div>
+                    </Button>
+                </div>
             {/if}
         </div>
     </div>
