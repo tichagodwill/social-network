@@ -2,8 +2,9 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { Avatar, Input, Button } from 'flowbite-svelte';
-  import { fade, fly, scale, slide } from 'svelte/transition';
-  import { elasticOut, quartOut } from 'svelte/easing';
+  import { fade, fly, scale, slide, crossfade } from 'svelte/transition';
+  import { elasticOut, quintOut, cubicInOut } from 'svelte/easing';
+  import { flip } from 'svelte/animate';
 
   interface User {
     id: number;
@@ -15,6 +16,21 @@
   let users: User[] = [];
   let searchQuery = '';
   let isLoading = false;
+  let previousUsers: User[] = [];
+
+  const [send, receive] = crossfade({
+    duration: 400,
+    fallback(node, params) {
+      return {
+        duration: 400,
+        easing: cubicInOut,
+        css: t => `
+          opacity: ${t};
+          transform: scale(${t});
+        `
+      };
+    }
+  });
 
   function generateAvatar(username: string): string {
     const firstLetter = username ? username.charAt(0).toUpperCase() : 'U';
@@ -43,6 +59,8 @@
     if (isLoading) return;
 
     isLoading = true;
+    previousUsers = [...users];
+    
     try {
       const response = await fetch(`http://localhost:8080/explore`, {
         method: 'POST',
@@ -54,7 +72,8 @@
       });
 
       if (response.ok) {
-        users = await response.json();
+        const newUsers = await response.json();
+        users = newUsers;
       }
     } catch (error) {
       console.error('Failed to fetch users:', error);
@@ -64,7 +83,6 @@
   }
 
   const debouncedSearch = debounce((searchValue: string) => {
-    users = [];
     fetchUsers(searchValue);
   }, 300);
 
@@ -83,6 +101,23 @@
   });
 </script>
 
+<style>
+  @keyframes fadeSlideIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  :global(.bg-white) {
+    background-color: white;
+  }
+</style>
+
 <div class="max-w-4xl mx-auto px-4 py-8" in:fade={{ duration: 300 }}>
   <div class="sticky top-0 z-10 bg-white/80 backdrop-blur-lg rounded-lg shadow-lg mb-6 p-4 transform transition-all duration-300" 
        in:fly={{ y: -20, duration: 400, delay: 150 }}>
@@ -92,7 +127,7 @@
         placeholder="Search users..."
         value={searchQuery}
         on:input={handleSearch}
-        class="w-full !bg-gray-50/50 !border-gray-200 focus:!border-blue-400 !ring-blue-400/30"
+        class="w-full !bg-gray-50/50 !border-gray-200 focus:!border-blue-400 !ring-blue-400/30 transition-all duration-300"
       >
         <div slot="left" class="flex items-center">
           <svg class="w-5 h-5 text-gray-500 transition-colors duration-300 group-focus-within:text-blue-500" 
@@ -104,28 +139,32 @@
       </Input>
       {#if isLoading}
         <div class="absolute right-3 top-1/2 -translate-y-1/2" 
-             in:fade={{ duration: 200 }}>
+             in:fade={{ duration: 200 }}
+             out:fade={{ duration: 150 }}>
           <div class="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent"></div>
         </div>
       {/if}
     </div>
   </div>
 
-  <div class="bg-white rounded-lg shadow overflow-hidden" 
+  <div class="bg-white rounded-lg shadow overflow-hidden transition-all duration-300" 
        in:fade={{ duration: 300, delay: 200 }}>
     {#if users.length > 0}
       <div class="divide-y divide-gray-200">
         {#each users as user, i (user.id)}
           <div 
-            in:fly|local={{ y: 20, duration: 400, delay: i * 50 }}
-            out:slide|local={{ duration: 200 }}
+            class="bg-white"
+            in:receive|local={{ key: user.id }}
+            out:send|local={{ key: user.id }}
+            animate:flip={{ duration: 300 }}
           >
             <div class="overflow-hidden">
               <div 
-                class="flex items-center p-4 transition-all duration-300 ease-out cursor-pointer
+                class="flex items-center p-4 transition-all duration-300 ease-out cursor-pointer bg-white
                 hover:bg-gradient-to-r hover:from-gray-50 hover:to-blue-50/30
                 hover:shadow-lg hover:shadow-blue-100/50
                 relative group"
+                style="animation: fadeSlideIn {300 + i * 50}ms forwards {i * 50}ms"
                 on:mouseenter={(e) => {
                   e.currentTarget.style.transform = 'scale(1.01)';
                   e.currentTarget.style.backgroundColor = 'rgb(249, 250, 251)';
@@ -189,8 +228,10 @@
     {/if}
 
     {#if (users == null || users.length === 0) && !isLoading}
-      <div class="text-center py-12 px-4" in:scale={{ duration: 300, easing: elasticOut }}>
-        <div class="bg-gray-50/50 rounded-lg p-8">
+      <div class="text-center py-12 px-4" 
+           in:scale={{ duration: 400, delay: 100, easing: elasticOut }}
+           out:fade={{ duration: 200 }}>
+        <div class="bg-gray-50/50 rounded-lg p-8 transform transition-all duration-300 hover:scale-[1.01] hover:bg-gray-50">
           <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
