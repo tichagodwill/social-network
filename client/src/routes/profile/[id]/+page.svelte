@@ -590,8 +590,7 @@
 </div>
 
 <!-- Settings Modal - Updated with theme colors -->
-<Modal bind:open={showSettingsModal} size="lg" class="dark:bg-gray-800" autoclose={false}>
-    <div class="fixed inset-0 z-40" on:click={() => showSettingsModal = false}></div>
+<Modal bind:open={showSettingsModal} size="lg" class="dark:bg-gray-800" autoclose>
     <div class="p-6" transition:fade={{ duration: 200 }}>
         <h3 class="text-2xl font-bold mb-6 text-gray-900 dark:text-white">Edit Profile</h3>
         <div class="space-y-8" transition:slide={{ duration: 300, delay: 150 }}>
