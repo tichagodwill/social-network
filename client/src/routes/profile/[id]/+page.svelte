@@ -8,7 +8,7 @@
     import { fade, slide, fly } from 'svelte/transition';
     import { quintOut } from 'svelte/easing';
     import type { PageData } from './$types';
-    import {error} from "@sveltejs/kit";
+    import { error } from '@sveltejs/kit';
 
     export let data: PageData;
     const userId = parseInt(data.params.id);
@@ -35,9 +35,9 @@
 
     // Function to load follow status (whether the user is following, has a pending request, or not)
     async function loadFollowStatus() {
-       if(isOwnProfile){
-           return
-       }
+        if (isOwnProfile) {
+            return
+        }
         try {
             const response = await fetch(`http://localhost:8080/user/follow-status`, {
                 method: 'POST', // Use POST method
@@ -84,7 +84,7 @@
     // Function to handle follow/unfollow
     async function handleFollow(event: MouseEvent) {
         const button = event.currentTarget as HTMLElement;
-        
+
         // If already following, show confirmation modal
         if (isFollowing) {
             showUnfollowModal = true;
@@ -187,7 +187,7 @@
     // Function to update privacy settings and profile photo
     async function updateSettings() {
         try {
-            if(!isOwnProfile){
+            if (!isOwnProfile) {
                 return
             }
             const imageToSend = newProfilePhoto === null ? data.user?.avatar : newProfilePhoto || '';
@@ -260,56 +260,56 @@
                         <h1 class="text-3xl font-bold mb-2 md:mb-0">{data.user?.username}</h1>
                         <div class="relative group cursor-help">
                             {#if data.user?.isPrivate}
-                                <svg xmlns="http://www.w3.org/2000/svg" 
-                                     class="h-6 w-6 text-orange-500 dark:text-orange-400 hover:text-orange-600 dark:hover:text-orange-300 transition-colors duration-200" 
-                                     fill="none" 
-                                     viewBox="0 0 24 24" 
+                                <svg xmlns="http://www.w3.org/2000/svg"
+                                     class="h-6 w-6 text-orange-500 dark:text-orange-400 hover:text-orange-600 dark:hover:text-orange-300 transition-colors duration-200"
+                                     fill="none"
+                                     viewBox="0 0 24 24"
                                      stroke="currentColor"
                                 >
-                                    <path stroke-linecap="round" 
-                                          stroke-linejoin="round" 
-                                          stroke-width="2" 
-                                          d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" 
+                                    <path stroke-linecap="round"
+                                          stroke-linejoin="round"
+                                          stroke-width="2"
+                                          d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
                                     />
                                 </svg>
                             {:else}
-                                <svg xmlns="http://www.w3.org/2000/svg" 
-                                     class="h-6 w-6 text-emerald-500 dark:text-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-300 transition-colors duration-200" 
-                                     fill="none" 
-                                     viewBox="0 0 24 24" 
+                                <svg xmlns="http://www.w3.org/2000/svg"
+                                     class="h-6 w-6 text-emerald-500 dark:text-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-300 transition-colors duration-200"
+                                     fill="none"
+                                     viewBox="0 0 24 24"
                                      stroke="currentColor"
                                 >
-                                    <path stroke-linecap="round" 
-                                          stroke-linejoin="round" 
-                                          stroke-width="2" 
-                                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" 
+                                    <path stroke-linecap="round"
+                                          stroke-linejoin="round"
+                                          stroke-width="2"
+                                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
                                     />
-                                    <path stroke-linecap="round" 
-                                          stroke-linejoin="round" 
-                                          stroke-width="2" 
-                                          d="M2.458 12C3.732 7.943 7.522 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z" 
+                                    <path stroke-linecap="round"
+                                          stroke-linejoin="round"
+                                          stroke-width="2"
+                                          d="M2.458 12C3.732 7.943 7.522 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z"
                                     />
                                 </svg>
                             {/if}
-                            <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1.5 
-                                      {data.user?.isPrivate ? 
-                                        'bg-orange-600 dark:bg-orange-700' : 
-                                        'bg-emerald-600 dark:bg-emerald-700'} 
-                                      text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 
+                            <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1.5
+                                      {data.user?.isPrivate ?
+                                        'bg-orange-600 dark:bg-orange-700' :
+                                        'bg-emerald-600 dark:bg-emerald-700'}
+                                      text-white text-sm rounded-lg opacity-0 group-hover:opacity-100
                                       transition-all duration-200 shadow-lg scale-95 group-hover:scale-100">
                                 <div class="relative">
                                     {data.user?.isPrivate ? 'Private Account' : 'Public Account'}
-                                    <div class="absolute -bottom-5 left-1/2 transform -translate-x-1/2 
-                                              border-8 border-transparent 
-                                              {data.user?.isPrivate ? 
-                                                'border-t-orange-600 dark:border-t-orange-700' : 
+                                    <div class="absolute -bottom-5 left-1/2 transform -translate-x-1/2
+                                              border-8 border-transparent
+                                              {data.user?.isPrivate ?
+                                                'border-t-orange-600 dark:border-t-orange-700' :
                                                 'border-t-emerald-600 dark:border-t-emerald-700'}">
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                    
+
                     <p class="text-lg text-white/90 mt-3 max-w-2xl">
                         {data.user?.aboutMe || 'No bio added yet'}
                     </p>
@@ -422,30 +422,30 @@
 
             <div class="relative mt-6" style="min-height: 400px;">
                 {#key activeTab}
-                    <div 
+                    <div
                         class="absolute w-full"
-                        in:fly={{ 
-                            x: previousTab === activeTab ? 0 : (previousTab > activeTab ? -100 : 100), 
-                            duration: 300, 
-                            easing: quintOut 
+                        in:fly={{
+                            x: previousTab === activeTab ? 0 : (previousTab > activeTab ? -100 : 100),
+                            duration: 300,
+                            easing: quintOut
                         }}
-                        out:fly={{ 
-                            x: previousTab === activeTab ? 0 : (previousTab > activeTab ? 100 : -100), 
-                            duration: 300, 
-                            easing: quintOut 
+                        out:fly={{
+                            x: previousTab === activeTab ? 0 : (previousTab > activeTab ? 100 : -100),
+                            duration: 300,
+                            easing: quintOut
                         }}
                     >
                         {#if activeTab === 'posts'}
                             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {#if data.Posts && data.Posts.length > 0}
                                     {#each data.Posts as post, index}
-                                        <div 
+                                        <div
                                             class="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
-                                            in:fly|local={{ 
-                                                y: 20, 
-                                                duration: 400, 
-                                                delay: index * 100, 
-                                                easing: quintOut 
+                                            in:fly|local={{
+                                                y: 20,
+                                                duration: 400,
+                                                delay: index * 100,
+                                                easing: quintOut
                                             }}
                                         >
                                             <div class="p-4">
@@ -464,13 +464,13 @@
                             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {#if data.Followers && data.Followers.length > 0}
                                     {#each data.Followers as follower, index}
-                                        <div 
+                                        <div
                                             class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center justify-between transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
-                                            in:fly|local={{ 
-                                                y: 20, 
-                                                duration: 400, 
-                                                delay: index * 100, 
-                                                easing: quintOut 
+                                            in:fly|local={{
+                                                y: 20,
+                                                duration: 400,
+                                                delay: index * 100,
+                                                easing: quintOut
                                             }}
                                         >
                                             <div class="flex items-center space-x-4">
@@ -504,13 +504,13 @@
                             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                                 {#if data.Following && data.Following.length > 0}
                                     {#each data.Following as following, index}
-                                        <div 
+                                        <div
                                             class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center justify-between transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
-                                            in:fly|local={{ 
-                                                y: 20, 
-                                                duration: 400, 
-                                                delay: index * 100, 
-                                                easing: quintOut 
+                                            in:fly|local={{
+                                                y: 20,
+                                                duration: 400,
+                                                delay: index * 100,
+                                                easing: quintOut
                                             }}
                                         >
                                             <div class="flex items-center space-x-4">
@@ -543,13 +543,13 @@
                         {:else if activeTab === 'requests' && isOwnProfile && data.Requests && data.Requests.length > 0}
                             <div class="space-y-4">
                                 {#each data.Requests as request, index}
-                                    <div 
+                                    <div
                                         class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center justify-between transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
-                                        in:fly|local={{ 
-                                            y: 20, 
-                                            duration: 400, 
-                                            delay: index * 100, 
-                                            easing: quintOut 
+                                        in:fly|local={{
+                                            y: 20,
+                                            duration: 400,
+                                            delay: index * 100,
+                                            easing: quintOut
                                         }}
                                     >
                                         <div class="flex items-center space-x-4">
@@ -590,79 +590,133 @@
 </div>
 
 <!-- Settings Modal - Updated with theme colors -->
-<Modal bind:open={showSettingsModal} title="Settings">
-    <div class="space-y-6">
-        <!-- Profile Photo Update -->
-        <div>
-            <label class="block text-sm font-medium mb-2">Profile Photo</label>
-            <div class="relative">
-                <input
-                  id="profile-photo"
-                  type="file"
-                  accept="image/*"
-                  on:change={handleFileUpload}
-                  class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                />
-                <div class="w-full px-4 py-3 rounded-lg border border-gray-200 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all flex items-center justify-between bg-white hover:bg-gray-50">
-                    <span class="text-gray-500">
+<Modal bind:open={showSettingsModal} size="lg" class="dark:bg-gray-800" autoclose={true}>
+    <div class="p-6" transition:fade={{ duration: 200 }}>
+        <h3 class="text-2xl font-bold mb-6 text-gray-900 dark:text-white">Edit Profile</h3>
+        <div class="space-y-8" transition:slide={{ duration: 300, delay: 150 }}>
+            <!-- Profile Photo Update -->
+            <div class="space-y-4">
+                <label class="block text-lg font-medium text-gray-900 dark:text-white">Profile Photo</label>
+                <div class="flex items-center space-x-6">
+                    <!-- Current/New Photo Preview -->
+                    <div class="relative group w-24 h-24">
+                        <div class="absolute -inset-0.5 bg-gradient-to-r from-pink-600 to-purple-600 rounded-full opacity-50 group-hover:opacity-100 blur transition duration-300"></div>
+                        <div class="relative rounded-full w-24 h-24 overflow-hidden">
+                            <img
+                                src={newProfilePhoto || data.user?.avatar || generateAvatar(data.user?.username)}
+                                alt="Profile"
+                                class="w-full h-full object-cover"
+                            />
+                        </div>
+                    </div>
+
+                    <!-- Upload Controls -->
+                    <div class="flex-1 space-y-2">
+                        <div class="relative">
+                            <input
+                                id="profile-photo"
+                                type="file"
+                                accept="image/*"
+                                on:change={handleFileUpload}
+                                class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            />
+                            <div class="w-full px-4 py-3 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-purple-500 dark:hover:border-purple-400 transition-colors duration-200 flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-700">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-400 dark:text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                </svg>
+                                <span class="text-sm text-gray-500 dark:text-gray-400">
+                                    {newProfilePhoto ? 'Change photo' : 'Upload photo'}
+                                </span>
+                            </div>
+                        </div>
                         {#if newProfilePhoto}
-                            New Photo Selected
-                        {:else}
-                            Choose an image...
+                            <Button color="red" size="xs" class="w-full" on:click={clearPhoto}>
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                Remove photo
+                            </Button>
                         {/if}
-                    </span>
-                    <span class="text-primary-500 font-medium">Browse</span>
+                    </div>
                 </div>
             </div>
-            {#if newProfilePhoto}
-                <div class="mt-4">
-                    <img
-                      src={newProfilePhoto}
-                      alt="Profile Photo"
-                      class="rounded-lg max-h-[90vh] w-auto object-contain"
-                      on:click={() => {
-                            expandedImageSrc = newProfilePhoto;
-                            showExpandedImage = true;
-                        }}
-                    />
-                    <Button on:click={clearPhoto} color="red" size="sm" class="mt-2">
-                        Clear Image
-                    </Button>
-                </div>
-            {/if}
-        </div>
 
-        <!-- Description Update -->
-        <div>
-            <label class="block text-sm font-medium mb-2">Description</label>
-            <Input
-              type="text"
-              bind:value={userDescription}
-              placeholder="Enter your description"
-              class="w-full"
-            />
-        </div>
+            <!-- Description Update -->
+            <div class="space-y-2">
+                <label class="block text-lg font-medium text-gray-900 dark:text-white">Bio</label>
+                <textarea
+                    bind:value={userDescription}
+                    placeholder="Tell us about yourself..."
+                    class="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-purple-500 focus:border-transparent dark:bg-gray-700 dark:text-white transition-all resize-none"
+                    rows="4"
+                ></textarea>
+            </div>
 
-        <!-- Privacy Settings -->
-        <div>
-            <label class="block text-sm font-medium mb-2">Privacy Setting</label>
-            <div class="flex items-center gap-6 bg-gray-50 p-4 rounded-lg">
-                <div class="flex items-center gap-2">
-                    <Radio bind:group={privacySetting} value={"public"} name="privacy">Public</Radio>
-                </div>
-                <div class="flex items-center gap-2">
-                    <Radio bind:group={privacySetting} value={"private"} name="privacy">Private</Radio>
+            <!-- Privacy Settings -->
+            <div class="space-y-4">
+                <label class="block text-lg font-medium text-gray-900 dark:text-white">Account Privacy</label>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button
+                        class="relative p-4 rounded-lg border-2 {privacySetting === 'public' ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20' : 'border-gray-200 dark:border-gray-700'} transition-all duration-200"
+                        on:click={() => privacySetting = 'public'}
+                    >
+                        <div class="flex items-center space-x-3">
+                            <div class="flex-shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.522 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                            </div>
+                            <div class="flex-1 text-left">
+                                <p class="font-medium text-gray-900 dark:text-white">Public Account</p>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">Anyone can see your profile</p>
+                            </div>
+                            {#if privacySetting === 'public'}
+                                <div class="flex-shrink-0">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-purple-500" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                            {/if}
+                        </div>
+                    </button>
+
+                    <button
+                        class="relative p-4 rounded-lg border-2 {privacySetting === 'private' ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20' : 'border-gray-200 dark:border-gray-700'} transition-all duration-200"
+                        on:click={() => privacySetting = 'private'}
+                    >
+                        <div class="flex items-center space-x-3">
+                            <div class="flex-shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                </svg>
+                            </div>
+                            <div class="flex-1 text-left">
+                                <p class="font-medium text-gray-900 dark:text-white">Private Account</p>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">Only approved followers can see your profile</p>
+                            </div>
+                            {#if privacySetting === 'private'}
+                                <div class="flex-shrink-0">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-purple-500" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                            {/if}
+                        </div>
+                    </button>
                 </div>
             </div>
         </div>
 
         <!-- Save Button -->
-        <Button
-          on:click={updateSettings}
-          class="w-full bg-gradient-to-r from-primary-500 to-primary-600 text-white hover:from-primary-600 hover:to-primary-700"
-        >
-            Save Changes
-        </Button>
+        <div class="mt-8" transition:slide={{ duration: 300, delay: 300 }}>
+            <Button
+                on:click={updateSettings}
+                class="w-full py-3 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-medium rounded-lg transition-all duration-200 transform hover:scale-[1.02] focus:ring-4 focus:ring-purple-500/50"
+            >
+                Save Changes
+            </Button>
+        </div>
     </div>
 </Modal>
 
