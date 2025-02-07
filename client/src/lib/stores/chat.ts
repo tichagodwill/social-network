@@ -184,7 +184,7 @@ function createChatStore() {
 
         getOrCreateDirectChat: async (userId: number) => {
             try {
-                const response = await fetch('http://localhost:8080/chat/direct', {
+                const response = await fetch('http://localhost:8080/chat/check-follow', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

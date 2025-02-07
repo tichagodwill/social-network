@@ -18,8 +18,7 @@ func SetupRoutes(mux *http.ServeMux) {
 // Group membership routes
 mux.HandleFunc("GET /groups/{id}/members", api.GetGroupMembers)
 
-// Chat routes
-mux.HandleFunc("POST /chat/direct", api.CreateOrGetDirectChat)
+
 
 // Notification routes
 	mux.HandleFunc("GET /notifications", api.GetNotifications)

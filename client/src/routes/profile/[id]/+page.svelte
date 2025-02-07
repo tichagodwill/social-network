@@ -62,10 +62,40 @@
             console.error('Failed to fetch follow status:', error);
         }
     }
+
+    // Check if messaging is allowed (if either user follows the other)
+    let canMessage = false;
+
+    // Function to check if either user follows the other
+    async function checkCanMessage() {
+        if (isOwnProfile) {
+            return;
+        }
+        try {
+            // Try to get or create a chat - this will fail with 403 if no follow relationship exists
+            const response = await fetch(`http://localhost:8080/chat/check-follow`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    userId: userId
+                }),
+            });
+            canMessage = response.ok;
+        } catch (error) {
+            console.error('Failed to check message permission:', error);
+            canMessage = false;
+        }
+    }
+
     onMount(async () => {
         try {
             // Load follow status
             await loadFollowStatus();
+            // Check if messaging is allowed
+            await checkCanMessage();
             // Load user posts
             await loadUserPosts();
         } catch (error) {
@@ -129,14 +159,13 @@
         }
     }
 
-    // Check if messaging is allowed (if either user follows the other)
-    let canMessage = false;
-    $: if (data.Following && data.Followers && $auth.user) {
-        canMessage = true; // Always allow clicking the message button
-    }
-
     // Function to handle opening chat
     async function handleMessageClick() {
+        if (!canMessage) {
+            errorMessage = 'You need to follow each other to send messages';
+            return;
+        }
+
         try {
             // Get or create chat with the user
             const result = await chat.getOrCreateDirectChat(userId);
@@ -352,15 +381,29 @@
                                 </span>
                             </Button>
 
-                            {#if canMessage}
+                            <div class="relative group">
                                 <Button
-                                    class="bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-6 rounded-lg transform transition-all duration-200 hover:scale-105"
+                                    class="bg-white/10 {canMessage ? 'hover:bg-white/20' : 'opacity-50 cursor-not-allowed'} text-white font-semibold py-2 px-6 rounded-lg transform transition-all duration-200 {canMessage ? 'hover:scale-105' : ''}"
                                     color="none"
                                     on:click={handleMessageClick}
+                                    disabled={!canMessage}
                                 >
                                     Message
                                 </Button>
-                            {/if}
+                                {#if !canMessage}
+                                    <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1.5
+                                                      bg-gray-800 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100
+                                                      transition-all duration-200 shadow-lg scale-95 group-hover:scale-100 whitespace-nowrap">
+                                        <div class="relative">
+                                            You need to follow each other to send messages
+                                            <div class="absolute -bottom-5 left-1/2 transform -translate-x-1/2
+                                                      border-8 border-transparent
+                                                      border-t-gray-800">
+                                            </div>
+                                        </div>
+                                    </div>
+                                {/if}
+                            </div>
                         </div>
                     {:else}
                         <Button
