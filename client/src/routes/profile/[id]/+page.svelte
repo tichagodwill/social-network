@@ -258,9 +258,56 @@
                 <div class="flex-1 mt-6 md:mt-0 text-center md:text-left">
                     <div class="flex flex-col md:flex-row md:items-center md:space-x-4">
                         <h1 class="text-3xl font-bold mb-2 md:mb-0">{data.user?.username}</h1>
-                        {#if data.user?.isPrivate}
-                            <Badge color="dark" class="self-center md:self-start">Private Account</Badge>
-                        {/if}
+                        <div class="relative group cursor-help">
+                            {#if data.user?.isPrivate}
+                                <svg xmlns="http://www.w3.org/2000/svg" 
+                                     class="h-6 w-6 text-orange-500 dark:text-orange-400 hover:text-orange-600 dark:hover:text-orange-300 transition-colors duration-200" 
+                                     fill="none" 
+                                     viewBox="0 0 24 24" 
+                                     stroke="currentColor"
+                                >
+                                    <path stroke-linecap="round" 
+                                          stroke-linejoin="round" 
+                                          stroke-width="2" 
+                                          d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" 
+                                    />
+                                </svg>
+                            {:else}
+                                <svg xmlns="http://www.w3.org/2000/svg" 
+                                     class="h-6 w-6 text-emerald-500 dark:text-emerald-400 hover:text-emerald-600 dark:hover:text-emerald-300 transition-colors duration-200" 
+                                     fill="none" 
+                                     viewBox="0 0 24 24" 
+                                     stroke="currentColor"
+                                >
+                                    <path stroke-linecap="round" 
+                                          stroke-linejoin="round" 
+                                          stroke-width="2" 
+                                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" 
+                                    />
+                                    <path stroke-linecap="round" 
+                                          stroke-linejoin="round" 
+                                          stroke-width="2" 
+                                          d="M2.458 12C3.732 7.943 7.522 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z" 
+                                    />
+                                </svg>
+                            {/if}
+                            <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1.5 
+                                      {data.user?.isPrivate ? 
+                                        'bg-orange-600 dark:bg-orange-700' : 
+                                        'bg-emerald-600 dark:bg-emerald-700'} 
+                                      text-white text-sm rounded-lg opacity-0 group-hover:opacity-100 
+                                      transition-all duration-200 shadow-lg scale-95 group-hover:scale-100">
+                                <div class="relative">
+                                    {data.user?.isPrivate ? 'Private Account' : 'Public Account'}
+                                    <div class="absolute -bottom-5 left-1/2 transform -translate-x-1/2 
+                                              border-8 border-transparent 
+                                              {data.user?.isPrivate ? 
+                                                'border-t-orange-600 dark:border-t-orange-700' : 
+                                                'border-t-emerald-600 dark:border-t-emerald-700'}">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     
                     <p class="text-lg text-white/90 mt-3 max-w-2xl">
