@@ -228,270 +228,205 @@
     }
 </script>
 
-<div class="container mx-auto px-4 py-10">
-    <!-- Profile Header - Updated with your theme's primary colors -->
-    <div class="rounded-lg shadow-lg p-8 bg-gradient-to-r from-primary-500 to-primary-600 text-white">
-        <div class="flex flex-col md:flex-row items-center md:items-start md:space-x-8">
-            <!-- Avatar - Updated with new border color -->
-            <div class="relative">
-                <Avatar
-                  src={data.user?.avatar || generateAvatar(data.user?.username)}
-                  size="xl"
-                  alt="User Avatar"
-                  on:click={() => {
-                        expandedImageSrc = data.user?.avatar || generateAvatar(data.user?.username);
-                        showExpandedImage = true;
-                    }}
-                  class="cursor-pointer hover:opacity-80 transition-opacity border-4 border-white/20 shadow-lg"
-                />
-                {#if isOwnProfile}
-                    <button
-                      class="absolute bottom-0 right-0 p-2 bg-white rounded-full shadow-md hover:bg-gray-100 transition"
-                      on:click={() => (showSettings())}
-                      aria-label="Settings"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-primary-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z" />
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                    </button>
-                {/if}
-            </div>
-
-            <!-- User Details - Updated text colors -->
-            <div class="flex-1 text-center md:text-left mt-6 md:mt-0">
-                <div class="flex items-center justify-center md:justify-start space-x-3">
-                    <h1 class="text-4xl font-extrabold text-white">{data.user?.username}</h1>
-                    <div class="relative group">
-                        {#if privacySetting === "private"}
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white/80 cursor-pointer" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                            </svg>
-                        {:else}
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white/80 cursor-pointer" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.522 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z" />
-                            </svg>
-                        {/if}
-                        <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-black text-white text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                            {privacySetting === "private" ? 'Private' : 'Public'}
-                        </div>
+<div class="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Profile Header - Modern gradient with subtle animation -->
+        <div class="rounded-2xl shadow-xl p-8 bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 text-white transform hover:scale-[1.01] transition-all duration-300">
+            <div class="flex flex-col md:flex-row items-center md:items-start md:space-x-10">
+                <!-- Avatar with hover effect and border -->
+                <div class="relative group">
+                    <div class="absolute -inset-0.5 bg-gradient-to-r from-pink-600 to-purple-600 rounded-full opacity-50 group-hover:opacity-100 blur transition duration-300"></div>
+                    <div class="relative">
+                        <Avatar
+                            src={data.user?.avatar || generateAvatar(data.user?.username)}
+                            class="w-32 h-32 ring-4 ring-white/50 transform transition-all duration-300 group-hover:scale-105"
+                            alt={data.user?.username}
+                        />
                     </div>
                 </div>
-                {#if userDescription}
-                    <p class="text-white/90 mt-2">{userDescription}</p>
-                {/if}
-                {#if data.user?.firstName || data.user?.lastName}
-                    <p class="text-white/90 mt-2">
-                        {data.user?.firstName} {data.user?.lastName}
-                    </p>
-                {/if}
-                {#if data.user?.email}
-                    <p class="text-white/90 mt-2">
-                        {data.user?.email}
-                    </p>
-                {/if}
-                {#if data.user?.dateOfBirth}
-                    <p class="text-white/90 mt-2">
-                        Date of Birth: {data.user?.dateOfBirth}
-                    </p>
-                {/if}
-            </div>
 
-            <!-- Action Buttons -->
-            {#if !isOwnProfile}
-                <div class="flex flex-col md:flex-row gap-3 mt-6 md:mt-0">
-                    <Button
-                  class="mt-6 md:mt-0 hover:scale-105 transform transition-all duration-200 ease-in-out relative group {isFollowing ? 'bg-blue-500 text-white hover:!bg-red-600' : 'bg-blue-500 hover:bg-blue-600'}"
-                  color="none"
-                  disabled={hasPendingRequest || isLoading}
-                  on:click={(event) => handleFollow(event)}
-                  aria-label="Follow/Unfollow Button"
-                >
-                    {#if isLoading}
-                        <span class="flex items-center">
-                            <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Processing...
-                        </span>
-                    {:else if hasPendingRequest}
-                        <Badge color="yellow">Request Pending</Badge>
-                    {:else if isFollowing}
-                        <div class="flex items-center space-x-1">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 transition-transform duration-200 {isFollowing ? 'group-hover:scale-110' : ''}" viewBox="0 0 20 20" fill="currentColor">
-                                <path fill-rule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clip-rule="evenodd" />
-                            </svg>
-                            <span class="transition-all duration-200 group-hover:font-medium">
-                                <span class="group-hover:hidden transition-opacity duration-200 text-white">Following</span>
-                                <span class="hidden group-hover:inline text-white transition-all duration-200 font-semibold">Unfollow</span>
-                            </span>
+                <!-- Profile Info with improved typography -->
+                <div class="flex-1 mt-6 md:mt-0 text-center md:text-left">
+                    <div class="flex flex-col md:flex-row md:items-center md:space-x-4">
+                        <h1 class="text-3xl font-bold mb-2 md:mb-0">{data.user?.username}</h1>
+                        {#if data.user?.isPrivate}
+                            <Badge color="dark" class="self-center md:self-start">Private Account</Badge>
+                        {/if}
+                    </div>
+                    
+                    <p class="text-lg text-white/90 mt-3 max-w-2xl">
+                        {data.user?.aboutMe || 'No bio added yet'}
+                    </p>
+
+                    <!-- Stats with hover effects -->
+                    <div class="flex flex-wrap justify-center md:justify-start gap-6 mt-6">
+                        <div class="text-center hover:transform hover:scale-105 transition-all duration-200">
+                            <div class="text-2xl font-bold">{data.Followers?.length || 0}</div>
+                            <div class="text-sm text-white/80">Followers</div>
+                        </div>
+                        <div class="text-center hover:transform hover:scale-105 transition-all duration-200">
+                            <div class="text-2xl font-bold">{data.Following?.length || 0}</div>
+                            <div class="text-sm text-white/80">Following</div>
+                        </div>
+                        <div class="text-center hover:transform hover:scale-105 transition-all duration-200">
+                            <div class="text-2xl font-bold">{data.Posts?.length || 0}</div>
+                            <div class="text-sm text-white/80">Posts</div>
+                        </div>
+                    </div>
+
+                    <!-- Action Buttons with modern styling -->
+                    {#if !isOwnProfile}
+                        <div class="flex flex-col sm:flex-row gap-4 mt-6">
+                            <Button
+                                class="relative group overflow-hidden {isFollowing ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'} text-white font-semibold py-2 px-6 rounded-lg transform transition-all duration-200 hover:scale-105"
+                                color="none"
+                                disabled={isLoading}
+                                on:click={handleFollow}
+                            >
+                                <span class="relative z-10">
+                                    {#if isLoading}
+                                        Loading...
+                                    {:else if isFollowing}
+                                        Unfollow
+                                    {:else if hasPendingRequest}
+                                        Request Pending
+                                    {:else}
+                                        Follow
+                                    {/if}
+                                </span>
+                            </Button>
+
+                            {#if canMessage}
+                                <Button
+                                    class="bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-6 rounded-lg transform transition-all duration-200 hover:scale-105"
+                                    color="none"
+                                    on:click={handleMessageClick}
+                                >
+                                    Message
+                                </Button>
+                            {/if}
                         </div>
                     {:else}
-                        <span class="text-white">Follow</span>
-                    {/if}
-                </Button>
-
-                <!-- Message Button - Always enabled -->
-                <div class="flex flex-col">
-                    <Button
-                        class="hover:scale-105 transform transition-all duration-200 ease-in-out bg-blue-500 hover:bg-blue-600 text-white"
-                        on:click={handleMessageClick}
-                    >
-                        <div class="flex items-center space-x-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                <path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clip-rule="evenodd" />
-                            </svg>
-                            <span>Message</span>
-                        </div>
-                    </Button>
-                    {#if errorMessage}
-                        <div class="text-red-500 text-sm mt-2 bg-red-100 p-2 rounded-lg">
-                            {errorMessage}
-                        </div>
+                        <Button
+                            class="mt-6 bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-6 rounded-lg transform transition-all duration-200 hover:scale-105"
+                            color="none"
+                            on:click={showSettings}
+                        >
+                            Edit Profile
+                        </Button>
                     {/if}
                 </div>
             </div>
-        {/if}
+        </div>
+
+        <!-- Tabs Section with modern styling -->
+        <div class="mt-8">
+            <Tabs style="underline" class="!border-b-2 border-gray-200 dark:border-gray-700">
+                <TabItem open title="Posts" class="focus:outline-none">
+                    <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {#if data.Posts && data.Posts.length > 0}
+                            {#each data.Posts as post}
+                                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl">
+                                    <!-- Post content here -->
+                                    <div class="p-4">
+                                        <p class="text-gray-800 dark:text-gray-200">{post.content}</p>
+                                    </div>
+                                </div>
+                            {/each}
+                        {:else}
+                            <div class="col-span-full text-center py-10">
+                                <p class="text-gray-500 dark:text-gray-400 text-lg">No posts yet</p>
+                            </div>
+                        {/if}
+                    </div>
+                </TabItem>
+
+                <TabItem title="Followers" class="focus:outline-none">
+                    <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {#if data.Followers && data.Followers.length > 0}
+                            {#each data.Followers as follower}
+                                <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center space-x-4 transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl">
+                                    <Avatar
+                                        src={follower.avatar || generateAvatar(follower.username)}
+                                        class="w-12 h-12"
+                                        alt={follower.username}
+                                    />
+                                    <div>
+                                        <p class="font-semibold text-gray-800 dark:text-gray-200">{follower.username}</p>
+                                    </div>
+                                </div>
+                            {/each}
+                        {:else}
+                            <div class="col-span-full text-center py-10">
+                                <p class="text-gray-500 dark:text-gray-400 text-lg">No followers yet</p>
+                            </div>
+                        {/if}
+                    </div>
+                </TabItem>
+
+                <TabItem title="Following" class="focus:outline-none">
+                    <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {#if data.Following && data.Following.length > 0}
+                            {#each data.Following as following}
+                                <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center space-x-4 transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl">
+                                    <Avatar
+                                        src={following.avatar || generateAvatar(following.username)}
+                                        class="w-12 h-12"
+                                        alt={following.username}
+                                    />
+                                    <div>
+                                        <p class="font-semibold text-gray-800 dark:text-gray-200">{following.username}</p>
+                                    </div>
+                                </div>
+                            {/each}
+                        {:else}
+                            <div class="col-span-full text-center py-10">
+                                <p class="text-gray-500 dark:text-gray-400 text-lg">Not following anyone yet</p>
+                            </div>
+                        {/if}
+                    </div>
+                </TabItem>
+
+                {#if isOwnProfile && data.Requests && data.Requests.length > 0}
+                    <TabItem title="Follow Requests" class="focus:outline-none">
+                        <div class="mt-6 space-y-4">
+                            {#each data.Requests as request}
+                                <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center justify-between transform transition-all duration-300 hover:scale-[1.01] hover:shadow-xl">
+                                    <div class="flex items-center space-x-4">
+                                        <Avatar
+                                            src={request.avatar || generateAvatar(request.username)}
+                                            class="w-12 h-12"
+                                            alt={request.username}
+                                        />
+                                        <p class="font-semibold text-gray-800 dark:text-gray-200">{request.username}</p>
+                                    </div>
+                                    <div class="flex space-x-2">
+                                        <Button
+                                            size="sm"
+                                            color="green"
+                                            class="transform transition-all duration-200 hover:scale-105"
+                                            on:click={() => followers.acceptRequest(request.id)}
+                                        >
+                                            Accept
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            color="red"
+                                            class="transform transition-all duration-200 hover:scale-105"
+                                            on:click={() => followers.rejectRequest(request.id)}
+                                        >
+                                            Reject
+                                        </Button>
+                                    </div>
+                                </div>
+                            {/each}
+                        </div>
+                    </TabItem>
+                {/if}
+            </Tabs>
+        </div>
     </div>
 </div>
-
-<!-- Tabs Section - Updated with theme colors -->
-<Tabs class="mt-8">
-    <TabItem title="Followers" active>
-        <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
-            <h3 class="text-2xl font-semibold mb-4">Followers</h3>
-            {#if data.Followers && data.Followers.length > 0}
-                <div class="space-y-4">
-                    {#each data.Followers as Followers}
-                        <div class="flex items-center space-x-4 hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
-                            <Avatar src={Followers.avatar || generateAvatar(Followers.username)} alt="Following Avatar" />
-                            <div>
-                                <p class="font-semibold text-lg">{Followers.username}</p>
-                                <p class="text-sm text-gray-600 dark:text-gray-400">
-                                    {Followers.firstName} {Followers.lastName}
-                                </p>
-                            </div>
-                        </div>
-                    {/each}
-                </div>
-            {:else}
-                <p class="text-gray-500 dark:text-gray-400">Not following anyone yet.</p>
-            {/if}
-        </div>
-    </TabItem>
-
-    <TabItem title="Following">
-        <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
-            <h3 class="text-2xl font-semibold mb-4">Following</h3>
-            {#if data.Following && data.Following.length > 0}
-                <div class="space-y-4">
-                    {#each data.Following as following}
-                        <div class="flex items-center space-x-4 hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
-                            <Avatar src={following.avatar || generateAvatar(following.username)} alt="Following Avatar" />
-                            <div>
-                                <p class="font-semibold text-lg">{following.username}</p>
-                                <p class="text-sm text-gray-600 dark:text-gray-400">
-                                    {following.firstName} {following.lastName}
-                                </p>
-                            </div>
-                        </div>
-                    {/each}
-                </div>
-            {:else}
-                <p class="text-gray-500 dark:text-gray-400">Not following anyone yet.</p>
-            {/if}
-        </div>
-    </TabItem>
-    {#if isOwnProfile}
-        <TabItem title="My Posts">
-            <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
-                <div class="flex justify-between items-center mb-6">
-                    <h3 class="text-2xl font-semibold">My Posts</h3>
-                    <span class="text-sm text-gray-500 dark:text-gray-400">{userPosts?.length || 0} posts</span>
-                </div>
-
-                {#if userPosts && userPosts.length > 0}
-                    <div class="space-y-6">
-                        {#each userPosts as post}
-                            <div class="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                                <!-- Post Header -->
-                                <div class="p-4">
-                                    <h4 class="text-xl font-semibold text-gray-900 dark:text-white mb-2">{post.title}</h4>
-                                    <p class="text-gray-600 dark:text-gray-300 whitespace-pre-wrap">{post.content}</p>
-
-                                    {#if post.media}
-                                        <div class="mt-4">
-                                            <img
-                                              src={post.media}
-                                              alt="Post media"
-                                              class="rounded-lg h-48 w-auto object-cover cursor-pointer hover:opacity-95 transition-opacity"
-                                              on:click={() => {
-                                        expandedImageSrc = post.media;
-                                        showExpandedImage = true;
-                                    }}
-                                            />
-                                        </div>
-                                    {/if}
-                                </div>
-                            </div>
-                        {/each}
-                    </div>
-                {:else}
-                    <div class="text-center py-12">
-                        <div class="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-                            </svg>
-                        </div>
-                        <h3 class="text-lg font-medium text-gray-900 dark:text-white">No posts yet</h3>
-                        <p class="text-gray-500 dark:text-gray-400 mt-1">Get started by creating your first post</p>
-                    </div>
-                {/if}
-            </div>
-        </TabItem>
-    {/if}
-
-    {#if isOwnProfile && data.Requests && data.Requests.length > 0}
-        <TabItem title="Follow Requests">
-            <div class="rounded-lg shadow-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-6">
-                <h3 class="text-2xl font-semibold mb-4">Follow Requests</h3>
-                {#each data.Requests as request}
-                    <div class="flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 p-4 rounded-lg transition">
-                        <div class="flex items-center space-x-4">
-                            <Avatar src={request.avatar|| generateAvatar(request.username)} alt="Request Avatar" />
-                            <div>
-                                <p class="font-semibold text-lg">{request.username}</p>
-                                <p class="text-sm text-gray-600 dark:text-gray-400">
-                                    {request.firstName} {request.lastName}
-                                </p>
-                            </div>
-                        </div>
-                        <div class="space-x-2">
-                            <Button
-                                    size="sm"
-                                    color="primary"
-                                    on:click={() => followers.handleRequest(request.id, true)}
-                                    aria-label="Accept Request Button"
-                            >
-                                Accept
-                            </Button>
-                            <Button
-                                    size="sm"
-                                    color="alternative"
-                                    on:click={() => followers.handleRequest(request.id, false)}
-                                    aria-label="Decline Request Button"
-                            >
-                                Decline
-                            </Button>
-                        </div>
-                    </div>
-                {/each}
-            </div>
-        </TabItem>
-    {/if}
-</Tabs>
 
 <!-- Settings Modal - Updated with theme colors -->
 <Modal bind:open={showSettingsModal} title="Settings">
@@ -605,7 +540,6 @@
         </div>
     </div>
 {/if}
-</div>
 
 <style lang="postcss">
     @keyframes pulse {
