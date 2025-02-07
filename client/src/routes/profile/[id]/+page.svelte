@@ -345,15 +345,25 @@
                     <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                         {#if data.Followers && data.Followers.length > 0}
                             {#each data.Followers as follower}
-                                <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center space-x-4 transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl">
-                                    <Avatar
-                                        src={follower.avatar || generateAvatar(follower.username)}
-                                        class="w-12 h-12"
-                                        alt={follower.username}
-                                    />
-                                    <div>
-                                        <p class="font-semibold text-gray-800 dark:text-gray-200">{follower.username}</p>
+                                <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center justify-between transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl">
+                                    <div class="flex items-center space-x-4">
+                                        <Avatar
+                                            src={follower.avatar || generateAvatar(follower.username)}
+                                            class="w-12 h-12"
+                                            alt={follower.username}
+                                        />
+                                        <div>
+                                            <p class="font-semibold text-gray-800 dark:text-gray-200">{follower.username}</p>
+                                        </div>
                                     </div>
+                                    <Button
+                                        size="sm"
+                                        color="blue"
+                                        class="transform transition-all duration-200 hover:scale-105"
+                                        href="/profile/{follower.userId}"
+                                    >
+                                        View Profile
+                                    </Button>
                                 </div>
                             {/each}
                         {:else}
@@ -368,15 +378,25 @@
                     <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                         {#if data.Following && data.Following.length > 0}
                             {#each data.Following as following}
-                                <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center space-x-4 transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl">
-                                    <Avatar
-                                        src={following.avatar || generateAvatar(following.username)}
-                                        class="w-12 h-12"
-                                        alt={following.username}
-                                    />
-                                    <div>
-                                        <p class="font-semibold text-gray-800 dark:text-gray-200">{following.username}</p>
+                                <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center justify-between transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl">
+                                    <div class="flex items-center space-x-4">
+                                        <Avatar
+                                            src={following.avatar || generateAvatar(following.username)}
+                                            class="w-12 h-12"
+                                            alt={following.username}
+                                        />
+                                        <div>
+                                            <p class="font-semibold text-gray-800 dark:text-gray-200">{following.username}</p>
+                                        </div>
                                     </div>
+                                    <Button
+                                        size="sm"
+                                        color="blue"
+                                        class="transform transition-all duration-200 hover:scale-105"
+                                        href="/profile/{following.userId}"
+                                    >
+                                        View Profile
+                                    </Button>
                                 </div>
                             {/each}
                         {:else}
@@ -458,7 +478,7 @@
                     <img
                       src={newProfilePhoto}
                       alt="Profile Photo"
-                      class="w-20 h-20 rounded-full cursor-pointer hover:opacity-80 transition-opacity"
+                      class="rounded-lg max-h-[90vh] w-auto object-contain"
                       on:click={() => {
                             expandedImageSrc = newProfilePhoto;
                             showExpandedImage = true;
