@@ -5,6 +5,8 @@
     import { goto } from '$app/navigation';
     import { chat } from '$lib/stores/chat';
     import { Button, Avatar, Badge, Tabs, TabItem, Modal, Input, Radio } from 'flowbite-svelte';
+    import { fade, slide, fly } from 'svelte/transition';
+    import { quintOut } from 'svelte/easing';
     import type { PageData } from './$types';
     import {error} from "@sveltejs/kit";
 
@@ -24,6 +26,8 @@
     let showExpandedImage = false;
     let expandedImageSrc = '';
     let showUnfollowModal = false;
+    let activeTab = 'posts';
+    let previousTab = 'posts';
 
     $: if ($auth.user) {
         isOwnProfile = $auth.user.id === userId;
@@ -226,6 +230,11 @@
             console.error('Failed to fetch posts:', error);
         }
     }
+
+    const handleTabChange = (tabId: string) => {
+        previousTab = activeTab;
+        activeTab = tabId.toLowerCase();
+    };
 </script>
 
 <div class="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -321,129 +330,214 @@
 
         <!-- Tabs Section with modern styling -->
         <div class="mt-8">
-            <Tabs style="underline" class="!border-b-2 border-gray-200 dark:border-gray-700">
-                <TabItem open title="Posts" class="focus:outline-none">
-                    <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {#if data.Posts && data.Posts.length > 0}
-                            {#each data.Posts as post}
-                                <div class="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl">
-                                    <!-- Post content here -->
-                                    <div class="p-4">
-                                        <p class="text-gray-800 dark:text-gray-200">{post.content}</p>
-                                    </div>
-                                </div>
-                            {/each}
-                        {:else}
-                            <div class="col-span-full text-center py-10">
-                                <p class="text-gray-500 dark:text-gray-400 text-lg">No posts yet</p>
-                            </div>
+            <div class="border-b border-gray-200 dark:border-gray-700">
+                <div class="flex space-x-8">
+                    <button
+                        class="py-4 px-1 relative {activeTab === 'posts' ? 'text-blue-600 dark:text-blue-500' : 'text-gray-500 dark:text-gray-400'} hover:text-blue-600 dark:hover:text-blue-500 transition-colors duration-200"
+                        on:click={() => handleTabChange('posts')}
+                    >
+                        <span class="text-sm font-medium">Posts</span>
+                        {#if activeTab === 'posts'}
+                            <div class="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 dark:bg-blue-500" transition:slide></div>
                         {/if}
-                    </div>
-                </TabItem>
+                    </button>
+                    <button
+                        class="py-4 px-1 relative {activeTab === 'followers' ? 'text-blue-600 dark:text-blue-500' : 'text-gray-500 dark:text-gray-400'} hover:text-blue-600 dark:hover:text-blue-500 transition-colors duration-200"
+                        on:click={() => handleTabChange('followers')}
+                    >
+                        <span class="text-sm font-medium">Followers</span>
+                        {#if activeTab === 'followers'}
+                            <div class="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 dark:bg-blue-500" transition:slide></div>
+                        {/if}
+                    </button>
+                    <button
+                        class="py-4 px-1 relative {activeTab === 'following' ? 'text-blue-600 dark:text-blue-500' : 'text-gray-500 dark:text-gray-400'} hover:text-blue-600 dark:hover:text-blue-500 transition-colors duration-200"
+                        on:click={() => handleTabChange('following')}
+                    >
+                        <span class="text-sm font-medium">Following</span>
+                        {#if activeTab === 'following'}
+                            <div class="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 dark:bg-blue-500" transition:slide></div>
+                        {/if}
+                    </button>
+                    {#if isOwnProfile && data.Requests && data.Requests.length > 0}
+                        <button
+                            class="py-4 px-1 relative {activeTab === 'requests' ? 'text-blue-600 dark:text-blue-500' : 'text-gray-500 dark:text-gray-400'} hover:text-blue-600 dark:hover:text-blue-500 transition-colors duration-200"
+                            on:click={() => handleTabChange('requests')}
+                        >
+                            <span class="text-sm font-medium">Follow Requests</span>
+                            {#if activeTab === 'requests'}
+                                <div class="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 dark:bg-blue-500" transition:slide></div>
+                            {/if}
+                        </button>
+                    {/if}
+                </div>
+            </div>
 
-                <TabItem title="Followers" class="focus:outline-none">
-                    <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {#if data.Followers && data.Followers.length > 0}
-                            {#each data.Followers as follower}
-                                <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center justify-between transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl">
-                                    <div class="flex items-center space-x-4">
-                                        <Avatar
-                                            src={follower.avatar || generateAvatar(follower.username)}
-                                            class="w-12 h-12"
-                                            alt={follower.username}
-                                        />
-                                        <div>
-                                            <p class="font-semibold text-gray-800 dark:text-gray-200">{follower.username}</p>
+            <div class="relative mt-6" style="min-height: 400px;">
+                {#key activeTab}
+                    <div 
+                        class="absolute w-full"
+                        in:fly={{ 
+                            x: previousTab === activeTab ? 0 : (previousTab > activeTab ? -100 : 100), 
+                            duration: 300, 
+                            easing: quintOut 
+                        }}
+                        out:fly={{ 
+                            x: previousTab === activeTab ? 0 : (previousTab > activeTab ? 100 : -100), 
+                            duration: 300, 
+                            easing: quintOut 
+                        }}
+                    >
+                        {#if activeTab === 'posts'}
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {#if data.Posts && data.Posts.length > 0}
+                                    {#each data.Posts as post, index}
+                                        <div 
+                                            class="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
+                                            in:fly|local={{ 
+                                                y: 20, 
+                                                duration: 400, 
+                                                delay: index * 100, 
+                                                easing: quintOut 
+                                            }}
+                                        >
+                                            <div class="p-4">
+                                                <p class="text-gray-800 dark:text-gray-200">{post.content}</p>
+                                            </div>
+                                        </div>
+                                    {/each}
+                                {:else}
+                                    <div class="col-span-full text-center py-10"
+                                         in:fade={{ duration: 200 }}>
+                                        <p class="text-gray-500 dark:text-gray-400 text-lg">No posts yet</p>
+                                    </div>
+                                {/if}
+                            </div>
+                        {:else if activeTab === 'followers'}
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {#if data.Followers && data.Followers.length > 0}
+                                    {#each data.Followers as follower, index}
+                                        <div 
+                                            class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center justify-between transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
+                                            in:fly|local={{ 
+                                                y: 20, 
+                                                duration: 400, 
+                                                delay: index * 100, 
+                                                easing: quintOut 
+                                            }}
+                                        >
+                                            <div class="flex items-center space-x-4">
+                                                <Avatar
+                                                    src={follower.avatar || generateAvatar(follower.username)}
+                                                    class="w-12 h-12"
+                                                    alt={follower.username}
+                                                />
+                                                <div>
+                                                    <p class="font-semibold text-gray-800 dark:text-gray-200">{follower.username}</p>
+                                                </div>
+                                            </div>
+                                            <Button
+                                                size="sm"
+                                                color="blue"
+                                                class="transform transition-all duration-200 hover:scale-105"
+                                                href="/profile/{follower.userId}"
+                                            >
+                                                View Profile
+                                            </Button>
+                                        </div>
+                                    {/each}
+                                {:else}
+                                    <div class="col-span-full text-center py-10"
+                                         in:fade={{ duration: 200 }}>
+                                        <p class="text-gray-500 dark:text-gray-400 text-lg">No followers yet</p>
+                                    </div>
+                                {/if}
+                            </div>
+                        {:else if activeTab === 'following'}
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                                {#if data.Following && data.Following.length > 0}
+                                    {#each data.Following as following, index}
+                                        <div 
+                                            class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center justify-between transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
+                                            in:fly|local={{ 
+                                                y: 20, 
+                                                duration: 400, 
+                                                delay: index * 100, 
+                                                easing: quintOut 
+                                            }}
+                                        >
+                                            <div class="flex items-center space-x-4">
+                                                <Avatar
+                                                    src={following.avatar || generateAvatar(following.username)}
+                                                    class="w-12 h-12"
+                                                    alt={following.username}
+                                                />
+                                                <div>
+                                                    <p class="font-semibold text-gray-800 dark:text-gray-200">{following.username}</p>
+                                                </div>
+                                            </div>
+                                            <Button
+                                                size="sm"
+                                                color="blue"
+                                                class="transform transition-all duration-200 hover:scale-105"
+                                                href="/profile/{following.userId}"
+                                            >
+                                                View Profile
+                                            </Button>
+                                        </div>
+                                    {/each}
+                                {:else}
+                                    <div class="col-span-full text-center py-10"
+                                         in:fade={{ duration: 200 }}>
+                                        <p class="text-gray-500 dark:text-gray-400 text-lg">Not following anyone yet</p>
+                                    </div>
+                                {/if}
+                            </div>
+                        {:else if activeTab === 'requests' && isOwnProfile && data.Requests && data.Requests.length > 0}
+                            <div class="space-y-4">
+                                {#each data.Requests as request, index}
+                                    <div 
+                                        class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center justify-between transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
+                                        in:fly|local={{ 
+                                            y: 20, 
+                                            duration: 400, 
+                                            delay: index * 100, 
+                                            easing: quintOut 
+                                        }}
+                                    >
+                                        <div class="flex items-center space-x-4">
+                                            <Avatar
+                                                src={request.avatar || generateAvatar(request.username)}
+                                                class="w-12 h-12"
+                                                alt={request.username}
+                                            />
+                                            <p class="font-semibold text-gray-800 dark:text-gray-200">{request.username}</p>
+                                        </div>
+                                        <div class="flex space-x-2">
+                                            <Button
+                                                size="sm"
+                                                color="green"
+                                                class="transform transition-all duration-200 hover:scale-105"
+                                                on:click={() => followers.acceptRequest(request.id)}
+                                            >
+                                                Accept
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                color="red"
+                                                class="transform transition-all duration-200 hover:scale-105"
+                                                on:click={() => followers.rejectRequest(request.id)}
+                                            >
+                                                Reject
+                                            </Button>
                                         </div>
                                     </div>
-                                    <Button
-                                        size="sm"
-                                        color="blue"
-                                        class="transform transition-all duration-200 hover:scale-105"
-                                        href="/profile/{follower.userId}"
-                                    >
-                                        View Profile
-                                    </Button>
-                                </div>
-                            {/each}
-                        {:else}
-                            <div class="col-span-full text-center py-10">
-                                <p class="text-gray-500 dark:text-gray-400 text-lg">No followers yet</p>
+                                {/each}
                             </div>
                         {/if}
                     </div>
-                </TabItem>
-
-                <TabItem title="Following" class="focus:outline-none">
-                    <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {#if data.Following && data.Following.length > 0}
-                            {#each data.Following as following}
-                                <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center justify-between transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl">
-                                    <div class="flex items-center space-x-4">
-                                        <Avatar
-                                            src={following.avatar || generateAvatar(following.username)}
-                                            class="w-12 h-12"
-                                            alt={following.username}
-                                        />
-                                        <div>
-                                            <p class="font-semibold text-gray-800 dark:text-gray-200">{following.username}</p>
-                                        </div>
-                                    </div>
-                                    <Button
-                                        size="sm"
-                                        color="blue"
-                                        class="transform transition-all duration-200 hover:scale-105"
-                                        href="/profile/{following.userId}"
-                                    >
-                                        View Profile
-                                    </Button>
-                                </div>
-                            {/each}
-                        {:else}
-                            <div class="col-span-full text-center py-10">
-                                <p class="text-gray-500 dark:text-gray-400 text-lg">Not following anyone yet</p>
-                            </div>
-                        {/if}
-                    </div>
-                </TabItem>
-
-                {#if isOwnProfile && data.Requests && data.Requests.length > 0}
-                    <TabItem title="Follow Requests" class="focus:outline-none">
-                        <div class="mt-6 space-y-4">
-                            {#each data.Requests as request}
-                                <div class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center justify-between transform transition-all duration-300 hover:scale-[1.01] hover:shadow-xl">
-                                    <div class="flex items-center space-x-4">
-                                        <Avatar
-                                            src={request.avatar || generateAvatar(request.username)}
-                                            class="w-12 h-12"
-                                            alt={request.username}
-                                        />
-                                        <p class="font-semibold text-gray-800 dark:text-gray-200">{request.username}</p>
-                                    </div>
-                                    <div class="flex space-x-2">
-                                        <Button
-                                            size="sm"
-                                            color="green"
-                                            class="transform transition-all duration-200 hover:scale-105"
-                                            on:click={() => followers.acceptRequest(request.id)}
-                                        >
-                                            Accept
-                                        </Button>
-                                        <Button
-                                            size="sm"
-                                            color="red"
-                                            class="transform transition-all duration-200 hover:scale-105"
-                                            on:click={() => followers.rejectRequest(request.id)}
-                                        >
-                                            Reject
-                                        </Button>
-                                    </div>
-                                </div>
-                            {/each}
-                        </div>
-                    </TabItem>
-                {/if}
-            </Tabs>
+                {/key}
+            </div>
         </div>
     </div>
 </div>
