@@ -325,7 +325,7 @@
                             <div class="text-sm text-white/80">Following</div>
                         </div>
                         <div class="text-center hover:transform hover:scale-105 transition-all duration-200">
-                            <div class="text-2xl font-bold">{data.Posts?.length || 0}</div>
+                            <div class="text-2xl font-bold">{userPosts?.length || 0}</div>
                             <div class="text-sm text-white/80">Posts</div>
                         </div>
                     </div>
@@ -437,8 +437,8 @@
                     >
                         {#if activeTab === 'posts'}
                             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                                {#if data.Posts && data.Posts.length > 0}
-                                    {#each data.Posts as post, index}
+                                {#if userPosts && userPosts.length > 0}
+                                    {#each userPosts as post, index}
                                         <div
                                             class="bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
                                             in:fly|local={{
@@ -565,7 +565,7 @@
                                                 size="sm"
                                                 color="green"
                                                 class="transform transition-all duration-200 hover:scale-105"
-                                                on:click={() => followers.acceptRequest(request.id)}
+                                                on:click={() => followers.handleRequest(request.id, true)}
                                             >
                                                 Accept
                                             </Button>
@@ -573,7 +573,7 @@
                                                 size="sm"
                                                 color="red"
                                                 class="transform transition-all duration-200 hover:scale-105"
-                                                on:click={() => followers.rejectRequest(request.id)}
+                                                on:click={() => followers.handleRequest(request.id, false)}
                                             >
                                                 Reject
                                             </Button>
@@ -590,7 +590,8 @@
 </div>
 
 <!-- Settings Modal - Updated with theme colors -->
-<Modal bind:open={showSettingsModal} size="lg" class="dark:bg-gray-800" autoclose={true}>
+<Modal bind:open={showSettingsModal} size="lg" class="dark:bg-gray-800" autoclose={false}>
+    <div class="fixed inset-0 z-40" on:click={() => showSettingsModal = false}></div>
     <div class="p-6" transition:fade={{ duration: 200 }}>
         <h3 class="text-2xl font-bold mb-6 text-gray-900 dark:text-white">Edit Profile</h3>
         <div class="space-y-8" transition:slide={{ duration: 300, delay: 150 }}>
