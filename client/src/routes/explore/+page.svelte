@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { Avatar, Input, Button } from 'flowbite-svelte';
+  import { fade, fly, scale, slide } from 'svelte/transition';
+  import { elasticOut, quartOut } from 'svelte/easing';
 
   interface User {
     id: number;
@@ -81,91 +83,125 @@
   });
 </script>
 
-<div class="max-w-4xl mx-auto px-4 py-8">
-  <div class="mb-8">
-    <Input
-      type="search"
-      placeholder="Search users..."
-      value={searchQuery}
-      on:input={handleSearch}
-      class="w-full"
-    >
-      <svg slot="left" class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-      </svg>
-    </Input>
+<div class="max-w-4xl mx-auto px-4 py-8" in:fade={{ duration: 300 }}>
+  <div class="sticky top-0 z-10 bg-white/80 backdrop-blur-lg rounded-lg shadow-lg mb-6 p-4 transform transition-all duration-300" 
+       in:fly={{ y: -20, duration: 400, delay: 150 }}>
+    <div class="relative">
+      <Input
+        type="search"
+        placeholder="Search users..."
+        value={searchQuery}
+        on:input={handleSearch}
+        class="w-full !bg-gray-50/50 !border-gray-200 focus:!border-blue-400 !ring-blue-400/30"
+      >
+        <div slot="left" class="flex items-center">
+          <svg class="w-5 h-5 text-gray-500 transition-colors duration-300 group-focus-within:text-blue-500" 
+               fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </div>
+      </Input>
+      {#if isLoading}
+        <div class="absolute right-3 top-1/2 -translate-y-1/2" 
+             in:fade={{ duration: 200 }}>
+          <div class="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent"></div>
+        </div>
+      {/if}
+    </div>
   </div>
 
-  <div class="bg-white rounded-lg shadow">
-    {#each users as user (user.id)}
-      <div class="border-b border-gray-200 last:border-0">
-        <div class="flex items-center p-4 hover:bg-gray-50 transition-colors">
-          <div class="flex-shrink-0">
-            <Avatar
-              src={user.avatar || generateAvatar(user.username)}
-              size="md"
-              alt={`${user.username}'s avatar`}
-              class="ring-2 ring-blue-500 ring-offset-2"
-            />
-          </div>
-          <div class="ml-4 flex-grow">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <h3 class="text-lg font-semibold text-gray-900">{user.username}</h3>
-                <div class="relative group">
-                  {#if user.is_private}
-                    <!-- Closed Eye Icon for Private -->
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                    </svg>
-                  {:else}
-                    <!-- Open Eye Icon for Public -->
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.522 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                  {/if}
-                  <!-- Tooltip -->
-                  <div class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                    {user.is_private ? 'Private Account' : 'Public Account'}
+  <div class="bg-white rounded-lg shadow overflow-hidden" 
+       in:fade={{ duration: 300, delay: 200 }}>
+    {#if users.length > 0}
+      <div class="divide-y divide-gray-200">
+        {#each users as user, i (user.id)}
+          <div 
+            in:fly|local={{ y: 20, duration: 400, delay: i * 50 }}
+            out:slide|local={{ duration: 200 }}
+          >
+            <div class="overflow-hidden">
+              <div 
+                class="flex items-center p-4 transition-all duration-300 ease-out cursor-pointer
+                hover:bg-gradient-to-r hover:from-gray-50 hover:to-blue-50/30
+                hover:shadow-lg hover:shadow-blue-100/50
+                relative group"
+                on:mouseenter={(e) => {
+                  e.currentTarget.style.transform = 'scale(1.01)';
+                  e.currentTarget.style.backgroundColor = 'rgb(249, 250, 251)';
+                }}
+                on:mouseleave={(e) => {
+                  e.currentTarget.style.transform = 'scale(1)';
+                  e.currentTarget.style.backgroundColor = 'white';
+                }}
+              >
+                <div class="flex-shrink-0 transform transition-transform duration-300 group-hover:scale-105">
+                  <Avatar
+                    src={user.avatar || generateAvatar(user.username)}
+                    size="md"
+                    alt={`${user.username}'s avatar`}
+                    class="ring-2 ring-blue-500 ring-offset-2 transition-all duration-300 group-hover:ring-4 group-hover:ring-blue-400"
+                  />
+                </div>
+                <div class="ml-4 flex-grow min-w-0">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <h3 class="text-lg font-semibold text-gray-900 transition-colors duration-300 group-hover:text-blue-600 truncate">{user.username}</h3>
+                      <div class="relative group/tooltip flex-shrink-0">
+                        {#if user.is_private}
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 transition-colors duration-300 group-hover:text-blue-500" fill="none" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                          </svg>
+                        {:else}
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 transition-colors duration-300 group-hover:text-blue-500" fill="none" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.522 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z" />
+                          </svg>
+                        {/if}
+                        <!-- Enhanced Tooltip -->
+                        <div class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-all duration-300 transform group-hover/tooltip:translate-y-0 translate-y-2 shadow-xl">
+                          {user.is_private ? 'Private Account' : 'Public Account'}
+                          <div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-gray-900"></div>
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      color="light"
+                      size="sm"
+                      class="ml-4 transition-all duration-300 ease-out flex-shrink-0
+                      hover:scale-105 hover:shadow-md hover:shadow-blue-100/50
+                      hover:bg-gradient-to-r hover:from-blue-50 hover:to-blue-100/50
+                      group-hover:translate-x-1"
+                      on:click={() => goToProfile(user.id)}
+                    >
+                      <span class="transition-all duration-300 group-hover:translate-x-0.5">View Profile</span>
+                      <svg class="w-4 h-4 ml-2 transition-all duration-300 group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                      </svg>
+                    </Button>
                   </div>
                 </div>
               </div>
-              <Button
-                color="light"
-                size="sm"
-                class="ml-4"
-                on:click={() => goToProfile(user.id)}
-              >
-                View Profile
-                <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                </svg>
-              </Button>
             </div>
           </div>
-        </div>
-      </div>
-    {/each}
-
-    {#if isLoading}
-      <div class="flex justify-center items-center py-8">
-        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+        {/each}
       </div>
     {/if}
-    {users}
+
     {#if (users == null || users.length === 0) && !isLoading}
-      <div class="text-center py-12 px-4">
-        <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-        </svg>
-        <h3 class="mt-2 text-sm font-medium text-gray-900">No users found</h3>
-        {#if searchQuery}
-          <p class="mt-1 text-sm text-gray-500">Try adjusting your search terms.</p>
-        {:else}
-          <p class="mt-1 text-sm text-gray-500">No users are available at the moment.</p>
-        {/if}
+      <div class="text-center py-12 px-4" in:scale={{ duration: 300, easing: elasticOut }}>
+        <div class="bg-gray-50/50 rounded-lg p-8">
+          <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+          <h3 class="text-lg font-semibold text-gray-900 mb-2">No users found</h3>
+          {#if searchQuery}
+            <p class="text-gray-600">Try adjusting your search terms or try a different search.</p>
+          {:else}
+            <p class="text-gray-600">No users are available at the moment.</p>
+          {/if}
+        </div>
       </div>
     {/if}
   </div>
