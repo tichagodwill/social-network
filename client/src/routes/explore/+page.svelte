@@ -17,6 +17,23 @@
   let searchQuery = '';
   let isLoading = false;
   let previousUsers: User[] = [];
+  let tooltipContent = '';
+  let tooltipVisible = false;
+  let tooltipX = 0;
+  let tooltipY = 0;
+
+  function showTooltip(event: MouseEvent, content: string) {
+    const target = event.currentTarget as HTMLElement;
+    const rect = target.getBoundingClientRect();
+    tooltipContent = content;
+    tooltipX = rect.left + (rect.width / 2);
+    tooltipY = rect.top - 10;
+    tooltipVisible = true;
+  }
+
+  function hideTooltip() {
+    tooltipVisible = false;
+  }
 
   const [send, receive] = crossfade({
     duration: 400,
@@ -189,21 +206,21 @@
                   <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2 min-w-0">
                       <h3 class="text-lg font-semibold text-gray-900 transition-colors duration-300 group-hover:text-blue-600 truncate">{user.username}</h3>
-                      <div class="relative group/tooltip flex-shrink-0">
-                        {#if user.is_private}
-                          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 transition-colors duration-300 group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                          </svg>
-                        {:else}
-                          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 transition-colors duration-300 group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.522 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z" />
-                          </svg>
-                        {/if}
-                        <!-- Enhanced Tooltip -->
-                        <div class="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-all duration-300 transform group-hover/tooltip:translate-y-0 translate-y-2 shadow-xl z-50 whitespace-nowrap">
-                          {user.is_private ? 'Private Profile - Only followers can see posts' : 'Public Profile - Everyone can see posts'}
-                          <div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-gray-900"></div>
+                      <div class="relative inline-block">
+                        <div 
+                          on:mouseenter={(e) => showTooltip(e, user.is_private ? 'Private Profile' : 'Public Profile')}
+                          on:mouseleave={hideTooltip}
+                        >
+                          {#if user.is_private}
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 transition-colors duration-300 hover:text-blue-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                            </svg>
+                          {:else}
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 transition-colors duration-300 hover:text-blue-500 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.522 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                          {/if}
                         </div>
                       </div>
                     </div>
@@ -248,4 +265,14 @@
       </div>
     {/if}
   </div>
+  {#if tooltipVisible}
+    <div
+      class="fixed bg-gray-900 text-white text-xs rounded-lg px-3 py-2 pointer-events-none shadow-lg transition-opacity duration-200"
+      style="left: {tooltipX}px; top: {tooltipY}px; transform: translate(-50%, -100%); z-index: 99999;"
+      transition:fade={{ duration: 200 }}
+    >
+      {tooltipContent}
+      <div class="absolute left-1/2 -translate-x-1/2 top-full border-[6px] border-transparent border-t-gray-900"></div>
+    </div>
+  {/if}
 </div>
