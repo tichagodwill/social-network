@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { page } from '$app/stores';
     import { onMount } from 'svelte';
     import { followers } from '$lib/stores/followers';
     import { auth } from '$lib/stores/auth';
@@ -11,8 +12,9 @@
     import { error } from '@sveltejs/kit';
 
     export let data: PageData;
-    const userId = parseInt(data.params.id);
-
+    
+    // Get userId from URL and watch for changes
+    $: userId = parseInt($page.params.id);
     let isOwnProfile = false;
     let isFollowing = false;
     let hasPendingRequest = false;
@@ -29,15 +31,33 @@
     let activeTab = 'posts';
     let previousTab = 'posts';
 
-    $: if ($auth.user) {
-        isOwnProfile = $auth.user.id === userId;
+    // Watch for changes in URL (userId) or auth state
+    $: {
+        console.log('URL or auth changed:', { userId: $page.params.id, authUser: $auth.user?.id });
+        if ($auth.user && userId) {
+            isOwnProfile = $auth.user.id === userId;
+            isFollowing = false;
+            hasPendingRequest = false;
+            canMessage = false;
+            
+            if (!isOwnProfile) {
+                console.log('Loading follow status for user:', userId);
+                loadFollowStatus();
+                checkCanMessage();
+            } else {
+                console.log('Own profile detected');
+            }
+            loadUserPosts();
+        }
     }
+
+    // Check if messaging is allowed (if either user follows the other)
+    let canMessage = false;
 
     // Function to load follow status (whether the user is following, has a pending request, or not)
     async function loadFollowStatus() {
-        if (isOwnProfile) {
-            return
-        }
+        if (isOwnProfile) return;
+        
         try {
             const response = await fetch(`http://localhost:8080/user/follow-status`, {
                 method: 'POST', // Use POST method
@@ -53,6 +73,7 @@
 
             if (response.ok) {
                 const followStatus = await response.json();
+                console.log('Follow status loaded:', followStatus);
                 isFollowing = followStatus.isFollowing;
                 hasPendingRequest = followStatus.hasPendingRequest;
             } else {
@@ -63,14 +84,10 @@
         }
     }
 
-    // Check if messaging is allowed (if either user follows the other)
-    let canMessage = false;
-
     // Function to check if either user follows the other
     async function checkCanMessage() {
-        if (isOwnProfile) {
-            return;
-        }
+        if (isOwnProfile) return;
+        
         try {
             // Try to get or create a chat - this will fail with 403 if no follow relationship exists
             const response = await fetch(`http://localhost:8080/chat/check-follow`, {
@@ -84,6 +101,7 @@
                 }),
             });
             canMessage = response.ok;
+            console.log('Can message status:', canMessage);
         } catch (error) {
             console.error('Failed to check message permission:', error);
             canMessage = false;
@@ -91,15 +109,13 @@
     }
 
     onMount(async () => {
-        try {
-            // Load follow status
-            await loadFollowStatus();
-            // Check if messaging is allowed
-            await checkCanMessage();
-            // Load user posts
+        if ($auth.user && data.user) {
+            isOwnProfile = $auth.user.id === userId;
+            if (!isOwnProfile) {
+                await loadFollowStatus();
+                await checkCanMessage();
+            }
             await loadUserPosts();
-        } catch (error) {
-            console.error('Failed to load data:', error);
         }
     });
 
@@ -360,8 +376,16 @@
                     </div>
 
                     <!-- Action Buttons with modern styling -->
-                    {#if !isOwnProfile}
-                        <div class="flex flex-col sm:flex-row gap-4 mt-6">
+                    <div class="flex flex-col sm:flex-row gap-4 mt-6">
+                        {#if isOwnProfile}
+                            <Button
+                                class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg transform transition-all duration-200 hover:scale-105"
+                                color="none"
+                                on:click={() => showSettingsModal = true}
+                            >
+                                Edit Profile
+                            </Button>
+                        {:else}
                             <Button
                                 class="relative group overflow-hidden {isFollowing ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'} text-white font-semibold py-2 px-6 rounded-lg transform transition-all duration-200 hover:scale-105"
                                 color="none"
@@ -374,46 +398,24 @@
                                     {:else if isFollowing}
                                         Unfollow
                                     {:else if hasPendingRequest}
-                                        Request Pending
+                                        Requested
                                     {:else}
                                         Follow
                                     {/if}
                                 </span>
                             </Button>
 
-                            <div class="relative group">
+                            {#if canMessage}
                                 <Button
-                                    class="bg-white/10 {canMessage ? 'hover:bg-white/20' : 'opacity-50 cursor-not-allowed'} text-white font-semibold py-2 px-6 rounded-lg transform transition-all duration-200 {canMessage ? 'hover:scale-105' : ''}"
+                                    class="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-6 rounded-lg transform transition-all duration-200 hover:scale-105"
                                     color="none"
-                                    on:click={handleMessageClick}
-                                    disabled={!canMessage}
+                                    on:click={() => chat.startChat(userId)}
                                 >
                                     Message
                                 </Button>
-                                {#if !canMessage}
-                                    <div class="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1.5
-                                                      bg-gray-800 text-white text-sm rounded-lg opacity-0 group-hover:opacity-100
-                                                      transition-all duration-200 shadow-lg scale-95 group-hover:scale-100 whitespace-nowrap">
-                                        <div class="relative">
-                                            You need to follow each other to send messages
-                                            <div class="absolute -bottom-5 left-1/2 transform -translate-x-1/2
-                                                      border-8 border-transparent
-                                                      border-t-gray-800">
-                                            </div>
-                                        </div>
-                                    </div>
-                                {/if}
-                            </div>
-                        </div>
-                    {:else}
-                        <Button
-                            class="mt-6 bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-6 rounded-lg transform transition-all duration-200 hover:scale-105"
-                            color="none"
-                            on:click={showSettings}
-                        >
-                            Edit Profile
-                        </Button>
-                    {/if}
+                            {/if}
+                        {/if}
+                    </div>
                 </div>
             </div>
         </div>
