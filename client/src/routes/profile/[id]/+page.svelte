@@ -36,8 +36,8 @@
     let originalDescription: string = data.user?.aboutMe || '';
     let userDescription: string = originalDescription;
     let hasCustomPhoto = !!data.user?.avatar;
-    let isNewPhotoUploaded = false;
     let isUsingDefault = false;
+    let hasNewUpload = false;
 
     // Reset settings to original values when modal is closed
     $: if (!showSettingsModal) {
@@ -49,8 +49,8 @@
         privacySetting = originalPrivacySetting;
         userDescription = originalDescription;
         hasCustomPhoto = !!originalProfilePhoto;
-        isNewPhotoUploaded = false;
         isUsingDefault = false;
+        hasNewUpload = false;
     }
 
     // Function to generate avatar with the first letter of the username
@@ -69,17 +69,17 @@
             reader.onload = (e) => {
                 newProfilePhoto = e.target?.result as string;
                 hasCustomPhoto = true;
-                isNewPhotoUploaded = true;
                 isUsingDefault = false;
+                hasNewUpload = true;
             };
             reader.readAsDataURL(file);
         }
     }
 
-    // Function to clear the selected photo
-    function clearPhoto() {
-        // If there was an original photo, revert to it
+    // Function to remove uploaded photo
+    function removeUploadedPhoto() {
         if (originalProfilePhoto) {
+            // If there was an original photo, revert to it
             newProfilePhoto = originalProfilePhoto;
             hasCustomPhoto = true;
         } else {
@@ -87,18 +87,18 @@
             newProfilePhoto = '';
             hasCustomPhoto = false;
         }
-        isNewPhotoUploaded = false;
+        hasNewUpload = false;
         isUsingDefault = false;
         const fileInput = document.getElementById('profile-photo') as HTMLInputElement;
         if (fileInput) fileInput.value = '';
     }
 
-    // Use default avatar (explicitly choosing to use generated avatar)
+    // Function to use default avatar
     function useDefaultAvatar() {
         newProfilePhoto = '';
         hasCustomPhoto = false;
-        isNewPhotoUploaded = false;
         isUsingDefault = true;
+        hasNewUpload = false;
         const fileInput = document.getElementById('profile-photo') as HTMLInputElement;
         if (fileInput) fileInput.value = '';
     }
@@ -108,8 +108,8 @@
         if (originalProfilePhoto) {
             newProfilePhoto = originalProfilePhoto;
             hasCustomPhoto = true;
-            isNewPhotoUploaded = false;
             isUsingDefault = false;
+            hasNewUpload = false;
             const fileInput = document.getElementById('profile-photo') as HTMLInputElement;
             if (fileInput) fileInput.value = '';
         }
@@ -323,8 +323,8 @@
         privacySetting = data.user?.isPrivate ? "private" : "public";
         userDescription = data.user?.aboutMe || '';
         hasCustomPhoto = !!data.user?.avatar;
-        isNewPhotoUploaded = false;
         isUsingDefault = false;
+        hasNewUpload = false;
         showSettingsModal = true;
     }
 
@@ -791,21 +791,27 @@
                                 </span>
                             </div>
                         </div>
-                        <div class="flex space-x-2">
-                            {#if isNewPhotoUploaded}
-                                <Button color="red" size="xs" class="flex-1" on:click={clearPhoto}>
+                        <div class="flex flex-wrap gap-2">
+                            {#if hasNewUpload}
+                                <Button color="red" size="xs" class="flex-1" on:click={removeUploadedPhoto}>
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                     </svg>
-                                    Remove photo
+                                    Remove uploaded photo
                                 </Button>
                             {/if}
                             {#if !isUsingDefault}
                                 <Button color="alternative" size="xs" class="flex-1" on:click={useDefaultAvatar}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
                                     Use default avatar
                                 </Button>
                             {:else if originalProfilePhoto}
                                 <Button color="alternative" size="xs" class="flex-1" on:click={restoreOriginalPhoto}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                                    </svg>
                                     Restore original photo
                                 </Button>
                             {/if}
