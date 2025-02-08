@@ -62,6 +62,7 @@
     previousUsers = [...users];
     
     try {
+      debugger
       const response = await fetch(`http://localhost:8080/explore`, {
         method: 'POST',
         headers: {
@@ -173,6 +174,8 @@
                   e.currentTarget.style.transform = 'scale(1)';
                   e.currentTarget.style.backgroundColor = 'white';
                 }}
+                on:click={() => goToProfile(user.id)}
+                on:keydown={(e) => e.key === 'Enter' && goToProfile(user.id)}
               >
                 <div class="flex-shrink-0 transform transition-transform duration-300 group-hover:scale-105">
                   <Avatar
@@ -182,17 +185,18 @@
                     class="ring-2 ring-blue-500 ring-offset-2 transition-all duration-300 group-hover:ring-4 group-hover:ring-blue-400"
                   />
                 </div>
+
                 <div class="ml-4 flex-grow min-w-0">
                   <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2 min-w-0">
                       <h3 class="text-lg font-semibold text-gray-900 transition-colors duration-300 group-hover:text-blue-600 truncate">{user.username}</h3>
                       <div class="relative group/tooltip flex-shrink-0">
                         {#if user.is_private}
-                          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 transition-colors duration-300 group-hover:text-blue-500" fill="none" viewBox="0 0 24 24">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 transition-colors duration-300 group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
                           </svg>
                         {:else}
-                          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 transition-colors duration-300 group-hover:text-blue-500" fill="none" viewBox="0 0 24 24">
+                          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-500 transition-colors duration-300 group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.522 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z" />
                           </svg>
@@ -211,7 +215,6 @@
                       hover:scale-105 hover:shadow-md hover:shadow-blue-100/50
                       hover:bg-gradient-to-r hover:from-blue-50 hover:to-blue-100/50
                       group-hover:translate-x-1"
-                      on:click={() => goToProfile(user.id)}
                     >
                       <span class="transition-all duration-300 group-hover:translate-x-0.5">View Profile</span>
                       <svg class="w-4 h-4 ml-2 transition-all duration-300 group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -234,7 +237,7 @@
         <div class="bg-gray-50/50 rounded-lg p-8 transform transition-all duration-300 hover:scale-[1.01] hover:bg-gray-50">
           <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z" />
           </svg>
           <h3 class="text-lg font-semibold text-gray-900 mb-2">No users found</h3>
           {#if searchQuery}
