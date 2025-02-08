@@ -21,15 +21,133 @@
     let isLoading = false;
     let errorMessage = '';
     let showSettingsModal = false;
-    let newProfilePhoto: string = data.user?.avatar ?? "";
-    let privacySetting: string = data.user?.isPrivate ? "private" : "public";
-    let userDescription: string = data.user?.aboutMe || '';
     let userPosts: Array<any> = [];
     let showExpandedImage = false;
     let expandedImageSrc = '';
     let showUnfollowModal = false;
     let activeTab = 'posts';
     let previousTab = 'posts';
+
+    // Settings state management
+    let originalProfilePhoto: string = data.user?.avatar ?? "";
+    let newProfilePhoto: string = originalProfilePhoto;
+    let originalPrivacySetting: string = data.user?.isPrivate ? "private" : "public";
+    let privacySetting: string = originalPrivacySetting;
+    let originalDescription: string = data.user?.aboutMe || '';
+    let userDescription: string = originalDescription;
+    let hasCustomPhoto = !!data.user?.avatar;
+    let isNewPhotoUploaded = false;
+    let isUsingDefault = false;
+
+    // Reset settings to original values when modal is closed
+    $: if (!showSettingsModal) {
+        resetSettings();
+    }
+
+    function resetSettings() {
+        newProfilePhoto = originalProfilePhoto;
+        privacySetting = originalPrivacySetting;
+        userDescription = originalDescription;
+        hasCustomPhoto = !!originalProfilePhoto;
+        isNewPhotoUploaded = false;
+        isUsingDefault = false;
+    }
+
+    // Function to generate avatar with the first letter of the username
+    function generateAvatar(username: string): string {
+        const firstLetter = username ? username.charAt(0).toUpperCase() : 'U';
+        return `https://ui-avatars.com/api/?name=${encodeURIComponent(firstLetter)}&background=random`;
+    }
+
+    // Function to handle file upload for profile photo
+    async function handleFileUpload(event: Event) {
+        const input = event.target as HTMLInputElement;
+        const file = input.files?.[0];
+        
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                newProfilePhoto = e.target?.result as string;
+                hasCustomPhoto = true;
+                isNewPhotoUploaded = true;
+                isUsingDefault = false;
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+
+    // Function to clear the selected photo
+    function clearPhoto() {
+        // If there was an original photo, revert to it
+        if (originalProfilePhoto) {
+            newProfilePhoto = originalProfilePhoto;
+            hasCustomPhoto = true;
+        } else {
+            // If no original photo, clear everything
+            newProfilePhoto = '';
+            hasCustomPhoto = false;
+        }
+        isNewPhotoUploaded = false;
+        isUsingDefault = false;
+        const fileInput = document.getElementById('profile-photo') as HTMLInputElement;
+        if (fileInput) fileInput.value = '';
+    }
+
+    // Use default avatar (explicitly choosing to use generated avatar)
+    function useDefaultAvatar() {
+        newProfilePhoto = '';
+        hasCustomPhoto = false;
+        isNewPhotoUploaded = false;
+        isUsingDefault = true;
+        const fileInput = document.getElementById('profile-photo') as HTMLInputElement;
+        if (fileInput) fileInput.value = '';
+    }
+
+    // Function to restore original photo
+    function restoreOriginalPhoto() {
+        if (originalProfilePhoto) {
+            newProfilePhoto = originalProfilePhoto;
+            hasCustomPhoto = true;
+            isNewPhotoUploaded = false;
+            isUsingDefault = false;
+            const fileInput = document.getElementById('profile-photo') as HTMLInputElement;
+            if (fileInput) fileInput.value = '';
+        }
+    }
+
+    // Save profile changes
+    async function saveProfile() {
+        isLoading = true;
+        try {
+            const response = await fetch('http://localhost:8080/user/update', {
+                method: 'POST',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    avatar: hasCustomPhoto ? newProfilePhoto : '',
+                    aboutMe: userDescription,
+                    isPrivate: privacySetting === 'private',
+                }),
+            });
+
+            if (response.ok) {
+                // Update original values after successful save
+                originalProfilePhoto = newProfilePhoto;
+                originalPrivacySetting = privacySetting;
+                originalDescription = userDescription;
+                showSettingsModal = false;
+            } else {
+                errorMessage = 'Failed to update profile';
+            }
+        } catch (error) {
+            console.error('Failed to update profile:', error);
+            errorMessage = 'Failed to update profile';
+        } finally {
+            isLoading = false;
+        }
+    }
 
     // Watch for changes in URL (userId) or auth state
     $: {
@@ -196,36 +314,14 @@
         }
     }
 
-    // Function to generate avatar with the first letter of the username
-    function generateAvatar(username: string): string {
-        const firstLetter = username ? username.charAt(0).toUpperCase() : 'U';
-        return `https://ui-avatars.com/api/?name=${firstLetter}&background=0ea5e9&color=fff&size=128`;
-    }
-
-    // Function to handle file upload for profile photo
-    function handleFileUpload(event: Event) {
-        const file = (event.target as HTMLInputElement).files?.[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                newProfilePhoto = e.target?.result as string;
-            };
-            reader.readAsDataURL(file);
-        }
-    }
-
-    // Function to clear the selected photo
-    function clearPhoto() {
-        newProfilePhoto = '';
-        const fileInput = document.getElementById('profile-photo') as HTMLInputElement;
-        if (fileInput) fileInput.value = '';
-    }
-
     // Function to show settings modal
     function showSettings() {
         newProfilePhoto = data.user?.avatar ?? "";
         privacySetting = data.user?.isPrivate ? "private" : "public";
         userDescription = data.user?.aboutMe || '';
+        hasCustomPhoto = !!data.user?.avatar;
+        isNewPhotoUploaded = false;
+        isUsingDefault = false;
         showSettingsModal = true;
     }
 
@@ -381,7 +477,7 @@
                             <Button
                                 class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg transform transition-all duration-200 hover:scale-105"
                                 color="none"
-                                on:click={() => showSettingsModal = true}
+                                on:click={showSettings}
                             >
                                 Edit Profile
                             </Button>
@@ -635,9 +731,19 @@
 </div>
 
 <!-- Settings Modal - Updated with theme colors -->
-<Modal bind:open={showSettingsModal} size="lg" class="dark:bg-gray-800">
+<Modal 
+    bind:open={showSettingsModal} 
+    size="lg" 
+    class="dark:bg-gray-800"
+    on:close={resetSettings}
+>
     <div class="p-6" transition:fade={{ duration: 200 }}>
         <h3 class="text-2xl font-bold mb-6 text-gray-900 dark:text-white">Edit Profile</h3>
+        {#if errorMessage}
+            <div class="mb-4 p-4 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg">
+                {errorMessage}
+            </div>
+        {/if}
         <div class="space-y-8" transition:slide={{ duration: 300, delay: 150 }}>
             <!-- Profile Photo Update -->
             <div class="space-y-4">
@@ -648,7 +754,7 @@
                         <div class="absolute -inset-0.5 bg-gradient-to-r from-pink-600 to-purple-600 rounded-full opacity-50 group-hover:opacity-100 blur transition duration-300"></div>
                         <div class="relative rounded-full w-24 h-24 overflow-hidden">
                             <img
-                                src={newProfilePhoto || data.user?.avatar || generateAvatar(data.user?.username)}
+                                src={hasCustomPhoto ? newProfilePhoto : generateAvatar(data.user?.username)}
                                 alt="Profile"
                                 class="w-full h-full object-cover"
                             />
@@ -667,21 +773,32 @@
                             />
                             <div class="w-full px-4 py-3 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-purple-500 dark:hover:border-purple-400 transition-colors duration-200 flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-700">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-400 dark:text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                                 </svg>
                                 <span class="text-sm text-gray-500 dark:text-gray-400">
-                                    {newProfilePhoto ? 'Change photo' : 'Upload photo'}
+                                    {hasCustomPhoto ? 'Change photo' : 'Upload photo'}
                                 </span>
                             </div>
                         </div>
-                        {#if newProfilePhoto}
-                            <Button color="red" size="xs" class="w-full" on:click={clearPhoto}>
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                                Remove photo
-                            </Button>
-                        {/if}
+                        <div class="flex space-x-2">
+                            {#if isNewPhotoUploaded}
+                                <Button color="red" size="xs" class="flex-1" on:click={clearPhoto}>
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                    Remove photo
+                                </Button>
+                            {/if}
+                            {#if !isUsingDefault}
+                                <Button color="alternative" size="xs" class="flex-1" on:click={useDefaultAvatar}>
+                                    Use default avatar
+                                </Button>
+                            {:else if originalProfilePhoto}
+                                <Button color="alternative" size="xs" class="flex-1" on:click={restoreOriginalPhoto}>
+                                    Restore original photo
+                                </Button>
+                            {/if}
+                        </div>
                     </div>
                 </div>
             </div>
