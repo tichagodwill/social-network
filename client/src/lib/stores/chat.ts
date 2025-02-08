@@ -194,16 +194,18 @@ function createChatStore() {
                     body: JSON.stringify({userId})
                 });
 
+                // If response is ok but empty, just redirect to the chat with userId
                 if (response.ok) {
-                    const data = await response.json();
-                    return {chatId: data.id};
+                    return {chatId: userId};
                 }
 
                 if (response.status === 403) {
                     return {error: 'To chat, either you need to follow this user or they need to follow you'};
                 }
 
-                const errorData = await response.json().catch(() => ({message: 'Unknown error'}));
+                // Only try to parse JSON if we have content
+                const text = await response.text();
+                const errorData = text ? JSON.parse(text) : {message: 'Unknown error'};
                 return {error: errorData.message || 'Failed to create chat'};
             } catch (error) {
                 console.error('Failed to create/get direct chat:', error);

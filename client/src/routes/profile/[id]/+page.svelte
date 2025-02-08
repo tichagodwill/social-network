@@ -171,6 +171,7 @@
 
     // Check if messaging is allowed (if either user follows the other)
     let canMessage = false;
+    let checkingMessagePermission = false;
 
     // Function to load follow status (whether the user is following, has a pending request, or not)
     async function loadFollowStatus() {
@@ -202,13 +203,13 @@
         }
     }
 
-    // Function to check if either user follows the other
+    // Function to check if user can message
     async function checkCanMessage() {
-        if (isOwnProfile) return;
+        if (isOwnProfile || checkingMessagePermission) return;
         
+        checkingMessagePermission = true;
         try {
-            // Try to get or create a chat - this will fail with 403 if no follow relationship exists
-            const response = await fetch(`http://localhost:8080/chat/check-follow`, {
+            const response = await fetch('http://localhost:8080/chat/check-follow', {
                 method: 'POST',
                 credentials: 'include',
                 headers: {
@@ -218,13 +219,22 @@
                     userId: userId
                 }),
             });
+            
             canMessage = response.ok;
-            console.log('Can message status:', canMessage);
         } catch (error) {
             console.error('Failed to check message permission:', error);
             canMessage = false;
+        } finally {
+            checkingMessagePermission = false;
         }
     }
+
+    // Watch for changes in userId and check message permission
+    $: if (userId && !isOwnProfile) {
+        checkCanMessage();
+    }
+
+
 
     onMount(async () => {
         if ($auth.user && data.user) {
@@ -270,6 +280,7 @@
             console.error(errorMessage, error);
         } finally {
             isLoading = false;
+            await checkCanMessage();
         }
     }
 
@@ -290,28 +301,20 @@
         } finally {
             isLoading = false;
             showUnfollowModal = false;
+            await checkCanMessage();
         }
     }
 
-    // Function to handle opening chat
+    // Handle message button click
     async function handleMessageClick() {
         if (!canMessage) {
             errorMessage = 'You need to follow each other to send messages';
             return;
         }
 
-        try {
-            // Get or create chat with the user
-            const result = await chat.getOrCreateDirectChat(userId);
-            if (result?.chatId) {
-                goto(`/chat/${result.chatId}`);
-            } else if (result?.error) {
-                errorMessage = result.error;
-            }
-        } catch (error) {
-            console.error('Failed to open chat:', error);
-            errorMessage = 'Failed to open chat';
-        }
+        // Since we've already checked permissions with checkCanMessage,
+        // we can directly navigate to the chat
+        goto(`/chat/${userId}`);
     }
 
     // Function to show settings modal
@@ -501,13 +504,21 @@
                                 </span>
                             </Button>
 
-                            {#if canMessage}
+                            {#if !isOwnProfile}
                                 <Button
-                                    class="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-6 rounded-lg transform transition-all duration-200 hover:scale-105"
-                                    color="none"
-                                    on:click={() => chat.startChat(userId)}
+                                    color="alternative"
+                                    disabled={!canMessage || checkingMessagePermission}
+                                    on:click={handleMessageClick}
+                                    class="flex items-center space-x-2 {canMessage ? 'hover:bg-gray-100 dark:hover:bg-gray-700' : 'opacity-50 cursor-not-allowed'}"
                                 >
-                                    Message
+                                    {#if checkingMessagePermission}
+                                        <div class="w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
+                                    {:else}
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                                        </svg>
+                                    {/if}
+                                    <span>Message</span>
                                 </Button>
                             {/if}
                         {/if}
@@ -773,7 +784,7 @@
                             />
                             <div class="w-full px-4 py-3 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-purple-500 dark:hover:border-purple-400 transition-colors duration-200 flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-700">
                                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-400 dark:text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                                 </svg>
                                 <span class="text-sm text-gray-500 dark:text-gray-400">
                                     {hasCustomPhoto ? 'Change photo' : 'Upload photo'}
