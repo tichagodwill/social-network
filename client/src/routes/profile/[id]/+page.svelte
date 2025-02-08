@@ -4,8 +4,7 @@
     import { followers } from '$lib/stores/followers';
     import { auth } from '$lib/stores/auth';
     import { goto } from '$app/navigation';
-    import { chat } from '$lib/stores/chat';
-    import { Button, Avatar, Badge, Tabs, TabItem, Modal, Input, Radio } from 'flowbite-svelte';
+    import { Button, Avatar, Modal, } from 'flowbite-svelte';
     import { fade, slide, fly } from 'svelte/transition';
     import { quintOut } from 'svelte/easing';
     import type { PageData } from './$types';

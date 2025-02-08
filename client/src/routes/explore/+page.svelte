@@ -62,7 +62,6 @@
     previousUsers = [...users];
     
     try {
-      debugger
       const response = await fetch(`http://localhost:8080/explore`, {
         method: 'POST',
         headers: {
@@ -202,8 +201,8 @@
                           </svg>
                         {/if}
                         <!-- Enhanced Tooltip -->
-                        <div class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-all duration-300 transform group-hover/tooltip:translate-y-0 translate-y-2 shadow-xl">
-                          {user.is_private ? 'Private Account' : 'Public Account'}
+                        <div class="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover/tooltip:opacity-100 transition-all duration-300 transform group-hover/tooltip:translate-y-0 translate-y-2 shadow-xl z-50 whitespace-nowrap">
+                          {user.is_private ? 'Private Profile - Only followers can see posts' : 'Public Profile - Everyone can see posts'}
                           <div class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-gray-900"></div>
                         </div>
                       </div>
