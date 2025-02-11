@@ -27,28 +27,28 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := sqlite.DB.Query(`
-			SELECT 
-				m.id,
-				m.sender_id,
-				m.recipient_id,
-				m.content,
-				m.created_at,
-				u.username as sender_name,
-				u.avatar as sender_avatar
-			FROM chat_messages m
-			JOIN users u ON m.sender_id = u.id 
-			WHERE (m.sender_id = ? AND m.recipient_id = ?)
-				OR (m.recipient_id = ? AND m.sender_id = ?)
-			ORDER BY m.created_at ASC`,
+        SELECT 
+            m.id,
+            m.sender_id,
+            m.recipient_id,
+            m.content,
+            m.status,
+            m.message_type,
+            m.file_data,
+            m.file_name,
+            m.file_type,
+            m.created_at,
+            u.username as sender_name,
+            u.avatar as sender_avatar
+        FROM chat_messages m
+        JOIN users u ON m.sender_id = u.id 
+        WHERE (m.sender_id = ? AND m.recipient_id = ?)
+            OR (m.recipient_id = ? AND m.sender_id = ?)
+        ORDER BY m.created_at ASC`,
 		userId, contactId, userId, contactId)
 
 	if err != nil {
-		if err == sql.ErrNoRows {
-			http.Error(w, "No messages found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		log.Printf("Error querying messages: %v", err)
+		handleDBError(w, err)
 		return
 	}
 	defer rows.Close()
@@ -61,6 +61,11 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 			&msg.SenderID,
 			&msg.RecipientID,
 			&msg.Content,
+			&msg.Status,
+			&msg.MessageType,
+			&msg.FileData,
+			&msg.FileName,
+			&msg.FileType,
 			&msg.CreatedAt,
 			&msg.SenderName,
 			&msg.SenderAvatar,
@@ -72,6 +77,7 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 		messages = append(messages, msg)
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	if err = json.NewEncoder(w).Encode(messages); err != nil {
 		http.Error(w, "Error encoding response", http.StatusInternalServerError)
 		return
@@ -80,15 +86,25 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 
 func SaveMessage(message m.ChatMessage) error {
 	_, err := sqlite.DB.Exec(`
-       INSERT INTO chat_messages (
-           sender_id,
-           recipient_id, 
-           content,
-           created_at
-       ) VALUES (?, ?, ?, ?)`,
+        INSERT INTO chat_messages (
+            sender_id,
+            recipient_id, 
+            content,
+            status,
+            message_type,
+            file_data,
+            file_name,
+            file_type,
+            created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		message.SenderID,
 		message.RecipientID,
 		message.Content,
+		message.Status,
+		message.MessageType,
+		message.FileData,
+		message.FileName,
+		message.FileType,
 		message.CreatedAt,
 	)
 	if err != nil {
@@ -97,7 +113,6 @@ func SaveMessage(message m.ChatMessage) error {
 	}
 	return nil
 }
-
 func handleDBError(w http.ResponseWriter, err error) {
 	if err == sql.ErrNoRows {
 		http.Error(w, "No messages found", http.StatusNotFound)

@@ -31,3 +31,12 @@ type BroadcastMessage struct {
 	Data        interface{}
 	TargetUsers map[uint64]bool // nil means broadcast to all
 }
+
+type EventRSVPMessage struct {
+	Type     string `json:"type"`
+	GroupID  int    `json:"groupId"`
+	EventID  int    `json:"eventId"`
+	Status   string `json:"status"`
+	Going    int    `json:"going"`
+	NotGoing int    `json:"notGoing"`
+}
