@@ -3,3 +3,8 @@
 server/social-network.db
 .vscode/
 server/__debug_*.exe
+
+# Ignore uploaded files
+server/uploads/
+server/uploads/*
+!server/uploads/.gitkeep
