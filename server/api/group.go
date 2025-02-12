@@ -4,8 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -144,33 +147,23 @@ func CreateGroup(w http.ResponseWriter, r *http.Request) {
 }
 
 func CreateGroupPost(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	// Get group ID from URL path parameter
-	groupIDStr := r.PathValue("id")
-	if groupIDStr == "" {
-		log.Printf("Group ID is missing from URL")
-		http.Error(w, "Group ID is required", http.StatusBadRequest)
+	// Parse multipart form with 10MB limit
+	err := r.ParseMultipartForm(10 << 20)
+	if err != nil {
+		log.Printf("Error parsing multipart form: %v", err)
+		http.Error(w, fmt.Sprintf("Error parsing form: %v", err), http.StatusBadRequest)
 		return
 	}
 
+	log.Printf("Form values received: %+v", r.Form)
+	log.Printf("Files received: %+v", r.MultipartForm.File)
+
+	// Get group ID and validate it
+	groupIDStr := r.PathValue("id")
 	groupID, err := strconv.Atoi(groupIDStr)
-	if err != nil || groupID <= 0 {
+	if err != nil {
 		log.Printf("Invalid group ID: %v", err)
 		http.Error(w, "Invalid group ID", http.StatusBadRequest)
-		return
-	}
-
-	// Verify group exists
-	var exists bool
-	err = sqlite.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM groups WHERE id = ?)", groupID).Scan(&exists)
-	if err != nil {
-		log.Printf("Error checking group existence: %v", err)
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		return
-	}
-	if !exists {
-		http.Error(w, "Group not found", http.StatusNotFound)
 		return
 	}
 
@@ -182,54 +175,105 @@ func CreateGroupPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var userID int
-	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	var authorID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&authorID)
 	if err != nil {
-		log.Printf("User not found: %v", err)
-		http.Error(w, "User not found", http.StatusNotFound)
+		log.Printf("Error getting author ID: %v", err)
+		http.Error(w, "User not found", http.StatusInternalServerError)
 		return
 	}
 
-	// Check if user is a member
+	// Check if user is a member of the group
 	var isMember bool
 	err = sqlite.DB.QueryRow(`
-		SELECT EXISTS(
-			SELECT 1 FROM group_members 
-			WHERE group_id = ? AND user_id = ?
-		)`, groupID, userID).Scan(&isMember)
+        SELECT EXISTS(
+            SELECT 1 FROM group_members 
+            WHERE group_id = ? AND user_id = ?
+        )`, groupID, authorID).Scan(&isMember)
 	if err != nil {
 		log.Printf("Error checking membership: %v", err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 	if !isMember {
+		log.Printf("User %d is not a member of group %d", authorID, groupID)
 		http.Error(w, "Not a group member", http.StatusForbidden)
 		return
 	}
 
-	// Parse request body
-	var post struct {
-		Title   string `json:"title"`
-		Content string `json:"content"`
-	}
+	title := r.FormValue("title")
+	content := r.FormValue("content")
 
-	decoder := json.NewDecoder(r.Body)
-	if err := decoder.Decode(&post); err != nil {
-		log.Printf("Invalid request body: %v", err)
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
+	log.Printf("Creating post - Title: %s, Content: %s", title, content)
 
-	// Validate post data
-	if strings.TrimSpace(post.Title) == "" || strings.TrimSpace(post.Content) == "" {
-		http.Error(w, "Title and content are required", http.StatusBadRequest)
-		return
+	var mediaPath string
+	// Handle file upload if present
+	file, header, err := r.FormFile("media")
+	if err != nil {
+		if err != http.ErrMissingFile {
+			log.Printf("Error getting file from form: %v", err)
+			http.Error(w, fmt.Sprintf("Error processing file: %v", err), http.StatusBadRequest)
+			return
+		}
+	} else {
+		defer file.Close()
+		log.Printf("Received file: %s, size: %d, type: %s",
+			header.Filename,
+			header.Size,
+			header.Header.Get("Content-Type"))
+
+		// Validate file type
+		fileType := header.Header.Get("Content-Type")
+		allowedTypes := map[string]bool{
+			"image/jpeg":      true,
+			"image/png":       true,
+			"image/gif":       true,
+			"application/pdf": true,
+		}
+
+		if !allowedTypes[fileType] {
+			log.Printf("Invalid file type: %s", fileType)
+			http.Error(w, "Invalid file type", http.StatusBadRequest)
+			return
+		}
+
+		// Create uploads directory if it doesn't exist
+		uploadDir := "./uploads/group_posts"
+		if err := os.MkdirAll(uploadDir, 0755); err != nil {
+			log.Printf("Error creating upload directory: %v", err)
+			http.Error(w, "Failed to create upload directory", http.StatusInternalServerError)
+			return
+		}
+
+		// Generate unique filename
+		ext := filepath.Ext(header.Filename)
+		filename := fmt.Sprintf("%d_%d_%s%s", groupID, time.Now().Unix(), util.GenerateRandomString(8), ext)
+		fullPath := filepath.Join(uploadDir, filename)
+		log.Printf("Saving file to: %s", fullPath)
+
+		dst, err := os.Create(fullPath)
+		if err != nil {
+			log.Printf("Error creating file: %v", err)
+			http.Error(w, "Failed to create file", http.StatusInternalServerError)
+			return
+		}
+		defer dst.Close()
+
+		written, err := io.Copy(dst, file)
+		if err != nil {
+			log.Printf("Error copying file: %v", err)
+			http.Error(w, "Failed to save file", http.StatusInternalServerError)
+			return
+		}
+		log.Printf("Successfully wrote %d bytes to %s", written, fullPath)
+
+		mediaPath = filename
 	}
 
 	// Start transaction
 	tx, err := sqlite.DB.Begin()
 	if err != nil {
-		log.Printf("Transaction error: %v", err)
+		log.Printf("Error starting transaction: %v", err)
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
@@ -237,9 +281,9 @@ func CreateGroupPost(w http.ResponseWriter, r *http.Request) {
 
 	// Create post
 	result, err := tx.Exec(`
-		INSERT INTO group_posts (group_id, author_id, title, content, created_at, updated_at)
-		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
-		groupID, userID, post.Title, post.Content)
+        INSERT INTO group_posts (group_id, author_id, title, content, media, created_at)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		groupID, authorID, title, content, mediaPath)
 	if err != nil {
 		log.Printf("Error creating post: %v", err)
 		http.Error(w, "Failed to create post", http.StatusInternalServerError)
@@ -247,37 +291,40 @@ func CreateGroupPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	postID, _ := result.LastInsertId()
+	log.Printf("Post created with ID: %d", postID)
 
 	// Commit transaction
 	if err = tx.Commit(); err != nil {
 		log.Printf("Error committing transaction: %v", err)
-		http.Error(w, "Failed to create post", http.StatusInternalServerError)
+		http.Error(w, "Failed to complete post creation", http.StatusInternalServerError)
 		return
 	}
 
-	// Fetch the created post with author information
-	var createdPost m.GroupPost
+	// Return the created post
+	var post struct {
+		ID        int64  `json:"id"`
+		GroupID   int    `json:"group_id"`
+		AuthorID  int    `json:"author_id"`
+		Title     string `json:"title"`
+		Content   string `json:"content"`
+		Media     string `json:"media,omitempty"`
+		CreatedAt string `json:"created_at"`
+	}
+
 	err = sqlite.DB.QueryRow(`
-		SELECT p.id, p.group_id, p.author_id, u.username, p.title, p.content, p.created_at, p.updated_at
-		FROM group_posts p
-		JOIN users u ON p.author_id = u.id
-		WHERE p.id = ?`, postID).Scan(
-		&createdPost.ID,
-		&createdPost.GroupID,
-		&createdPost.AuthorID,
-		&createdPost.Author,
-		&createdPost.Title,
-		&createdPost.Content,
-		&createdPost.CreatedAt,
-		&createdPost.UpdatedAt)
+        SELECT id, group_id, author_id, title, content, media, created_at
+        FROM group_posts
+        WHERE id = ?
+    `, postID).Scan(&post.ID, &post.GroupID, &post.AuthorID, &post.Title, &post.Content, &post.Media, &post.CreatedAt)
+
 	if err != nil {
 		log.Printf("Error fetching created post: %v", err)
 		http.Error(w, "Failed to fetch created post", http.StatusInternalServerError)
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(createdPost)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(post)
 }
 
 func GetGroupPosts(w http.ResponseWriter, r *http.Request) {
@@ -317,11 +364,11 @@ func GetGroupPosts(w http.ResponseWriter, r *http.Request) {
 
 	// Get posts with authors and comments
 	rows, err := sqlite.DB.Query(`
-		SELECT p.id, p.group_id, p.author_id, u.username, p.title, p.content, p.created_at, p.updated_at
+		SELECT p.id, p.group_id, p.author_id, u.username, p.title, p.content, p.media, p.created_at, p.updated_at
 		FROM group_posts p
 		JOIN users u ON p.author_id = u.id
 		WHERE p.group_id = ?
-		ORDER BY p.created_at DESC`, groupID)
+			ORDER BY p.created_at DESC`, groupID)
 	if err != nil {
 		http.Error(w, "Failed to fetch posts", http.StatusInternalServerError)
 		return
@@ -333,7 +380,7 @@ func GetGroupPosts(w http.ResponseWriter, r *http.Request) {
 		var post m.GroupPost
 		err := rows.Scan(
 			&post.ID, &post.GroupID, &post.AuthorID, &post.Author,
-			&post.Title, &post.Content, &post.CreatedAt, &post.UpdatedAt)
+			&post.Title, &post.Content, &post.Media, &post.CreatedAt, &post.UpdatedAt)
 		if err != nil {
 			continue
 		}
@@ -2390,4 +2437,25 @@ func GetMemberRole(w http.ResponseWriter, r *http.Request) {
 	sendJSONResponse(w, http.StatusOK, map[string]string{
 		"role": role,
 	})
+}
+
+func ServeGroupPostMedia(w http.ResponseWriter, r *http.Request) {
+	filename := r.PathValue("filename")
+	if filename == "" {
+		http.Error(w, "No filename provided", http.StatusBadRequest)
+		return
+	}
+
+	// Sanitize filename to prevent directory traversal
+	filename = filepath.Base(filename)
+
+	filePath := filepath.Join("./uploads/group_posts", filename)
+
+	// Check if file exists
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		http.Error(w, "File not found", http.StatusNotFound)
+		return
+	}
+
+	http.ServeFile(w, r, filePath)
 }
