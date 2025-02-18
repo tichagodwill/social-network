@@ -14,8 +14,8 @@ type Notification struct {
 	Type         string    `json:"type"`
 	Content      string    `json:"content"`
 	UserID       int       `json:"user_id"`
-	GroupID      int       `json:"group_id"`
-	InvitationID int       `json:"invitation_id"`
+	GroupID      *int      `json:"group_id,omitempty"`
+	InvitationID *int      `json:"invitation_id,omitempty"`
 	FromUserID   *int      `json:"from_user_id,omitempty"`
 	IsRead       bool      `json:"is_read"`
 	CreatedAt    time.Time `json:"created_at"`
