@@ -77,7 +77,7 @@
 
     isLoading = true;
     previousUsers = [...users];
-    
+
     try {
       const response = await fetch(`http://localhost:8080/explore`, {
         method: 'POST',
@@ -136,7 +136,7 @@
 </style>
 
 <div class="max-w-4xl mx-auto px-4 py-8" in:fade={{ duration: 300 }}>
-  <div class="sticky top-0 z-10 bg-white/80 backdrop-blur-lg rounded-lg shadow-lg mb-6 p-4 transform transition-all duration-300" 
+  <div class="sticky top-0 z-10 bg-white/80 backdrop-blur-lg rounded-lg shadow-lg mb-6 p-4 transform transition-all duration-300"
        in:fly={{ y: -20, duration: 400, delay: 150 }}>
     <div class="relative">
       <Input
@@ -147,15 +147,15 @@
         class="w-full !bg-gray-50/50 !border-gray-200 focus:!border-blue-400 !ring-blue-400/30 transition-all duration-300"
       >
         <div slot="left" class="flex items-center">
-          <svg class="w-5 h-5 text-gray-500 transition-colors duration-300 group-focus-within:text-blue-500" 
+          <svg class="w-5 h-5 text-gray-500 transition-colors duration-300 group-focus-within:text-blue-500"
                fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                   d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
         </div>
       </Input>
       {#if isLoading}
-        <div class="absolute right-3 top-1/2 -translate-y-1/2" 
+        <div class="absolute right-3 top-1/2 -translate-y-1/2"
              in:fade={{ duration: 200 }}
              out:fade={{ duration: 150 }}>
           <div class="animate-spin rounded-full h-5 w-5 border-2 border-blue-500 border-t-transparent"></div>
@@ -164,19 +164,19 @@
     </div>
   </div>
 
-  <div class="bg-white rounded-lg shadow overflow-hidden transition-all duration-300" 
+  <div class="bg-white rounded-lg shadow overflow-hidden transition-all duration-300"
        in:fade={{ duration: 300, delay: 200 }}>
     {#if users.length > 0}
       <div class="divide-y divide-gray-200">
         {#each users as user, i (user.id)}
-          <div 
+          <div
             class="bg-white"
             in:receive|local={{ key: user.id }}
             out:send|local={{ key: user.id }}
             animate:flip={{ duration: 300 }}
           >
             <div class="overflow-hidden">
-              <div 
+              <div
                 class="flex items-center p-4 transition-all duration-300 ease-out cursor-pointer bg-white
                 hover:bg-gradient-to-r hover:from-gray-50 hover:to-blue-50/30
                 hover:shadow-lg hover:shadow-blue-100/50
@@ -207,7 +207,7 @@
                     <div class="flex items-center gap-2 min-w-0">
                       <h3 class="text-lg font-semibold text-gray-900 transition-colors duration-300 group-hover:text-blue-600 truncate">{user.username}</h3>
                       <div class="relative inline-block">
-                        <div 
+                        <div
                           on:mouseenter={(e) => showTooltip(e, user.is_private ? 'Private Profile' : 'Public Profile')}
                           on:mouseleave={hideTooltip}
                         >
@@ -247,7 +247,7 @@
     {/if}
 
     {#if (users == null || users.length === 0) && !isLoading}
-      <div class="text-center py-12 px-4" 
+      <div class="text-center py-12 px-4"
            in:scale={{ duration: 400, delay: 100, easing: elasticOut }}
            out:fade={{ duration: 200 }}>
         <div class="bg-gray-50/50 rounded-lg p-8 transform transition-all duration-300 hover:scale-[1.01] hover:bg-gray-50">

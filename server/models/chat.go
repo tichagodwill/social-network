@@ -8,13 +8,8 @@ type ChatMessage struct {
 	SenderID    int       `json:"senderId"`
 	RecipientID int       `json:"recipientId"`
 	Content     string    `json:"content"`
-	Status      string    `json:"status"`
-	MessageType string    `json:"messageType"`
-	FileData    []byte    `json:"fileData,omitempty"`
-	FileName    string    `json:"fileName,omitempty"`
-	FileType    string    `json:"fileType,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
-	// Frontend fields
+	// Additional fields for frontend
 	SenderName   string `json:"senderName,omitempty"`
 	SenderAvatar string `json:"senderAvatar,omitempty"`
 }

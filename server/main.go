@@ -150,7 +150,6 @@ func main() {
 
 	mux.Handle("GET /contact/{userID}", authMiddleware(http.HandlerFunc(api.GetContact)))
 	mux.Handle("GET /messages/{userId}/{contactId}", authMiddleware(http.HandlerFunc(api.GetMessages)))
-	mux.Handle("POST /chat/check-follow", authMiddleware(http.HandlerFunc(api.CheckFollowStatus)))
 
 	mux.Handle("GET /user/{userID}", authMiddleware(http.HandlerFunc(api.UserProfile)))
 	mux.Handle("POST /updateProfile", authMiddleware(http.HandlerFunc(api.UpdateProfile)))
@@ -162,6 +161,7 @@ func main() {
 	mux.Handle("GET /notifications/{id}/read", authMiddleware(http.HandlerFunc(api.MarkNotificationAsRead)))
 
 	mux.Handle("GET /uploads/group_posts/{filename}", http.HandlerFunc(api.ServeGroupPostMedia))
+	mux.HandleFunc("POST /chat/direct", api.CreateOrGetDirectChat)
 
 	// Wrap the entire mux with CORS middleware
 	handler := middleware.CORS(mux)

@@ -90,9 +90,7 @@ export interface Message {
     senderId: number;
     recipientId: number;
     content: string;
-    status: 'sent' | 'delivered' | 'read';
-    messageType: 'text' | 'file' | 'image';
-    fileData?: ArrayBuffer;
+    fileUrl?: string;
     fileName?: string;
     fileType?: string;
     createdAt: string;
@@ -190,57 +188,4 @@ export interface Comment {
     avatar:string;
     created_at: string;
     author_name:string;
-}
-
-// New interfaces for WebSocket communication
-export interface ConnectionType {
-    type: 'chat' | 'typing' | 'read' | 'eventRSVP';
-}
-
-export interface WebSocketMessage {
-    type: ConnectionType['type'];
-    data: any;
-    senderId?: number;
-    recipientId?: number;
-}
-
-export interface TypingIndicator {
-    recipientId: number;
-    isTyping: boolean;
-}
-
-export interface ReadReceipt {
-    messageIds: number[];
-    senderId: number;
-}
-
-export interface BroadcastMessage {
-    data: any;
-    targetUsers?: Record<number, boolean>;
-}
-
-export interface SocketManager {
-    sockets: Map<number, WebSocket>;
-    mu: {
-        RLock(): void;
-        RUnlock(): void;
-    };
-}
-
-// Update FileUploadResponse to include binary data
-export interface FileUploadResponse {
-    file: File;
-    fileName: string;
-    fileType: string;
-}
-
-// Add ChatState interface
-export interface ChatState {
-    messages: Message[];
-    activeChat: number | null;
-    contacts: User[];
-    socket: WebSocket | null;
-    isConnecting: boolean;
-    typingUsers: Set<number>;
-    unreadMessages: Map<number, number>;
 }
