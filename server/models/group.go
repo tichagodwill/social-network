@@ -55,6 +55,7 @@ type GroupPost struct {
 	Author    string             `json:"author"`
 	Title     string             `json:"title"`
 	Content   string             `json:"content"`
+	Media     string             `json:"media,omitempty"`
 	CreatedAt time.Time          `json:"created_at"`
 	UpdatedAt time.Time          `json:"updated_at"`
 	Comments  []GroupPostComment `json:"comments,omitempty"`

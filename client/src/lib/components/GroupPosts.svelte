@@ -5,6 +5,7 @@
     import { getFormattedDate } from '$lib/dateFormater';
     import { fade, slide } from 'svelte/transition';
     import { groups } from '$lib/stores/groups';
+    import type { FileUploadResponse } from '$lib/types';
 
     export let groupId: number;
     let posts: any[] = [];
@@ -14,12 +15,17 @@
     let newPost = {
         title: '',
         content: '',
-        group_id: groupId
+        group_id: groupId,
+        media: null as File | null,
+        mediaType: ''
     };
     let newComments: { [key: number]: string } = {};
     let expandedComments: { [key: number]: boolean } = {};
     let editingPost: any = null;
     let showCommentSections: { [key: number]: boolean } = {};
+    let previewUrl: string | null = null;
+    let fileError: string | null = null;
+    let fileInput: HTMLInputElement;
 
     async function loadPosts() {
         try {
@@ -42,24 +48,97 @@
         }
     }
 
-    async function createPost() {
+    async function handleSubmit(event: Event) {
+        event.preventDefault();
+        
+        if (!newPost.title || !newPost.content) {
+            error = 'Please fill in all required fields';
+            return;
+        }
+
         try {
-            if (!newPost.title?.trim() || !newPost.content?.trim()) {
-                error = 'Title and content are required';
-                return;
+            loading = true;
+            const formData = new FormData();
+            formData.append('title', newPost.title);
+            formData.append('content', newPost.content);
+            
+            // Log the file being uploaded
+            console.log('File to upload:', newPost.media);
+            
+            if (newPost.media) {
+                formData.append('media', newPost.media, newPost.media.name);
             }
 
-            await groups.createPost(groupId, {
-                title: newPost.title.trim(),
-                content: newPost.content.trim()
+            // Log the FormData contents
+            for (let pair of formData.entries()) {
+                console.log(pair[0], pair[1]);
+            }
+
+            const response = await fetch(`http://localhost:8080/groups/${groupId}/posts`, {
+                method: 'POST',
+                credentials: 'include',
+                body: formData
             });
 
-            await loadPosts();
+            const responseText = await response.text();
+            console.log('Server response:', responseText);
+
+            if (!response.ok) {
+                throw new Error(responseText || 'Failed to create post');
+            }
+
+            const post = JSON.parse(responseText);
+            posts = [post, ...posts];
             showCreateModal = false;
-            newPost = { title: '', content: '', group_id: groupId };
-            error = '';
-        } catch (err) {
-            error = err instanceof Error ? err.message : 'Failed to create post';
+            newPost = {
+                title: '',
+                content: '',
+                group_id: groupId,
+                media: null,
+                mediaType: ''
+            };
+            previewUrl = null;
+            if (fileInput) fileInput.value = '';
+        } catch (error) {
+            console.error('Error creating post:', error);
+            this.error = error instanceof Error ? error.message : 'Failed to create post';
+        } finally {
+            loading = false;
+        }
+    }
+
+    function handleFileSelect(event: Event) {
+        const input = event.target as HTMLInputElement;
+        const file = input.files?.[0];
+        
+        if (!file) return;
+        
+        // Check file size (10MB limit)
+        if (file.size > 10 * 1024 * 1024) {
+            fileError = 'File size must be less than 10MB';
+            return;
+        }
+
+        // Check file type
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf'];
+        if (!allowedTypes.includes(file.type)) {
+            fileError = 'Invalid file type. Only JPG, PNG, GIF, and PDF files are allowed.';
+            return;
+        }
+
+        newPost.media = file;
+        newPost.mediaType = file.type;
+        fileError = null;
+
+        // Create preview for images
+        if (file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                previewUrl = e.target?.result as string;
+            };
+            reader.readAsDataURL(file);
+        } else {
+            previewUrl = null;
         }
     }
 
@@ -168,6 +247,18 @@
             opacity: .5;
         }
     }
+
+    :global(.file-input-wrapper) {
+        @apply relative;
+    }
+
+    :global(.file-input) {
+        @apply block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer 
+               bg-gray-50 dark:text-gray-400 focus:outline-none dark:bg-gray-700 
+               dark:border-gray-600 dark:placeholder-gray-400 file:mr-4 file:py-2 
+               file:px-4 file:border-0 file:text-sm file:font-semibold file:bg-primary-50 
+               file:text-primary-700 hover:file:bg-primary-100;
+    }
 </style>
 
 <div class="space-y-4">
@@ -236,6 +327,31 @@
                         <div class="post-content">
                             <p class="whitespace-pre-wrap text-gray-700 dark:text-gray-300">{post.content}</p>
                         </div>
+
+                        {#if post.media}
+                            <div class="mt-4">
+                                {#if post.media.toLowerCase().endsWith('.pdf')}
+                                    <a 
+                                        href={`http://localhost:8080/uploads/group_posts/${post.media}`} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        class="inline-flex items-center px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                                    >
+                                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                        </svg>
+                                        View PDF
+                                    </a>
+                                {:else}
+                                    <img 
+                                        src={`http://localhost:8080/uploads/group_posts/${post.media}`}
+                                        alt="Post attachment"
+                                        class="max-h-96 rounded-lg object-contain"
+                                        loading="lazy"
+                                    />
+                                {/if}
+                            </div>
+                        {/if}
 
                         <div class="flex items-center space-x-4 pt-2">
                             <Button 
@@ -309,61 +425,96 @@
     {/if}
 </div>
 
-<Modal bind:open={showCreateModal} size="lg" autoclose={false}>
-    <div class="space-y-6">
-        <h3 class="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-            Create New Post
-        </h3>
-        
+<Modal bind:open={showCreateModal} size="lg">
+    <div class="p-6">
+        <h3 class="text-xl font-semibold mb-4">Create New Post</h3>
         {#if error}
-            <div transition:fade>
-                <div class="p-4 text-red-800 bg-red-100 rounded-lg">
-                    {error}
-                </div>
-            </div>
+            <div class="text-red-500 mb-4">{error}</div>
         {/if}
-
-        <form on:submit|preventDefault={createPost} class="space-y-4">
+        <form on:submit={handleSubmit} class="space-y-4">
             <div>
-                <Label for="title" class="text-lg mb-2">Title</Label>
+                <Label for="title">Title</Label>
                 <Input
                     id="title"
                     bind:value={newPost.title}
                     required
                     placeholder="Enter post title"
-                    class="transition-all duration-300 focus:ring-2 focus:ring-blue-500"
                 />
             </div>
+            
             <div>
-                <Label for="content" class="text-lg mb-2">Content</Label>
+                <Label for="content">Content</Label>
                 <Textarea
                     id="content"
                     bind:value={newPost.content}
                     required
                     placeholder="Write your post..."
                     rows={6}
-                    class="transition-all duration-300 focus:ring-2 focus:ring-blue-500"
                 />
             </div>
+            
+            <div class="space-y-2">
+                <Label for="media">Upload File (optional)</Label>
+                <div class="file-input-wrapper">
+                    <input
+                        type="file"
+                        id="media"
+                        bind:this={fileInput}
+                        accept=".jpg,.jpeg,.png,.gif,.pdf"
+                        on:change={handleFileSelect}
+                        class="file-input"
+                    />
+                </div>
+                {#if fileError}
+                    <p class="text-red-500 text-sm">{fileError}</p>
+                {/if}
+                <p class="text-sm text-gray-500">
+                    Supported formats: JPG, PNG, GIF, PDF (max 10MB)
+                </p>
+            </div>
+            
+            {#if previewUrl}
+                <div class="relative">
+                    <img
+                        src={previewUrl}
+                        alt="Preview"
+                        class="max-h-48 rounded-lg"
+                    />
+                    <button
+                        type="button"
+                        class="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
+                        on:click={() => {
+                            newPost.media = null;
+                            previewUrl = null;
+                            if (fileInput) fileInput.value = '';
+                        }}
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            {/if}
+            
             <div class="flex justify-end space-x-2">
-                <Button 
-                    color="alternative" 
+                <Button
+                    color="alternative"
                     on:click={() => {
                         showCreateModal = false;
-                        newPost = { title: '', content: '', group_id: groupId };
-                        error = '';
+                        newPost = {
+                            title: '',
+                            content: '',
+                            group_id: groupId,
+                            media: null,
+                            mediaType: ''
+                        };
+                        previewUrl = null;
+                        if (fileInput) fileInput.value = '';
                     }}
                 >
                     Cancel
                 </Button>
-                <Button 
-                    type="submit"
-                    gradient
-                    color="blue"
-                    class="transform hover:scale-105 transition-transform duration-200"
-                >
-                    Create Post
-                </Button>
+                <Button type="submit">Create Post</Button>
             </div>
         </form>
     </div>

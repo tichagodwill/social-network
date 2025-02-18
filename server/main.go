@@ -161,6 +161,8 @@ func main() {
 	mux.Handle("GET /notifications", authMiddleware(http.HandlerFunc(api.GetNotifications)))
 	mux.Handle("GET /notifications/{id}/read", authMiddleware(http.HandlerFunc(api.MarkNotificationAsRead)))
 
+	mux.Handle("GET /uploads/group_posts/{filename}", http.HandlerFunc(api.ServeGroupPostMedia))
+
 	// Wrap the entire mux with CORS middleware
 	handler := middleware.CORS(mux)
 
