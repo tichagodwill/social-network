@@ -294,10 +294,10 @@ func GetPosts(w http.ResponseWriter, r *http.Request) {
 				AND f.follower_id = ? 
 				AND f.status = 'accepted'  -- Add status check
 			LEFT JOIN post_PrivateViews pv ON p.id = pv.post_id AND pv.user_id = ?
-			WHERE p.privacy = 0  -- Public posts
+			WHERE p.privacy = 0  -- Public posts (everyone can view)
 			OR p.author = ?      -- User's own posts
-			OR (p.privacy = 1 AND f.follower_id IS NOT NULL)  -- Posts visible to followers
-			OR (p.privacy = 2 AND pv.user_id IS NOT NULL)     -- Private posts user can see
+			OR (p.privacy = 1 AND f.follower_id IS NOT NULL)  -- Posts visible to followers only
+			OR (p.privacy = 2 AND pv.user_id IS NOT NULL)     -- Private posts visible to selected users only
 			ORDER BY p.created_at DESC
 			`,
 		userID, userID, userID)
@@ -384,12 +384,12 @@ func canUserViewPost(postID, userID int) (bool, error) {
 	}
 
 	// If user is the author or post is public, they can view it
-	if post.Author == userID || post.Privacy == 1 {
+	if post.Author == userID || post.Privacy == 0 {
 		return true, nil
 	}
 
 	// For almost-private posts (followers only)
-	if post.Privacy == 2 {
+	if post.Privacy == 1 {
 		err = sqlite.DB.QueryRow(`
             SELECT EXISTS(
                 SELECT 1 FROM followers 
@@ -399,7 +399,7 @@ func canUserViewPost(postID, userID int) (bool, error) {
 	}
 
 	// For private posts
-	if post.Privacy == 3 {
+	if post.Privacy == 2 {
 		err = sqlite.DB.QueryRow(`
             SELECT EXISTS(
                 SELECT 1 FROM post_PrivateViews 
@@ -470,9 +470,9 @@ func ViewPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if user has permission to view the post
-	if post.Privacy != 1 && post.Author != userID {
+	if post.Privacy != 0 && post.Author != userID {
 		// For private posts, check if user is a follower
-		if post.Privacy == 3 {
+		if post.Privacy == 2 {
 			var isFollower bool
 			err = sqlite.DB.QueryRow(`
 				SELECT EXISTS(
@@ -576,9 +576,9 @@ func GetPostDetails(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if user has permission to view the post
-	if post.Privacy != 1 && post.Author != userID {
+	if post.Privacy != 0 && post.Author != userID {
 		// For private posts, check if user is a follower
-		if post.Privacy == 3 {
+		if post.Privacy == 2 {
 			var isFollower bool
 			err = sqlite.DB.QueryRow(`
 				SELECT EXISTS(
@@ -747,8 +747,8 @@ func AddPostComment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if postPrivacy != 1 {
-		if postPrivacy == 3 {
+	if postPrivacy != 0 {
+		if postPrivacy == 2 {
 			var isFollower bool
 			err = sqlite.DB.QueryRow(`
 				SELECT EXISTS(
