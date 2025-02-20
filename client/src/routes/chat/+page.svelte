@@ -1,234 +1,218 @@
+<!-- src/routes/chat/+page.svelte -->
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
-    import { chat } from '$lib/stores/chat';
+    import { page } from '$app/stores';
+    import { goto } from '$app/navigation';
+    import { Button, Card, Spinner } from 'flowbite-svelte';
     import { auth } from '$lib/stores/auth';
-    import { Button, Avatar } from 'flowbite-svelte';
-    import { getLastDate } from '$lib/dateFormater';
-    import EmojiPicker from '$lib/components/EmojiPicker.svelte';
-    import type { EmojiPickerEvent } from '$lib/types';
-    import ChatInput from '$lib/components/ChatInput.svelte';
-    import FileUpload from '$lib/components/FileUpload.svelte';
-    import MessageContent from '$lib/components/MessageContent.svelte';
-    import type { FileUploadResponse } from '$lib/types';
-    import DragDropZone from '$lib/components/DragDropZone.svelte';
-    import defualtProfileImg from '$lib/assets/default-profile.jpg';
+    import { get } from 'svelte/store';
 
-    export let loadContact: number | null = null;
-    let newMessage = '';
-    let chatInput: ChatInput;
-    let dragDropActive = false;
-    let contact = null;
-    let messagesContainer: HTMLElement;
-    const userId = $auth.user?.id;
+    // SVG icons
+    const UsersGroupIcon = `
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
+        </svg>
+    `;
+    const UsersIcon = `
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
+        </svg>
+    `;
 
-    // Auto-scroll to bottom when new messages arrive
-    $: if ($chat.messages && messagesContainer) {
-        setTimeout(() => {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }, 0);
-    }
+    import ChatWindow from '$lib/components/Chat/ChatWindow.svelte';
+    import ChatList from '$lib/components/Chat/ChatList.svelte';
+    import EmptyState from '$lib/components/UI/EmptyState.svelte';
+    import { initializeWebSocket, requestNotificationPermission } from '$lib/stores/websocket';
 
-    // Watch for changes in loadContact prop and contacts
-    $: if (loadContact && userId && $chat.contacts.length > 0) {
-        const selectedContact = $chat.contacts.find(c => c.id === loadContact);
-        if (selectedContact && (!contact || contact.id !== selectedContact.id)) {
-            selectContact(selectedContact);
-        }
-    }
+    // Component state
+    let selectedChat: {
+        id: number;
+        isGroup: boolean;
+        recipientId?: number;
+        name: string;
+        avatar?: string;
+    } | null = null;
 
-    onMount(async () => {
-        if (!userId) return;
+    let isMobileView = false;
+    let showChatList = true;
+    let loading = true;
+
+    // Handle chat selection
+    async function handleSelectChat(chatId: number, isGroup: boolean) {
+        loading = true;
 
         try {
-            console.log('Initializing chat...');
-            await chat.initialize();
+            if (isGroup) {
+                // Fetch group details
+                const response = await fetch(`http://localhost:8080/groups/${chatId}`, {
+                    credentials: 'include'
+                });
+                if (response.ok) {
+                    const groupData = await response.json();
+                    selectedChat = {
+                        id: chatId,
+                        isGroup: true,
+                        name: groupData.name,
+                        avatar: groupData.avatar
+                    };
+                }
+            } else {
+                // For direct chats, we need to extract the other user's ID
+                const currentUserId = getCurrentUserId();
+                const id1 = Math.floor(chatId / 1000000);
+                const id2 = chatId % 1000000;
+                const otherUserId = id1 === currentUserId ? id2 : id1;
 
-            console.log('Loading contacts...');
-            const contacts = await chat.loadContacts(userId);
-            console.log('Loaded contacts:', contacts);
-
-            if (loadContact && contacts.length > 0) {
-                console.log('Looking for contact:', loadContact);
-                const selectedContact = contacts.find(c => c.id === loadContact);
-                if (selectedContact) {
-                    console.log('Found contact, selecting:', selectedContact);
-                    await selectContact(selectedContact);
-                } else {
-                    console.log('Contact not found in list');
+                // Fetch user details
+                const response = await fetch(`http://localhost:8080/user/${otherUserId}`, {
+                    credentials: 'include'
+                });
+                if (response.ok) {
+                    const userData = await response.json();
+                    selectedChat = {
+                        id: chatId,
+                        isGroup: false,
+                        recipientId: otherUserId,
+                        name: `${userData.firstName} ${userData.lastName}`,
+                        avatar: userData.avatar
+                    };
                 }
             }
+
+            // Update URL
+            const newParams = new URLSearchParams();
+            newParams.set('id', chatId.toString());
+            newParams.set('type', isGroup ? 'group' : 'direct');
+            goto(`/chat?${newParams.toString()}`, { replaceState: true });
+
+            // On mobile, show the chat and hide the list
+            if (isMobileView) {
+                showChatList = false;
+            }
         } catch (error) {
-            console.error('Error initializing chat:', error);
+            console.error('Error selecting chat:', error);
+        } finally {
+            loading = false;
         }
-    });
-
-    onDestroy(() => chat.cleanup());
-
-    function handleSend() {
-        if (!newMessage.trim() || !contact || !userId) return;
-        chat.sendMessage(newMessage, userId, contact.id);
-        newMessage = '';
-        chatInput.focus();
     }
 
-    const handleFileUpload = (event: CustomEvent<FileUploadResponse>) => {
-        if (!contact || !userId) return;
-        const { url, fileName, fileType } = event.detail;
-        chat.sendMessage('', userId, contact.id, { url, fileName, fileType });
-    };
+    // Get current user ID from auth store
+    function getCurrentUserId(): number {
+        const authState = get(auth);
+        return authState.user?.id || 0;
+    }
 
-    const handleEmojiSelect = (event: EmojiPickerEvent) => {
-        const emoji = event.detail.emoji.native;
-        const pos = chatInput.getCursorPosition();
-        newMessage = newMessage.slice(0, pos) + emoji + newMessage.slice(pos);
-        chatInput.focus();
-    };
+    // Toggle between chat list and chat on mobile
+    function toggleView() {
+        showChatList = !showChatList;
+    }
 
-    const selectContact = async (selectedContact) => {
-        if (!userId) return;
-
-        try {
-            // Try to create/get direct chat first
-            const result = await chat.getOrCreateDirectChat(selectedContact.id);
-            if (result.error) {
-                console.error('Failed to create chat:', result.error);
-                return;
-            }
-
-            contact = selectedContact;
-            await chat.loadMessages(userId, selectedContact.id);
-
-            // Update the URL without reloading the page
-            const url = new URL(window.location.href);
-            url.pathname = `/chat/${selectedContact.id}`;
-            window.history.pushState({}, '', url.toString());
-        } catch (error) {
-            console.error('Failed to load messages:', error);
+    // Handle window resize to check for mobile view
+    function handleResize() {
+        isMobileView = window.innerWidth < 768;
+        if (!isMobileView) {
+            showChatList = true;
         }
-    };
+    }
+
+    // Check URL for chat parameters on page load
+    async function checkUrlParams() {
+        const params = $page.url.searchParams;
+        const chatId = params.get('id');
+        const chatType = params.get('type');
+
+        if (chatId && chatType) {
+            await handleSelectChat(
+                parseInt(chatId, 10),
+                chatType === 'group'
+            );
+        }
+
+        loading = false;
+    }
+
+    onMount(() => {
+        // Initialize websocket connection
+        initializeWebSocket();
+
+        // Request notification permission
+        requestNotificationPermission();
+
+        // Check for mobile view
+        handleResize();
+        window.addEventListener('resize', handleResize);
+
+        // Check URL parameters
+        checkUrlParams();
+    });
+
+    onDestroy(() => {
+        window.removeEventListener('resize', handleResize);
+    });
 </script>
 
-<DragDropZone bind:active={dragDropActive} on:upload={handleFileUpload}>
-    <div class="container mx-auto px-4 py-8">
-        <div class="grid grid-cols-12 gap-6 h-[calc(100vh-10rem)]">
-            <!-- Contact List -->
-            <div class="col-span-3 bg-white dark:bg-gray-800 rounded-xl shadow-lg overflow-hidden">
-                <div class="sticky top-0 bg-white dark:bg-gray-800 z-10 p-4 border-b dark:border-gray-700">
-                    <h2 class="text-xl font-semibold">Messages</h2>
-                    <p class="text-sm text-gray-500 mt-1">{$chat.contacts.length} contacts</p>
+<svelte:head>
+    <title>Chat | Social Network</title>
+</svelte:head>
+
+<!-- Adjusted height to work with navbar and layout -->
+<div class="container mx-auto p-4 flex-1 flex items-stretch" style="height: calc(100vh - 70px);">
+    <Card class="w-full p-0 overflow-hidden shadow-md">
+        <div class="flex h-full">
+            <!-- Chat list (hidden on mobile when viewing a chat) -->
+            {#if !isMobileView || (isMobileView && showChatList)}
+                <div class="w-full md:w-80 lg:w-96 h-full border-r flex-shrink-0">
+                    <ChatList onSelectChat={handleSelectChat} />
                 </div>
+            {/if}
 
-                <div class="p-4 overflow-y-auto h-[calc(100vh-16rem)]">
-                    {#each $chat.contacts as c}
-                        <button
-                          class="w-full text-left p-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-xl mb-3 flex items-center space-x-3 transition-all
-                            {contact?.id === c.id ? 'bg-primary-50 dark:bg-primary-900/20 border-l-4 border-primary-500' : ''}"
-                          on:click={() => selectContact(c)}
-                        >
-                            <div class="relative">
-                                <Avatar src={c.avatar || defualtProfileImg} size="md" class="ring-2 ring-gray-100" />
-                                <div class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
-                            </div>
-                            <div class="flex-1 min-w-0">
-                                <p class="font-medium truncate">{c.username}</p>
-                                <p class="text-sm text-gray-500 truncate">
-                                    {c.firstName} {c.lastName}
-                                </p>
-                            </div>
-                        </button>
-                    {/each}
-                </div>
-            </div>
-
-            <!-- Chat Area -->
-            <div class="col-span-9 bg-white dark:bg-gray-800 rounded-xl shadow-lg flex flex-col overflow-hidden">
-                {#if contact}
-                    <!-- Chat Header -->
-                    <div class="sticky top-0 z-20 px-6 py-4 bg-white dark:bg-gray-800 border-b dark:border-gray-700">
-                        <div class="flex items-center space-x-4">
-                            <Avatar src={contact.avatar || defualtProfileImg} size="md" />
-                            <div>
-                                <h3 class="text-lg font-semibold">{contact.username}</h3>
-                                <p class="text-sm text-gray-500">
-                                    {contact.firstName} {contact.lastName}
-                                </p>
-                            </div>
-                        </div>
+            <!-- Chat window or empty state -->
+            <div class="hidden md:flex md:flex-1 flex-col {isMobileView && !showChatList ? '!flex' : ''}">
+                {#if loading}
+                    <div class="h-full flex items-center justify-center">
+                        <Spinner size="8" />
                     </div>
+                {:else if selectedChat}
+                    <div class="relative h-full flex flex-col">
+                        {#if isMobileView}
+                            <Button
+                                    size="xs"
+                                    class="absolute top-2 left-2 z-10"
+                                    on:click={toggleView}
+                            >
+                                Back
+                            </Button>
+                        {/if}
 
-                    <!-- Messages -->
-                    <div
-                      class="flex-1 overflow-y-auto px-6 py-4"
-                      id="messages"
-                      bind:this={messagesContainer}
-                    >
-                        {#each $chat.messages as message, i}
-                            {@const isFirstInGroup = i === 0 || $chat.messages[i - 1].senderId !== message.senderId}
-                            {@const isLastInGroup = i === $chat.messages.length - 1 || $chat.messages[i + 1].senderId !== message.senderId}
-
-                            <div class="mb-2 last:mb-0 flex" class:justify-end={message.senderId === userId}>
-                                <div class="flex {message.senderId === userId ? 'flex-row-reverse' : 'flex-row'} items-end max-w-[75%]">
-                                    {#if message.senderId !== userId}
-                                        {#if isFirstInGroup}
-                                            <Avatar src={message.senderAvatar || defualtProfileImg} size="sm" class="mb-1 mr-2" />
-                                        {:else}
-                                            <div class="w-8 mr-2"></div> <!-- Placeholder for alignment -->
-                                        {/if}
-                                    {/if}
-
-                                    <div class="
-                                        {message.senderId === userId ? 'bg-primary-500 text-white' : 'bg-gray-100 dark:bg-gray-700'} 
-                                        p-3 shadow-sm
-                                        {message.senderId === userId ? 'rounded-l-2xl' : 'rounded-r-2xl'}
-                                        {isFirstInGroup ? (message.senderId === userId ? 'rounded-tr-2xl' : 'rounded-tl-2xl') : ''}
-                                        {isLastInGroup ? (message.senderId === userId ? 'rounded-br-2xl' : 'rounded-bl-2xl') : ''}
-                                        relative w-full
-                                    ">
-                                        <MessageContent {message} />
-                                        <p class="text-[10px] {message.senderId === userId ? 'text-primary-100' : 'text-gray-400'} mt-1">
-                                            {getLastDate(new Date(message.createdAt))}
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        {/each}
-                    </div>
-
-                    <!-- Input Area -->
-                    <div class="p-4 bg-gray-50 dark:bg-gray-900 border-t dark:border-gray-700">
-                        <div class="flex items-end space-x-2">
-                            <div class="flex-1 bg-white dark:bg-gray-800 rounded-xl shadow-sm">
-                                <ChatInput
-                                  bind:this={chatInput}
-                                  bind:value={newMessage}
-                                  placeholder="Type your message..."
-                                  class="w-full border-0 focus:ring-0 rounded-xl bg-transparent"
-                                  on:keypress={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                                />
-                            </div>
-                            <div class="flex space-x-2">
-                                <FileUpload on:upload={handleFileUpload} />
-                                <EmojiPicker on:emoji-select={handleEmojiSelect} />
-                                <Button gradient color="primary" size="lg" on:click={handleSend}>
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                        <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
-                                    </svg>
-                                </Button>
-                            </div>
-                        </div>
+                        <ChatWindow
+                                chatId={selectedChat.id}
+                                isGroup={selectedChat.isGroup}
+                                recipientId={selectedChat.recipientId}
+                                recipientName={selectedChat.name}
+                                recipientAvatar={selectedChat.avatar}
+                        />
                     </div>
                 {:else}
-                    <div class="flex-1 flex flex-col items-center justify-center p-6 text-center">
-                        <div class="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
-                            <svg class="w-8 h-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                            </svg>
-                        </div>
-                        <h3 class="text-xl font-semibold mb-2">Start a Conversation</h3>
-                        <p class="text-gray-500">Select a contact to begin messaging</p>
+                    <div class="h-full flex items-center justify-center">
+                        <EmptyState
+                                title="Select a conversation"
+                                description="Choose a chat from the list or start a new conversation"
+                                icon="chat"
+                        >
+                            <div class="flex justify-center gap-4 mt-4">
+                                <Button color="light" on:click={() => goto('/users')}>
+                                    {@html UsersIcon}
+                                    <span class="ml-2">Find Users</span>
+                                </Button>
+                                <Button color="light" on:click={() => goto('/groups')}>
+                                    {@html UsersGroupIcon}
+                                    <span class="ml-2">Browse Groups</span>
+                                </Button>
+                            </div>
+                        </EmptyState>
                     </div>
                 {/if}
             </div>
         </div>
-    </div>
-</DragDropZone>
+    </Card>
+</div>

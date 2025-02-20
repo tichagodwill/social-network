@@ -34,7 +34,7 @@
 		"emoji-mart": "^5.5.2",
 		"flowbite": "^2.2.1",
 		"flowbite-svelte": "^0.44.24",
-		"flowbite-svelte-icons": "^0.4.5",
+		"flowbite-svelte-icons": "^1.4.1",
 		"lucide-svelte": "^0.474.0"
 	}
 }

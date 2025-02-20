@@ -354,9 +354,9 @@
 {/if}
 
 <style>
-    .notification-enter {
+/*    .notification-enter {
         animation: slideIn 0.3s ease-out;
-    }
+    }*/
 
     @keyframes slideIn {
         from {

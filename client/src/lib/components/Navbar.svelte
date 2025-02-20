@@ -4,7 +4,6 @@
     import NotificationBell from './NotificationBell.svelte';
     import {onMount} from 'svelte';
     import {notifications} from '$lib/stores/notifications';
-    import {chat} from '$lib/stores/chat';
     import {goto} from '$app/navigation';
     import { page } from '$app/stores';
 
@@ -12,7 +11,6 @@
         if ($auth.isAuthenticated) {
             const socket = new WebSocket('ws://localhost:8080/ws');
             notifications.initialize(socket);
-            chat.initialize();
             notifications.loadNotifications();
         }
     });

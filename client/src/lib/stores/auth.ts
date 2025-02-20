@@ -1,6 +1,7 @@
-import { writable } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
 import { goto } from '$app/navigation';
 import { browser } from '$app/environment';
+import { initializeWebSocket, closeConnection } from '$lib/stores/websocket';
 
 interface User {
     id: number;
@@ -48,7 +49,7 @@ function createAuthStore() {
                 }
 
                 const data = await response.json();
-                set({ 
+                set({
                     user: {
                         id: data.id,
                         username: data.username,
@@ -64,6 +65,12 @@ function createAuthStore() {
                     loading: false,
                     error: null
                 });
+
+                // Initialize WebSocket connection after successful login
+                if (browser) {
+                    initializeWebSocket();
+                }
+
                 goto('/');
             } catch (error) {
                 console.error('Login failed:', error);
@@ -72,6 +79,11 @@ function createAuthStore() {
         },
         logout: async () => {
             try {
+                // Close WebSocket connection before logging out
+                if (browser) {
+                    closeConnection();
+                }
+
                 const response = await fetch('http://localhost:8080/logout', {
                     method: 'POST',
                     credentials: 'include'
@@ -110,10 +122,10 @@ function createAuthStore() {
                         'Content-Type': 'application/json'
                     }
                 });
-                
+
                 if (response.ok) {
                     const data = await response.json();
-                    set({ 
+                    set({
                         user: {
                             id: data.id,
                             username: data.username,
@@ -129,6 +141,10 @@ function createAuthStore() {
                         loading: false,
                         error: null
                     });
+
+                    // Initialize WebSocket connection after authentication check
+                    initializeWebSocket();
+
                 } else {
                     set({
                         user: null,
@@ -136,7 +152,7 @@ function createAuthStore() {
                         loading: false,
                         error: null
                     });
-                    
+
                     const currentPath = window.location.pathname;
                     const publicRoutes = ['/login', '/register', '/'];
                     if (!publicRoutes.includes(currentPath)) {
@@ -205,8 +221,8 @@ function createAuthStore() {
                 }
 
                 const data = JSON.parse(responseText);
-                
-                set({ 
+
+                set({
                     user: {
                         id: data.id,
                         username: data.username,
@@ -223,13 +239,24 @@ function createAuthStore() {
                     error: null
                 });
 
+                // Initialize WebSocket connection after successful registration
                 if (browser) {
+                    initializeWebSocket();
                     goto('/');
                 }
             } catch (error) {
                 console.error('Registration failed:', error);
                 throw error;
             }
+        },
+        // Add utility functions for WebSocket service
+        getCurrentUserId: () => {
+            const state = get({ subscribe });
+            return state.user?.id || null;
+        },
+        isLoggedIn: () => {
+            const state = get({ subscribe });
+            return state.isAuthenticated;
         }
     };
 
@@ -240,4 +267,15 @@ function createAuthStore() {
     return store;
 }
 
-export const auth = createAuthStore(); 
+export const auth = createAuthStore();
+
+// Derived stores for WebSocket service
+export const currentUserId = derived(
+    auth,
+    $auth => $auth.user?.id
+);
+
+export const isAuthenticated = derived(
+    auth,
+    $auth => $auth.isAuthenticated
+);
