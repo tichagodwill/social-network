@@ -1,10 +1,12 @@
 <!-- src/lib/components/Chat/ChatWindow.svelte -->
 <script lang="ts">
-    import {onMount, onDestroy} from 'svelte';
-    import {scale} from 'svelte/transition';
-    import {debounce} from 'lodash-es';
-    import {Spinner, Button, Avatar, Card, Badge} from 'flowbite-svelte';
-    import {browser} from "$app/environment";
+    import { onMount, onDestroy } from 'svelte';
+    import { scale } from 'svelte/transition';
+    import { debounce } from 'lodash-es';
+    import { Spinner, Button, Avatar, Card, Badge } from 'flowbite-svelte';
+    import { browser } from "$app/environment";
+    import { auth } from '$lib/stores/auth';
+    import { get } from 'svelte/store';
     import defaultProfileImg from '$lib/assets/default-profile.jpg';
 
     let Picker: any;
@@ -39,10 +41,23 @@
     let isTyping: boolean = false;
     let lastTypingSignalSent: number = 0;
 
-    // Get the current user ID from the store or context
-    // This should be implemented according to your auth system
-    let currentUserId: number = 1; // Placeholder
-    let currentUserName: string = 'Current User'; // Placeholder
+    // Get the current user details from auth store
+    function getCurrentUserId(): number {
+        const authState = get(auth);
+        return authState.user?.id || 0;
+    }
+
+    function getCurrentUserName(): string {
+        const authState = get(auth);
+        if (authState.user) {
+            return `${authState.user.firstName} ${authState.user.lastName}`;
+        }
+        return 'Unknown User';
+    }
+
+    // Set current user info
+    let currentUserId = getCurrentUserId();
+    let currentUserName = getCurrentUserName();
 
     const FaceSmileOutline = `
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
@@ -168,31 +183,39 @@
         try {
             if (!currentUserId || !recipientId) {
                 console.error('Missing user IDs for loading messages');
+                loading = false;
                 return;
             }
 
             const response = await fetch(
                 `http://localhost:8080/messages/${currentUserId}/${recipientId}`,
-                {credentials: 'include'}
+                { credentials: 'include' }
             );
 
             if (response.ok) {
-                const historicalMessages = await response.json();
-                // Check if we got an array of messages
-                if (Array.isArray(historicalMessages)) {
-                    // Add messages to the store
-                    historicalMessages.forEach((msg: ChatMessage | GroupChatMessage) => {
-                        msg.type = MessageType.CHAT;
-                    });
+                try {
+                    const historicalMessages = await response.json();
 
-                    // Update the messages store with the loaded messages
-                    messages = historicalMessages;
-                } else {
-                    console.log('No messages found or invalid response format');
+                    // Check if we got an array of messages
+                    if (Array.isArray(historicalMessages) && historicalMessages.length > 0) {
+                        // Process messages
+                        historicalMessages.forEach((msg: any) => {
+                            msg.type = MessageType.CHAT;
+                        });
+
+                        // Add to messages list
+                        messages = historicalMessages;
+                        console.log(`Loaded ${historicalMessages.length} messages`);
+                    } else {
+                        console.log('No messages found or empty array');
+                        messages = [];
+                    }
+                } catch (parseError) {
+                    console.error('Error parsing messages:', parseError);
                     messages = [];
                 }
             } else {
-                console.error('Failed to load messages:', response.status);
+                console.log(`Server returned ${response.status}: ${response.statusText}`);
                 messages = [];
             }
         } catch (error) {
@@ -300,6 +323,10 @@
 
             // Initialize WebSocket if not already connected
             initializeWebSocket();
+
+            // Update user info
+            currentUserId = getCurrentUserId();
+            currentUserName = getCurrentUserName();
 
             // Load message history
             loadMessages();

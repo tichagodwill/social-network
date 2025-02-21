@@ -152,22 +152,23 @@
 </script>
 
 <svelte:head>
-    <title>Chat | Social Network</title>
+    <title>Chat | SocialNet</title>
 </svelte:head>
 
-<!-- Adjusted height to work with navbar and layout -->
-<div class="container mx-auto p-4 flex-1 flex items-stretch" style="height: calc(100vh - 70px);">
-    <Card class="w-full p-0 overflow-hidden shadow-md">
-        <div class="flex h-full">
+<!-- Container with padding for nicer appearance -->
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-[calc(100vh-64px)]">
+    <!-- Main chat interface with shadow for better definition -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden h-full flex flex-col mt-4">
+        <div class="flex-1 flex overflow-hidden">
             <!-- Chat list (hidden on mobile when viewing a chat) -->
             {#if !isMobileView || (isMobileView && showChatList)}
-                <div class="w-full md:w-80 lg:w-96 h-full border-r flex-shrink-0">
+                <div class="w-full md:w-80 lg:w-96 border-r border-gray-200 dark:border-gray-700 flex-shrink-0 h-full">
                     <ChatList onSelectChat={handleSelectChat} />
                 </div>
             {/if}
 
-            <!-- Chat window or empty state -->
-            <div class="hidden md:flex md:flex-1 flex-col {isMobileView && !showChatList ? '!flex' : ''}">
+            <!-- Chat window or empty state with proper spacing -->
+            <div class="flex-1 {isMobileView ? (showChatList ? 'hidden' : 'flex') : 'flex'} flex-col">
                 {#if loading}
                     <div class="h-full flex items-center justify-center">
                         <Spinner size="8" />
@@ -193,7 +194,7 @@
                         />
                     </div>
                 {:else}
-                    <div class="h-full flex items-center justify-center">
+                    <div class="h-full flex items-center justify-center p-4">
                         <EmptyState
                                 title="Select a conversation"
                                 description="Choose a chat from the list or start a new conversation"
@@ -214,5 +215,5 @@
                 {/if}
             </div>
         </div>
-    </Card>
+    </div>
 </div>

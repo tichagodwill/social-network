@@ -47,7 +47,7 @@
             if (response.ok) {
                 const contacts = await response.json();
                 // Update your chats store with the contacts
-                debugger
+
                 activeChats.set(contacts.map((contact: any) => ({
                     id: getPrivateChatIdFromUserIds(currentUserId, contact.id),
                     name: `${contact.first_name} ${contact.last_name}`,
