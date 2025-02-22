@@ -7,6 +7,7 @@
     import { inviteToGroup } from '$lib/api/groupApi';
     import { createEventDispatcher } from 'svelte';
     import GroupJoinRequests from './GroupJoinRequests.svelte';
+    import { toast } from '$lib/stores/toast';
 
     export let groupId: number;
     export let members: GroupMember[] = [];
@@ -26,6 +27,7 @@
     let memberToRemove: any = null;
     let currentUserRole = '';
     let wasRemoved = false;
+    let hasRequestedToJoin = false;
 
     const dispatch = createEventDispatcher();
 
@@ -96,30 +98,27 @@
         }
     }
 
-    async function requestJoin() {
+    async function requestToJoin() {
         try {
             loading = true;
-            error = '';
-            success = '';
             const response = await fetch(`http://localhost:8080/groups/${groupId}/join`, {
                 method: 'POST',
-                credentials: 'include',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
+                credentials: 'include'
             });
 
-            const data = await response.json();
             if (!response.ok) {
-                throw new Error(data.error || 'Failed to request join');
+                throw new Error('Failed to send join request');
             }
 
+            // Update UI state without showing a message
+            // The notification system will handle the success message
             hasRequest = true;
-            success = 'Join request sent successfully';
-            setTimeout(() => success = '', 3000);
-        } catch (err) {
-            error = err instanceof Error ? err.message : 'Failed to create join request';
-            console.error('Join request error:', error);
+            hasRequestedToJoin = true;
+
+        } catch (error: any) {
+            console.error('Error requesting to join:', error);
+            // Only show error messages here
+            showToast(error.message || 'Failed to send join request', 'error');
         } finally {
             loading = false;
         }
@@ -321,7 +320,7 @@
                     <Button 
                         color="blue"
                         size="sm"
-                        on:click={requestJoin}
+                        on:click={requestToJoin}
                         disabled={loading}
                     >
                         Request to Join Again
@@ -338,7 +337,7 @@
                 </Button>
             {:else if !isMember() && !hasRequest}
                 <Button 
-                    on:click={requestJoin}
+                    on:click={requestToJoin}
                     disabled={loading}
                 >
                     {loading ? 'Sending Request...' : 'Request to Join'}
