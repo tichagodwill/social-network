@@ -1,4 +1,3 @@
-<!-- src/routes/chat/+page.svelte -->
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
     import { page } from '$app/stores';
@@ -123,8 +122,8 @@
 
         if (chatId && chatType) {
             await handleSelectChat(
-                parseInt(chatId, 10),
-                chatType === 'group'
+              parseInt(chatId, 10),
+              chatType === 'group'
             );
         }
 
@@ -153,21 +152,47 @@
 
 <svelte:head>
     <title>Chat | SocialNet</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .custom-scrollbar {
+            scrollbar-width: thin;
+            scrollbar-color: #ccc #f4f4f4;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f4f4f4;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #ccc;
+            border-radius: 10px;
+        }
+        .navbar-spacer {
+            height: 40px; /* Adjust this value based on your navbar height */
+        }
+        .chat-container {
+            height: calc(90vh - 40px); /* Adjust 64px to match your navbar height */
+            display: flex;
+            flex-direction: column;
+        }
+    </style>
 </svelte:head>
+<div class="navbar-spacer"></div>
 
-<!-- Container with padding for nicer appearance -->
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-[calc(100vh-64px)]">
-    <!-- Main chat interface with shadow for better definition -->
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 max-h-screen chat-container">
     <div class="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden h-full flex flex-col mt-4">
         <div class="flex-1 flex overflow-hidden">
-            <!-- Chat list (hidden on mobile when viewing a chat) -->
             {#if !isMobileView || (isMobileView && showChatList)}
                 <div class="w-full md:w-80 lg:w-96 border-r border-gray-200 dark:border-gray-700 flex-shrink-0 h-full">
                     <ChatList onSelectChat={handleSelectChat} />
                 </div>
             {/if}
 
-            <!-- Chat window or empty state with proper spacing -->
             <div class="flex-1 {isMobileView ? (showChatList ? 'hidden' : 'flex') : 'flex'} flex-col">
                 {#if loading}
                     <div class="h-full flex items-center justify-center">
@@ -177,31 +202,31 @@
                     <div class="relative h-full flex flex-col">
                         {#if isMobileView}
                             <Button
-                                    size="xs"
-                                    class="absolute top-2 left-2 z-10"
-                                    on:click={toggleView}
+                              size="xs"
+                              class="absolute top-2 left-2 z-10"
+                              on:click={toggleView}
                             >
                                 Back
                             </Button>
                         {/if}
 
                         <ChatWindow
-                                chatId={selectedChat.id}
-                                isGroup={selectedChat.isGroup}
-                                recipientId={selectedChat.recipientId}
-                                recipientName={selectedChat.name}
-                                recipientAvatar={selectedChat.avatar}
+                          chatId={selectedChat.id}
+                          isGroup={selectedChat.isGroup}
+                          recipientId={selectedChat.recipientId}
+                          recipientName={selectedChat.name}
+                          recipientAvatar={selectedChat.avatar}
                         />
                     </div>
                 {:else}
                     <div class="h-full flex items-center justify-center p-4">
                         <EmptyState
-                                title="Select a conversation"
-                                description="Choose a chat from the list or start a new conversation"
-                                icon="chat"
+                          title="Select a conversation"
+                          description="Choose a chat from the list or start a new conversation"
+                          icon="chat"
                         >
                             <div class="flex justify-center gap-4 mt-4">
-                                <Button color="light" on:click={() => goto('/users')}>
+                                <Button color="light" on:click={() => goto('/explore')}>
                                     {@html UsersIcon}
                                     <span class="ml-2">Find Users</span>
                                 </Button>

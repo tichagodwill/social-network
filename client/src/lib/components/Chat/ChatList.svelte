@@ -1,11 +1,10 @@
-<!-- src/lib/components/Chat/ChatList.svelte -->
 <script lang="ts">
     import { onMount } from 'svelte';
     import { Avatar, Badge, Input, Spinner } from 'flowbite-svelte';
 
     import { activeChats } from '$lib/stores/websocket';
-    import {get} from "svelte/store";
-    import {auth} from "$lib/stores/auth";
+    import { get } from 'svelte/store';
+    import { auth } from '$lib/stores/auth';
     import defaultProfileImg from '$lib/assets/default-profile.jpg';
 
     // Props
@@ -16,13 +15,14 @@
       <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
     </svg>
   `;
+
     // Component state
     let searchQuery = '';
     let loading = true;
     let selectedChatId: number | null = null;
 
     $: filteredChats = $activeChats.filter(chat =>
-        chat.name.toLowerCase().includes(searchQuery.toLowerCase())
+      chat.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     // Get current user ID from auth store
@@ -30,6 +30,7 @@
         const authState = get(auth);
         return authState.user?.id || null;
     }
+
     // Load contacts/chats list
     async function loadChats() {
         try {
@@ -40,14 +41,12 @@
             }
 
             const response = await fetch(
-                `http://localhost:8080/contact/${currentUserId}`,
-                { credentials: 'include' }
+              `http://localhost:8080/contact/${currentUserId}`,
+              { credentials: 'include' }
             );
 
             if (response.ok) {
                 const contacts = await response.json();
-                // Update your chats store with the contacts
-
                 activeChats.set(contacts.map((contact: any) => ({
                     id: getPrivateChatIdFromUserIds(currentUserId, contact.id),
                     name: `${contact.first_name} ${contact.last_name}`,
@@ -64,10 +63,12 @@
             loading = false;
         }
     }
+
     // Helper function to get chat ID from user IDs
     function getPrivateChatIdFromUserIds(userId1: number, userId2: number): number {
         return Math.min(userId1, userId2) * 1000000 + Math.max(userId1, userId2);
     }
+
     // Format timestamp
     function formatLastMessageTime(timestamp?: string): string {
         if (!timestamp) return '';
@@ -105,14 +106,31 @@
     });
 </script>
 
+<style>
+    .custom-scrollbar {
+        scrollbar-width: thin;
+        scrollbar-color: #ccc #f4f4f4;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+        width: 8px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+        background: #f4f4f4;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+        background-color: #ccc;
+        border-radius: 10px;
+    }
+</style>
+
 <div class="h-full flex flex-col overflow-hidden bg-white dark:bg-gray-800 border-r">
     <!-- Search header -->
     <div class="p-4 border-b">
         <Input
-                type="text"
-                placeholder="Search conversations..."
-                bind:value={searchQuery}
-                size="md"
+          type="text"
+          placeholder="Search conversations..."
+          bind:value={searchQuery}
+          size="md"
         >
             {@html MagnifyingGlass}
         </Input>
@@ -139,17 +157,17 @@
                     {@const isActive = selectedChatId === chat.id}
                     <li>
                         <button
-                                class="w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-150 {isActive ? 'bg-gray-100 dark:bg-gray-700' : ''}"
-                                on:click={() => handleChatSelect(chat.id, chat.isGroup)}
+                          class="w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-150 {isActive ? 'bg-gray-100 dark:bg-gray-700' : ''}"
+                          on:click={() => handleChatSelect(chat.id, chat.isGroup)}
                         >
                             <div class="flex items-start gap-3">
                                 <!-- Avatar with online indicator -->
                                 <div class="relative">
                                     <Avatar
-                                            src={chat.avatar || defaultProfileImg}
-                                            alt={chat.name}
-                                            class="w-12 h-12"
-                                            rounded={chat.isGroup ? false : true}
+                                      src={chat.avatar || defaultProfileImg}
+                                      alt={chat.name}
+                                      class="w-12 h-12"
+                                      rounded={chat.isGroup ? false : true}
                                     />
                                     {#if chat.isGroup}
                                         <Badge color="purple" class="absolute -top-1 -right-1 text-xs w-6 h-6 flex items-center justify-center rounded-full p-0">

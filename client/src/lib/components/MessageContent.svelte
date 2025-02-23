@@ -15,18 +15,18 @@
         {#if isImage}
             <div class="relative">
                 <div class="absolute inset-0 bg-gray-200 dark:bg-gray-700 rounded-lg" class:hidden={imageLoaded}></div>
-                <img 
-                    src={message.fileUrl} 
-                    alt={message.fileName || 'Image'} 
+                <img
+                    src={message.fileUrl}
+                    alt={message.fileName || 'Image'}
                     class="max-w-sm rounded-lg cursor-zoom-in hover:opacity-95"
                     on:click={() => window.open(message.fileUrl, '_blank')}
                     on:load={() => imageLoaded = true}
                 />
             </div>
         {:else if isVideo}
-            <video 
-                src={message.fileUrl} 
-                controls 
+            <video
+                src={message.fileUrl}
+                controls
                 class="max-w-sm rounded-lg"
                 controlsList="nodownload"
             >
@@ -34,9 +34,9 @@
             </video>
         {:else if isAudio}
             <div class="bg-black/5 dark:bg-white/5 rounded-lg p-2">
-                <audio 
-                    src={message.fileUrl} 
-                    controls 
+                <audio
+                    src={message.fileUrl}
+                    controls
                     class="w-full"
                     controlsList="nodownload"
                 >
@@ -45,7 +45,7 @@
             </div>
         {:else}
             <div class="bg-black/5 dark:bg-white/5 rounded-lg p-2 hover:bg-black/10 dark:hover:bg-white/10">
-                <a 
+                <a
                     href={message.fileUrl}
                     target="_blank"
                     rel="noopener noreferrer"
