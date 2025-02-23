@@ -163,6 +163,9 @@ func main() {
 	mux.Handle("GET /uploads/group_posts/{filename}", http.HandlerFunc(api.ServeGroupPostMedia))
 	mux.HandleFunc("POST /chat/direct", api.CreateOrGetDirectChat)
 
+	// Group role routes
+	mux.Handle("GET /groups/{id}/role", authMiddleware(http.HandlerFunc(api.GetUserRoleInGroup)))
+
 	// Wrap the entire mux with CORS middleware
 	handler := middleware.CORS(mux)
 

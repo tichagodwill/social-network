@@ -120,15 +120,21 @@
     // Function to get user's role in the group
     async function getUserRole() {
         try {
-            const response = await fetch(`http://localhost:8080/groups/${groupId}/members/role`, {
+            if (!$auth.user || !groupId) return null;
+
+            const response = await fetch(`http://localhost:8080/groups/${groupId}/role`, {
                 credentials: 'include'
             });
-            if (response.ok) {
-                const data = await response.json();
-                userRole = data.role;
+
+            if (!response.ok) {
+                throw new Error('Failed to get user role');
             }
+
+            const data = await response.json();
+            return data.role;
         } catch (error) {
             console.error('Error getting user role:', error);
+            return null;
         }
     }
 
