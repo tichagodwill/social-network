@@ -1,4 +1,4 @@
-// src/lib/services/websocket.ts
+// src/lib/stores/websocket.ts
 import { writable, derived, get } from 'svelte/store';
 import type { Writable } from 'svelte/store';
 import { auth } from '$lib/stores/auth';
@@ -10,41 +10,48 @@ export enum MessageType {
     EVENT_RSVP = 'eventRSVP',
     TYPING = 'typing',
     NOTIFICATION = 'notification',
-    FOLLOWER_REQUEST = 'followerRequest'
+    FOLLOWER_REQUEST = 'followerRequest',
+    // Add server notification types
+    GROUP_INVITATION = 'group_invitation',
+    JOIN_REQUEST = 'join_request',
+    FOLLOW_REQUEST = 'follow_request'
+}
+
+// Base Message Interface
+export interface BaseMessage {
+    type: MessageType;
+    id?: number;
+    createdAt: string;
 }
 
 // Message Interfaces
-export interface ChatMessage {
+export interface ChatMessage extends BaseMessage {
     type: MessageType.CHAT;
-    id?: number;
     senderId: number;
     recipientId: number;
     content: string;
-    createdAt: string;
     senderName?: string;
     senderAvatar?: string;
 }
 
-export interface GroupChatMessage {
+export interface GroupChatMessage extends BaseMessage {
     type: MessageType.GROUP_CHAT;
-    id?: number;
     groupId: number;
     userId: number;
     content: string;
     media?: string;
-    createdAt: string;
     userName?: string;
     userAvatar?: string;
 }
 
-export interface TypingIndicator {
+export interface TypingIndicator extends BaseMessage {
     type: MessageType.TYPING;
     senderId: number;
     recipientId: number;
     isTyping: boolean;
 }
 
-export interface EventRSVPMessage {
+export interface EventRSVPMessage extends BaseMessage {
     type: MessageType.EVENT_RSVP;
     groupId: number;
     eventId: number;
@@ -53,17 +60,25 @@ export interface EventRSVPMessage {
     notGoing: number;
 }
 
-export interface NotificationMessage {
-    type: MessageType.NOTIFICATION;
-    id?: number;
+export interface NotificationMessage extends BaseMessage {
+    type: MessageType;
     userId: number;
     content: string;
-    createdAt: string;
     link?: string;
     isRead: boolean;
+    isProcessed?: boolean;
+    // Additional fields for specific notification types
+    groupId?: number;
+    invitationId?: number;
+    userRole?: string;
+    requestId?: number;
+    followerName?: string;
+    followerAvatar?: string;
+    followerId?: number;
+    followedId?: number;
 }
 
-export interface FollowerRequestMessage {
+export interface FollowerRequestMessage extends BaseMessage {
     type: MessageType.FOLLOWER_REQUEST;
     followerId: number;
     followedId: number;
@@ -73,12 +88,12 @@ export interface FollowerRequestMessage {
 }
 
 export type WebSocketMessage =
-    | ChatMessage
-    | GroupChatMessage
-    | TypingIndicator
-    | EventRSVPMessage
-    | NotificationMessage
-    | FollowerRequestMessage;
+  | ChatMessage
+  | GroupChatMessage
+  | TypingIndicator
+  | EventRSVPMessage
+  | NotificationMessage
+  | FollowerRequestMessage;
 
 // WebSocket connection state
 export enum ConnectionState {
@@ -110,8 +125,8 @@ export const activeChats: Writable<ActiveChat[]> = writable([]);
 // Store for notifications
 export const notifications: Writable<NotificationMessage[]> = writable([]);
 export const unreadNotificationsCount = derived(
-    notifications,
-    $notifications => $notifications.filter(n => !n.isRead).length
+  notifications,
+  $notifications => $notifications.filter(n => !n.isRead).length
 );
 
 // WebSocket instance
@@ -147,11 +162,25 @@ export function initializeWebSocket(): void {
         connectionState.set(ConnectionState.OPEN);
         reconnectDelay = 1000;
         startHeartbeat();
+        loadInitialNotifications().catch(error => {
+            console.error('Failed to load initial notifications:', error);
+        });
     };
 
     socket.onmessage = (event) => {
         try {
-            const message = JSON.parse(event.data) as WebSocketMessage;
+            let message;
+            const data = JSON.parse(event.data);
+
+            // Handle different server message formats
+            if (data.type === 'notification' && data.data) {
+                // Server sends notification in { type: 'notification', data: {...} } format
+                message = normalizeNotification(data.data);
+            } else {
+                // Regular message format
+                message = normalizeMessage(data);
+            }
+
             handleMessage(message);
         } catch (error) {
             console.error('Error parsing WebSocket message:', error);
@@ -170,6 +199,81 @@ export function initializeWebSocket(): void {
         connectionState.set(ConnectionState.ERROR);
     };
 }
+
+/**
+ * Normalize notification from server format to our internal format
+ */
+function normalizeNotification(notification: any): NotificationMessage {
+    return {
+        type: notification.type || MessageType.NOTIFICATION,
+        id: notification.id,
+        userId: notification.user_id || notification.userId,
+        content: notification.content,
+        createdAt: notification.created_at || notification.createdAt || new Date().toISOString(),
+        isRead: notification.is_read || notification.isRead || false,
+        isProcessed: notification.is_processed || notification.isProcessed || false,
+        link: notification.link,
+        groupId: notification.group_id || notification.groupId,
+        invitationId: notification.invitation_id || notification.invitationId,
+        userRole: notification.user_role || notification.userRole,
+        requestId: notification.request_id || notification.requestId,
+        followerName: notification.follower_name || notification.followerName,
+        followerAvatar: notification.follower_avatar || notification.followerAvatar,
+        followerId: notification.follower_id || notification.followerId,
+        followedId: notification.followed_id || notification.followedId
+    };
+}
+
+/**
+ * Normalize message from server format to our internal format
+ */
+function normalizeMessage(message: any): WebSocketMessage {
+    // Ensure we have a createdAt value for all messages
+    const createdAt = message.created_at || message.createdAt || new Date().toISOString();
+
+    // Handle different message types based on the type field
+    switch (message.type) {
+        case 'chat':
+            return {
+                type: MessageType.CHAT,
+                id: message.id,
+                senderId: message.sender_id || message.senderId,
+                recipientId: message.recipient_id || message.recipientId,
+                content: message.content,
+                createdAt,
+                senderName: message.sender_name || message.senderName,
+                senderAvatar: message.sender_avatar || message.senderAvatar
+            } as ChatMessage;
+
+        case 'groupChat':
+            return {
+                type: MessageType.GROUP_CHAT,
+                id: message.id,
+                groupId: message.group_id || message.groupId,
+                userId: message.user_id || message.userId,
+                content: message.content,
+                media: message.media,
+                createdAt,
+                userName: message.user_name || message.userName,
+                userAvatar: message.user_avatar || message.userAvatar
+            } as GroupChatMessage;
+
+        case 'notification':
+        case 'group_invitation':
+        case 'join_request':
+        case 'follow_request':
+            return normalizeNotification(message);
+
+        default:
+            // Pass through as-is if no normalization needed
+            // But ensure it has a createdAt value
+            return {
+                ...message,
+                createdAt: message.createdAt || createdAt
+            } as WebSocketMessage;
+    }
+}
+
 /**
  * Send a message through the WebSocket
  */
@@ -190,9 +294,9 @@ export function sendMessage(message: WebSocketMessage): boolean {
 
                 // Check if the message already exists in the store
                 const existingMessageIndex = msgs.findIndex(msg => {
-                    if (msg.type === MessageType.CHAT) {
+                    if (msg.type === MessageType.CHAT && 'content' in msg) {
                         return `${msg.type}-${msg.createdAt}-${msg.content}` === messageId;
-                    } else if (msg.type === MessageType.GROUP_CHAT) {
+                    } else if (msg.type === MessageType.GROUP_CHAT && 'content' in msg) {
                         return `${msg.type}-${msg.createdAt}-${msg.content}` === messageId;
                     }
                     return false;
@@ -205,7 +309,7 @@ export function sendMessage(message: WebSocketMessage): boolean {
                 }
             });
 
-            updateActiveChat(message);
+            updateActiveChat(message as ChatMessage | GroupChatMessage);
         }
 
         return true;
@@ -229,44 +333,27 @@ export function closeConnection(): void {
  * Handle incoming messages based on type
  */
 function handleMessage(message: WebSocketMessage): void {
-    console.log('Current messages:', get(messages));
-    messages.update(msgs => {
-        // Create a unique identifier for the message
-        let messageId: string;
-        if (message.type === MessageType.CHAT || message.type === MessageType.GROUP_CHAT) {
-            messageId = `${message.type}-${message.createdAt}-${message.content}`;
-        } else {
-            messageId = `${message.type}`;
-        }
+    console.log('Received message:', message);
 
-        // Check if the message already exists in the store
-        const existingMessageIndex = msgs.findIndex(msg => {
-            if (msg.type === MessageType.CHAT) {
-                return `${msg.type}-${msg.createdAt}-${msg.content}` === messageId;
-            } else if (msg.type === MessageType.GROUP_CHAT) {
-                return `${msg.type}-${msg.createdAt}-${msg.content}` === messageId;
-            } else if (msg.type === MessageType.TYPING) {
-                return `${msg.type}` === messageId;
-            }
-            return false;
-        });
-
-        if (existingMessageIndex === -1) {
-            return [...msgs, message];
-        } else {
-            return msgs;
-        }
-    });
-    console.log('Updated messages:', get(messages));
+    // Skip duplicate messages
+    if (isMessageDuplicate(message)) {
+        console.log('Skipping duplicate message');
+        return;
+    }
 
     switch (message.type) {
         case MessageType.CHAT:
-            handleChatMessage(message as ChatMessage);
+            messages.update(msgs => [...msgs, message]);
+            updateActiveChat(message as ChatMessage);
             break;
         case MessageType.GROUP_CHAT:
-            handleGroupChatMessage(message as GroupChatMessage);
+            messages.update(msgs => [...msgs, message]);
+            updateActiveChat(message as GroupChatMessage);
             break;
         case MessageType.NOTIFICATION:
+        case MessageType.GROUP_INVITATION:
+        case MessageType.JOIN_REQUEST:
+        case MessageType.FOLLOW_REQUEST:
             handleNotification(message as NotificationMessage);
             break;
         case MessageType.EVENT_RSVP:
@@ -280,6 +367,31 @@ function handleMessage(message: WebSocketMessage): void {
             break;
     }
 }
+
+/**
+ * Check if a message is a duplicate
+ */
+function isMessageDuplicate(message: WebSocketMessage): boolean {
+    if ((message.type === MessageType.CHAT || message.type === MessageType.GROUP_CHAT) && message.id !== undefined) {
+        const msgs = get(messages);
+        return msgs.some(m =>
+          m.type === message.type &&
+          m.id === message.id &&
+          m.id !== undefined
+        );
+    } else if ((
+      message.type === MessageType.NOTIFICATION ||
+      message.type === MessageType.GROUP_INVITATION ||
+      message.type === MessageType.JOIN_REQUEST ||
+      message.type === MessageType.FOLLOW_REQUEST
+    ) && message.id !== undefined) {
+        const notes = get(notifications);
+        return notes.some(n => n.id === message.id && n.id !== undefined);
+    }
+
+    return false;
+}
+
 /**
  * Handle chat messages
  */
@@ -302,9 +414,9 @@ function handleNotification(notification: NotificationMessage): void {
 
     // Show browser notification if supported and user gave permission
     if (
-        'Notification' in window &&
-        Notification.permission === 'granted' &&
-        document.visibilityState !== 'visible'
+      'Notification' in window &&
+      Notification.permission === 'granted' &&
+      document.visibilityState !== 'visible'
     ) {
         new Notification('Social Network', {
             body: notification.content,
@@ -319,12 +431,16 @@ function handleNotification(notification: NotificationMessage): void {
 function handleFollowerRequest(request: FollowerRequestMessage): void {
     if (request.status === 'pending') {
         const notification: NotificationMessage = {
-            type: MessageType.NOTIFICATION,
+            type: MessageType.FOLLOW_REQUEST,
             userId: request.followedId,
             content: `${request.followerName} wants to follow you`,
             createdAt: new Date().toISOString(),
             link: `/profile/${request.followerId}`,
-            isRead: false
+            isRead: false,
+            followerId: request.followerId,
+            followedId: request.followedId,
+            followerName: request.followerName,
+            followerAvatar: request.followerAvatar
         };
 
         notifications.update(notes => [notification, ...notes]);
@@ -335,6 +451,8 @@ function handleFollowerRequest(request: FollowerRequestMessage): void {
  * Update active chats when new messages arrive
  */
 function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
+    if (!('content' in message)) return;
+
     activeChats.update(chats => {
         const isGroupMessage = message.type === MessageType.GROUP_CHAT;
         const chatId = isGroupMessage
@@ -455,6 +573,7 @@ async function fetchUserInfo(userId: number): Promise<void> {
         console.error('Error fetching user info:', error);
     }
 }
+
 /**
  * Get private chat ID from user IDs
  */
@@ -497,30 +616,82 @@ function scheduleReconnect(): void {
         initializeWebSocket();
         // Exponential backoff with jitter
         reconnectDelay = Math.min(
-            MAX_RECONNECT_DELAY,
-            reconnectDelay * 1.5 + Math.random() * 1000
+          MAX_RECONNECT_DELAY,
+          reconnectDelay * 1.5 + Math.random() * 1000
         );
     }, reconnectDelay);
 }
 
+export async function loadInitialNotifications(): Promise<void> {
+    try {
+        const response = await fetch('http://localhost:8080/notifications', {
+            credentials: 'include'
+        });
+
+        if (response.ok) {
+            const data = await response.json() || [];
+
+            if (Array.isArray(data)) {
+                // Convert server notifications to our format and update store
+                notifications.set(data.map((n: any) => normalizeNotification(n)));
+            } else {
+                console.error('Expected array of notifications but got:', data);
+                notifications.set([]); // Set empty array as fallback
+            }
+        } else {
+            console.error('Failed to load initial notifications:', response.status);
+        }
+    } catch (error) {
+        console.error('Error loading initial notifications:', error);
+        notifications.set([]); // Set empty array on error
+    }
+}
 /**
  * Mark all notifications as read
  */
-export function markAllNotificationsAsRead(): void {
-    notifications.update(notes =>
-        notes.map(note => ({ ...note, isRead: true }))
-    );
+export async function markAllNotificationsAsRead(): Promise<void> {
+    try {
+        const response = await fetch('http://localhost:8080/notifications/read-all', {
+            method: 'POST',
+            credentials: 'include'
+        });
+
+        if (response.ok) {
+            notifications.update(notes =>
+              notes.map(note => ({ ...note, isRead: true }))
+            );
+        } else {
+            console.error('Failed to mark all notifications as read:', response.status);
+        }
+    } catch (error) {
+        console.error('Error marking all notifications as read:', error);
+        throw error;
+    }
 }
 
 /**
  * Mark a specific notification as read
  */
-export function markNotificationAsRead(notificationId: number): void {
-    notifications.update(notes =>
-        notes.map(note =>
-            note.id === notificationId ? { ...note, isRead: true } : note
-        )
-    );
+export async function markNotificationAsRead(notificationId: number): Promise<void> {
+    try {
+        const response = await fetch(`http://localhost:8080/notifications/${notificationId}/read`, {
+            method: 'GET',
+            credentials: 'include'
+        });
+
+        if (response.ok) {
+            notifications.update(notes =>
+              notes.map(note =>
+                note.id === notificationId ? { ...note, isRead: true } : note
+              )
+            );
+        } else {
+            throw new Error(`Failed to mark notification as read: ${response.status}`);
+        }
+    } catch (error) {
+        console.error('Error marking notification as read:', error);
+        throw error;
+    }
 }
 
 /**
@@ -528,11 +699,11 @@ export function markNotificationAsRead(notificationId: number): void {
  */
 export function resetUnreadCount(chatId: number, isGroup: boolean): void {
     activeChats.update(chats =>
-        chats.map(chat =>
-            chat.id === chatId && chat.isGroup === isGroup
-                ? { ...chat, unreadCount: 0 }
-                : chat
-        )
+      chats.map(chat =>
+        chat.id === chatId && chat.isGroup === isGroup
+          ? { ...chat, unreadCount: 0 }
+          : chat
+      )
     );
 }
 
@@ -543,8 +714,9 @@ export function getChatMessages(chatId: number, isGroup: boolean) {
     return derived(messages, $messages => {
         if (isGroup) {
             return $messages.filter(
-                msg => msg.type === MessageType.GROUP_CHAT &&
-                    (msg as GroupChatMessage).groupId === chatId
+              msg => msg.type === MessageType.GROUP_CHAT &&
+                'groupId' in msg &&
+                msg.groupId === chatId
             );
         } else {
             // For private chats, we need to check both directions
@@ -552,13 +724,14 @@ export function getChatMessages(chatId: number, isGroup: boolean) {
             if (!currentUserId) return [];
 
             return $messages.filter(
-                msg => msg.type === MessageType.CHAT &&
-                    (
-                        ((msg as ChatMessage).senderId === currentUserId &&
-                            (msg as ChatMessage).recipientId === getRecipientIdFromChatId(chatId, currentUserId)) ||
-                        ((msg as ChatMessage).recipientId === currentUserId &&
-                            (msg as ChatMessage).senderId === getRecipientIdFromChatId(chatId, currentUserId))
-                    )
+              msg => msg.type === MessageType.CHAT &&
+                'senderId' in msg && 'recipientId' in msg &&
+                (
+                  (msg.senderId === currentUserId &&
+                    msg.recipientId === getRecipientIdFromChatId(chatId, currentUserId)) ||
+                  (msg.recipientId === currentUserId &&
+                    msg.senderId === getRecipientIdFromChatId(chatId, currentUserId))
+                )
             );
         }
     });

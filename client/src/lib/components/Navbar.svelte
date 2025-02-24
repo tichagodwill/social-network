@@ -2,18 +2,8 @@
     import {Navbar, NavBrand, NavLi, NavUl, NavHamburger, Button} from 'flowbite-svelte';
     import {auth} from '$lib/stores/auth';
     import NotificationBell from './NotificationBell.svelte';
-    import {onMount} from 'svelte';
-    import {notifications} from '$lib/stores/notifications';
     import {goto} from '$app/navigation';
     import { page } from '$app/stores';
-
-    onMount(() => {
-        if ($auth.isAuthenticated) {
-            const socket = new WebSocket('ws://localhost:8080/ws');
-            notifications.initialize(socket);
-            notifications.loadNotifications();
-        }
-    });
 
     async function handleLogout() {
         try {
@@ -30,11 +20,11 @@
 
 <div class="navbar-spacer"></div>
 <Navbar
-        let:hidden
-        let:toggle
-        rounded={false}
-        color="primary"
-        class="fixed top-0 left-0 right-0 z-50 border-b border-gray-200 bg-white shadow-sm"
+  let:hidden
+  let:toggle
+  rounded={false}
+  color="primary"
+  class="fixed top-0 left-0 right-0 z-50 border-b border-gray-200 bg-white shadow-sm"
 >
     <NavBrand href="/">
         <span class="flex items-center space-x-2">
@@ -50,42 +40,42 @@
     </NavBrand>
 
     <NavHamburger
-            on:click={toggle}
-            class="focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+      on:click={toggle}
+      class="focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
     />
 
     <NavUl
-            {hidden}
-            class="md:flex md:items-center md:space-x-1"
+      {hidden}
+      class="md:flex md:items-center md:space-x-1"
     >
         {#if $auth.isAuthenticated}
             <NavLi
-                    href="/posts"
-                    class="nav-item {currentPath === '/posts' ? 'active' : ''}"
+              href="/posts"
+              class="nav-item {currentPath === '/posts' ? 'active' : ''}"
             >
                 Posts
             </NavLi>
             <NavLi
-                    href="/groups"
-                    class="nav-item {currentPath === '/groups' ? 'active' : ''}"
+              href="/groups"
+              class="nav-item {currentPath === '/groups' ? 'active' : ''}"
             >
                 Groups
             </NavLi>
             <NavLi
-                    href="/chat"
-                    class="nav-item {currentPath === '/chat' ? 'active' : ''}"
+              href="/chat"
+              class="nav-item {currentPath === '/chat' ? 'active' : ''}"
             >
                 Chat
             </NavLi>
             <NavLi
-                    href="/profile/{$auth.user?.id}"
-                    class="nav-item {currentPath.startsWith('/profile') ? 'active' : ''}"
+              href="/profile/{$auth.user?.id}"
+              class="nav-item {currentPath.startsWith('/profile') ? 'active' : ''}"
             >
                 Profile
             </NavLi>
             <NavLi
-                    href="/explore"
-                    class="nav-item {currentPath.startsWith('/explore') ? 'active' : ''}"
+              href="/explore"
+              class="nav-item {currentPath.startsWith('/explore') ? 'active' : ''}"
             >
                 Explore
             </NavLi>
@@ -93,9 +83,9 @@
             <div class="flex items-center space-x-2 md:ml-4">
                 <NotificationBell/>
                 <Button
-                        color="alternative"
-                        class="nav-button"
-                        on:click={handleLogout}
+                  color="alternative"
+                  class="nav-button"
+                  on:click={handleLogout}
                 >
                     <span class="flex items-center space-x-1">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -109,16 +99,16 @@
         {:else}
             <div class="flex items-center space-x-2 md:ml-4">
                 <Button
-                        color="alternative"
-                        href="/login"
-                        class="nav-button-secondary"
+                  color="alternative"
+                  href="/login"
+                  class="nav-button-secondary"
                 >
                     Login
                 </Button>
                 <Button
-                        color="primary"
-                        href="/register"
-                        class="nav-button-primary"
+                  color="primary"
+                  href="/register"
+                  class="nav-button-primary"
                 >
                     Sign Up
                 </Button>
