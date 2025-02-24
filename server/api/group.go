@@ -967,7 +967,7 @@ func InviteToGroup(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Send to specific user (the invitee)
-		SendNotification([]uint64{uint64(inviteeID)}, notification)
+		SendNotification([]int{inviteeID}, notification)
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -978,22 +978,6 @@ func InviteToGroup(w http.ResponseWriter, r *http.Request) {
 	sendJSONResponse(w, http.StatusOK, map[string]string{
 		"message": "Invitation sent successfully",
 	})
-}
-
-// Helper function to send JSON errors
-func sendJSONError(w http.ResponseWriter, message string, status int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{
-		"error": message,
-	})
-}
-
-// Helper function to send JSON responses
-func sendJSONResponse(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
 }
 
 func GroupAccept(w http.ResponseWriter, r *http.Request) {

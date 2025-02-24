@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"log"
 	"net/http"
 	"social-network/pkg/db/sqlite"
@@ -43,7 +44,6 @@ func GetNotifications(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Fetching notifications for user ID: %d", userID)
 
-	// Modified query to sort notifications by created_at DESC (newest first)
 	rows, err := sqlite.DB.Query(`
         SELECT 
             n.id,
@@ -68,7 +68,7 @@ func GetNotifications(w http.ResponseWriter, r *http.Request) {
         LEFT JOIN group_members gm ON n.group_id = gm.group_id AND gm.user_id = n.user_id
         LEFT JOIN group_invitations gi ON n.invitation_id = gi.id
         WHERE n.user_id = ?
-        ORDER BY n.created_at DESC`, // This ensures newest notifications come first
+        ORDER BY n.created_at DESC`,
 		userID)
 
 	if err != nil {
@@ -98,9 +98,6 @@ func GetNotifications(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		log.Printf("Found notification: ID=%d, Type=%s, Content=%s, IsRead=%v, IsProcessed=%v",
-			notification.ID, notification.Type, notification.Content, notification.IsRead, notification.IsProcessed)
-
 		notifications = append(notifications, map[string]interface{}{
 			"id":           notification.ID,
 			"type":         notification.Type,
@@ -116,15 +113,11 @@ func GetNotifications(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	log.Printf("Found %d notifications for user %d", len(notifications), userID)
-
-	if notifications == nil {
-		notifications = make([]map[string]interface{}, 0)
+	if err := json.NewEncoder(w).Encode(notifications); err != nil {
+		http.Error(w, "Error encoding response", http.StatusInternalServerError)
+		return
 	}
-
-	sendJSONResponse(w, http.StatusOK, notifications)
 }
-
 func MarkNotificationAsRead(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -135,7 +128,7 @@ func MarkNotificationAsRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	notificationID := r.PathValue("id")
+	notificationID := r.URL.Query().Get("id")
 	if notificationID == "" {
 		log.Printf("No notification ID provided")
 		sendJSONError(w, "No notification ID provided", http.StatusBadRequest)
@@ -157,7 +150,6 @@ func MarkNotificationAsRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// First verify the notification exists and belongs to the user
 	var exists bool
 	err = sqlite.DB.QueryRow(`
         SELECT EXISTS (
@@ -177,7 +169,6 @@ func MarkNotificationAsRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Start transaction
 	tx, err := sqlite.DB.Begin()
 	if err != nil {
 		log.Printf("Failed to begin transaction: %v", err)
@@ -186,7 +177,6 @@ func MarkNotificationAsRead(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	// Update notification
 	result, err := tx.Exec(`
         UPDATE notifications 
         SET is_read = true
@@ -206,7 +196,6 @@ func MarkNotificationAsRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get updated unread count
 	var unreadCount int
 	err = tx.QueryRow(`
         SELECT COUNT(*) 
@@ -233,4 +222,16 @@ func MarkNotificationAsRead(w http.ResponseWriter, r *http.Request) {
 		"notificationId": nID,
 		"isRead":         true,
 	})
+}
+
+func sendJSONError(w http.ResponseWriter, message string, statusCode int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
+func sendJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(data)
 }

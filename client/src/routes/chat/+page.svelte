@@ -72,8 +72,8 @@
                         id: chatId,
                         isGroup: false,
                         recipientId: otherUserId,
-                        name: `${userData.firstName} ${userData.lastName}`,
-                        avatar: userData.avatar
+                        name: `${userData.user.first_name} ${userData.user.last_name}`,
+                        avatar: userData.user.avatar
                     };
                 }
             }

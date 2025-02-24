@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	m "social-network/models"
+	models "social-network/models"
 	"social-network/pkg/db/sqlite"
 	"social-network/util"
 	"sync"
@@ -23,13 +23,13 @@ var (
 	}
 
 	// Global socket manager with mutex for thread safety
-	socketManager = &m.SocketManager{
-		Sockets: make(map[uint64]*websocket.Conn),
+	socketManager = &models.SocketManager{
+		Sockets: make(map[int]*websocket.Conn),
 		Mu:      sync.RWMutex{},
 	}
 
 	// Channel for broadcasting messages
-	broadcast = make(chan m.BroadcastMessage, 100)
+	broadcast = make(chan models.BroadcastMessage, 100)
 )
 
 func init() {
@@ -64,7 +64,7 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var userID uint64
+	var userID int
 	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
 	if err != nil {
 		log.Printf("WebSocket database error: %v", err)
@@ -128,77 +128,93 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 
 		switch messageType {
 		case websocket.TextMessage:
-
-			// getting the request type. from this we can unmarshall into the actual message
-			var connectionType m.ConnectionType
-			if err := json.Unmarshal(message, &connectionType); err != nil {
+			var msg models.WebSocketMessage
+			if err := json.Unmarshal(message, &msg); err != nil {
 				log.Printf("WebSocket json unmarshal error: %v", err)
 				break
 			}
 
-			// this can be made into a switch to handle future message types. but for now it's chat only
-			if connectionType.Type == "chat" {
-				var chatMessage m.ChatMessage
+			switch msg.Type {
+			case "chat":
+				var chatMessage models.ChatMessage
 				if err := json.Unmarshal(message, &chatMessage); err != nil {
 					log.Printf("WebSocket chat json unmarshal error: %v", err)
 					break
 				}
 
-				SaveMessage(chatMessage)
+				if err := SaveMessage(chatMessage); err != nil {
+					log.Printf("Error saving message: %v", err)
+					break
+				}
 
 				// Echo the message back (for real this time)
 				if err := conn.WriteMessage(messageType, message); err != nil {
 					log.Printf("WebSocket write error: %v", err)
 					break
 				}
-			}
 
-			// Add this to your existing socket message types
-			type EventRSVPMessage struct {
-				Type     string `json:"type"`
-				GroupID  int    `json:"groupId"`
-				EventID  int    `json:"eventId"`
-				Status   string `json:"status"`
-				Going    int    `json:"going"`
-				NotGoing int    `json:"notGoing"`
-			}
-
-			// In your WebSocketHandler function, add handling for event responses
-			if connectionType.Type == "eventRSVP" {
-				var rsvpMessage EventRSVPMessage
+			case "eventRSVP":
+				var rsvpMessage models.EventRSVPMessage
 				if err := json.Unmarshal(message, &rsvpMessage); err != nil {
 					log.Printf("WebSocket event RSVP unmarshal error: %v", err)
 					break
 				}
 
 				// Broadcast the RSVP update to all connected clients
-				broadcast <- m.BroadcastMessage{
+				broadcast <- models.BroadcastMessage{
 					Data:        rsvpMessage,
 					TargetUsers: nil, // Broadcast to all users
 				}
+
+			default:
+				log.Printf("Unknown message type: %s", msg.Type)
 			}
 
 		case websocket.BinaryMessage:
 			log.Printf("Received Binary Message: %v\n", message)
+
 		case websocket.CloseMessage:
 			log.Println("Received Close Message")
 			return
+
 		case websocket.PingMessage:
 			log.Println("Received Ping Message")
+
 		case websocket.PongMessage:
 			log.Println("Received Pong Message")
 		}
 	}
 }
 
+// SaveMessage saves a chat message to the database
+func SaveMessage(message models.ChatMessage) error {
+	_, err := sqlite.DB.Exec(`
+        INSERT INTO chat_messages (
+            chat_id,
+            sender_id,
+            content,
+            created_at
+        ) VALUES (?, ?, ?, ?)`,
+		message.ChatID,
+		message.SenderID,
+		message.Content,
+		message.CreatedAt,
+	)
+	if err != nil {
+		log.Printf("Error saving message: %v", err)
+		return err
+	}
+	return nil
+}
+
 // SendNotification sends a notification to specific users
-func SendNotification(userIDs []uint64, notification interface{}) {
-	targetUsers := make(map[uint64]bool)
+func SendNotification(userIDs []int, notification interface{}) {
+	targetUsers := make(map[int]bool)
 	for _, id := range userIDs {
 		targetUsers[id] = true
 	}
 
-	broadcast <- m.BroadcastMessage{
+	broadcast <- models.BroadcastMessage{
 		Data:        notification,
 		TargetUsers: targetUsers,
 	}
@@ -206,21 +222,8 @@ func SendNotification(userIDs []uint64, notification interface{}) {
 
 // Broadcast sends a message to all connected users
 func Broadcast(message interface{}) {
-	broadcast <- m.BroadcastMessage{
+	broadcast <- models.BroadcastMessage{
 		Data:        message,
 		TargetUsers: nil, // nil means broadcast to all
 	}
-}
-
-// Helper functions for different message types
-func handleChatMessage(msg m.WebSocketMessage, senderID uint64) {
-	// Handle chat message logic
-}
-
-func handleNotification(msg m.WebSocketMessage, senderID uint64) {
-	// Handle notification logic
-}
-
-func handleTypingIndicator(msg m.WebSocketMessage, senderID uint64) {
-	// Handle typing indicator logic
 }

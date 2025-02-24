@@ -136,34 +136,39 @@
 
     // Handle message submission
     function sendChatMessage() {
-        if (!messageText.trim()) return;
+      if (!messageText.trim()) return;
 
-        const now = new Date().toISOString();
+      const now = new Date().toISOString();
 
-        if (isGroup) {
-            const message: GroupChatMessage = {
-                type: MessageType.GROUP_CHAT,
-                groupId: chatId,
-                userId: currentUserId,
-                content: messageText.trim(),
-                createdAt: now,
-                userName: currentUserName
-            };
-            sendMessage(message);
-        } else if (recipientId) {
-            const message: ChatMessage = {
-                type: MessageType.CHAT,
-                senderId: currentUserId,
-                recipientId,
-                content: messageText.trim(),
-                createdAt: now,
-                senderName: currentUserName
-            };
-            sendMessage(message);
-        }
+      let messageToSend: ChatMessage | GroupChatMessage;
 
-        messageText = '';
-        isTyping = false;
+      if (isGroup) {
+        messageToSend = {
+          type: MessageType.GROUP_CHAT,
+          groupId: chatId,
+          userId: currentUserId,
+          content: messageText.trim(),
+          createdAt: now,
+          userName: currentUserName
+        };
+      } else if (recipientId) {
+        messageToSend = {
+          type: MessageType.CHAT,
+          senderId: currentUserId,
+          recipientId,
+          content: messageText.trim(),
+          createdAt: now,
+          senderName: currentUserName
+        };
+      } else {
+        console.error('Cannot send message: recipient ID is missing');
+        return;
+      }
+
+      sendMessage(messageToSend);
+
+      messageText = '';
+      isTyping = false;
     }
 
     // Handle emoji selection
@@ -329,7 +334,7 @@
             currentUserName = getCurrentUserName();
 
             // Load message history
-            loadMessages();
+            await loadMessages();
 
             // Reset unread count
             resetUnread();

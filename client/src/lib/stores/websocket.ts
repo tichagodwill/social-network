@@ -182,9 +182,29 @@ export function sendMessage(message: WebSocketMessage): boolean {
     try {
         socket.send(JSON.stringify(message));
 
-        // If it's a chat message, add it to the messages store
+        // If it's a chat message, add it to the messages store if it's not already present
         if (message.type === MessageType.CHAT || message.type === MessageType.GROUP_CHAT) {
-            messages.update(msgs => [...msgs, message]);
+            messages.update(msgs => {
+                // Create a unique identifier for the message
+                const messageId = `${message.type}-${message.createdAt}-${message.content}`;
+
+                // Check if the message already exists in the store
+                const existingMessageIndex = msgs.findIndex(msg => {
+                    if (msg.type === MessageType.CHAT) {
+                        return `${msg.type}-${msg.createdAt}-${msg.content}` === messageId;
+                    } else if (msg.type === MessageType.GROUP_CHAT) {
+                        return `${msg.type}-${msg.createdAt}-${msg.content}` === messageId;
+                    }
+                    return false;
+                });
+
+                if (existingMessageIndex === -1) {
+                    return [...msgs, message];
+                } else {
+                    return msgs;
+                }
+            });
+
             updateActiveChat(message);
         }
 
@@ -209,11 +229,39 @@ export function closeConnection(): void {
  * Handle incoming messages based on type
  */
 function handleMessage(message: WebSocketMessage): void {
-    messages.update(msgs => [...msgs, message]);
+    console.log('Current messages:', get(messages));
+    messages.update(msgs => {
+        // Create a unique identifier for the message
+        let messageId: string;
+        if (message.type === MessageType.CHAT || message.type === MessageType.GROUP_CHAT) {
+            messageId = `${message.type}-${message.createdAt}-${message.content}`;
+        } else {
+            messageId = `${message.type}`;
+        }
+
+        // Check if the message already exists in the store
+        const existingMessageIndex = msgs.findIndex(msg => {
+            if (msg.type === MessageType.CHAT) {
+                return `${msg.type}-${msg.createdAt}-${msg.content}` === messageId;
+            } else if (msg.type === MessageType.GROUP_CHAT) {
+                return `${msg.type}-${msg.createdAt}-${msg.content}` === messageId;
+            } else if (msg.type === MessageType.TYPING) {
+                return `${msg.type}` === messageId;
+            }
+            return false;
+        });
+
+        if (existingMessageIndex === -1) {
+            return [...msgs, message];
+        } else {
+            return msgs;
+        }
+    });
+    console.log('Updated messages:', get(messages));
 
     switch (message.type) {
         case MessageType.CHAT:
-            handleChatMessage(message);
+            handleChatMessage(message as ChatMessage);
             break;
         case MessageType.GROUP_CHAT:
             handleGroupChatMessage(message as GroupChatMessage);
@@ -232,7 +280,6 @@ function handleMessage(message: WebSocketMessage): void {
             break;
     }
 }
-
 /**
  * Handle chat messages
  */
@@ -291,12 +338,12 @@ function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
     activeChats.update(chats => {
         const isGroupMessage = message.type === MessageType.GROUP_CHAT;
         const chatId = isGroupMessage
-            ? (message as GroupChatMessage).groupId
-            : getPrivateChatId(message as ChatMessage);
+          ? (message as GroupChatMessage).groupId
+          : getPrivateChatId(message as ChatMessage);
 
         // Find if chat already exists
         const existingChatIndex = chats.findIndex(c =>
-            c.id === chatId && c.isGroup === isGroupMessage
+          c.id === chatId && c.isGroup === isGroupMessage
         );
 
         if (existingChatIndex >= 0) {
