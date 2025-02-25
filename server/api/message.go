@@ -13,8 +13,9 @@ import (
 )
 
 func GetMessages(w http.ResponseWriter, r *http.Request) {
-	userIdStr := r.URL.Query().Get("userId")
-	contactIdStr := r.URL.Query().Get("contactId")
+	// Extract user IDs from URL path parameters
+	userIdStr := r.PathValue("userId")
+	contactIdStr := r.PathValue("contactId")
 
 	userId, err := strconv.Atoi(userIdStr)
 	if err != nil {
@@ -47,21 +48,45 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// First, get the chat ID for the conversation between these users
+	var chatId int
+	err = sqlite.DB.QueryRow(`
+        SELECT c.id 
+        FROM chats c
+        JOIN user_chat_status ucs1 ON c.id = ucs1.chat_id AND ucs1.user_id = ?
+        JOIN user_chat_status ucs2 ON c.id = ucs2.chat_id AND ucs2.user_id = ?
+        WHERE c.type = 'direct'
+    `, userId, contactId).Scan(&chatId)
+
+	if err == sql.ErrNoRows {
+		// No chat exists yet, return an empty array
+		if err := json.NewEncoder(w).Encode([]models.ChatMessage{}); err != nil {
+			http.Error(w, "Error encoding response", http.StatusInternalServerError)
+		}
+		return
+	} else if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		log.Printf("Error finding chat: %v", err)
+		return
+	}
+
+	// Now get the messages for this chat
 	rows, err := sqlite.DB.Query(`
         SELECT 
             m.id,
+            m.chat_id,
             m.sender_id,
-            m.recipient_id,
             m.content,
+            m.status,
+            m.message_type,
             m.created_at,
             u.username as sender_name,
             u.avatar as sender_avatar
         FROM chat_messages m
-        JOIN users u ON m.sender_id = u.id 
-        WHERE (m.sender_id = ? AND m.recipient_id = ?)
-            OR (m.recipient_id = ? AND m.sender_id = ?)
-        ORDER BY m.created_at ASC`,
-		userId, contactId, userId, contactId)
+        JOIN users u ON m.sender_id = u.id
+        WHERE m.chat_id = ?
+        ORDER BY m.created_at ASC
+    `, chatId)
 
 	if err != nil {
 		handleDBError(w, err)
@@ -74,9 +99,11 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 		var msg models.ChatMessage
 		if err := rows.Scan(
 			&msg.ID,
+			&msg.ChatID,
 			&msg.SenderID,
-			&msg.RecipientID,
 			&msg.Content,
+			&msg.Status,
+			&msg.MessageType,
 			&msg.CreatedAt,
 			&msg.SenderName,
 			&msg.SenderAvatar,
@@ -84,6 +111,14 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Error scanning message: %v", err)
 			continue
 		}
+
+		// Set recipient ID based on sender
+		if msg.SenderID == userId {
+			msg.RecipientID = contactId
+		} else {
+			msg.RecipientID = userId
+		}
+
 		messages = append(messages, msg)
 	}
 
@@ -92,7 +127,6 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
-
 func handleDBError(w http.ResponseWriter, err error) {
 	if err == sql.ErrNoRows {
 		http.Error(w, "No messages found", http.StatusNotFound)

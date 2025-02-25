@@ -123,7 +123,8 @@
             type: MessageType.TYPING,
             senderId: currentUserId,
             recipientId: recipientId || 0,
-            isTyping
+            isTyping,
+            createdAt: new Date().toISOString()
         });
     }
 
@@ -135,6 +136,7 @@
     }
 
     // Handle message submission
+    // Function to send a chat message (updated)
     function sendChatMessage() {
       if (!messageText.trim()) return;
 
@@ -152,8 +154,13 @@
           userName: currentUserName
         };
       } else if (recipientId) {
+        // Create chat ID for direct chats
+        const privateChatId = Math.min(currentUserId, recipientId) * 1000000 +
+          Math.max(currentUserId, recipientId);
+
         messageToSend = {
           type: MessageType.CHAT,
+          chatId: chatId, // Use the chatId passed to the component
           senderId: currentUserId,
           recipientId,
           content: messageText.trim(),
@@ -165,10 +172,14 @@
         return;
       }
 
-      sendMessage(messageToSend);
+      // Send message and update local state
+      const success = sendMessage(messageToSend);
 
-      messageText = '';
-      isTyping = false;
+      if (success) {
+        // Message sent successfully - clear the input field
+        messageText = '';
+        isTyping = false;
+      }
     }
 
     // Handle emoji selection
@@ -184,52 +195,53 @@
 
     // Load historical messages
     async function loadMessages() {
-        loading = true;
-        try {
-            if (!currentUserId || !recipientId) {
-                console.error('Missing user IDs for loading messages');
-                loading = false;
-                return;
-            }
-
-            const response = await fetch(
-                `http://localhost:8080/messages/${currentUserId}/${recipientId}`,
-                { credentials: 'include' }
-            );
-
-            if (response.ok) {
-                try {
-                    const historicalMessages = await response.json();
-
-                    // Check if we got an array of messages
-                    if (Array.isArray(historicalMessages) && historicalMessages.length > 0) {
-                        // Process messages
-                        historicalMessages.forEach((msg: any) => {
-                            msg.type = MessageType.CHAT;
-                        });
-
-                        // Add to messages list
-                        messages = historicalMessages;
-                        console.log(`Loaded ${historicalMessages.length} messages`);
-                    } else {
-                        console.log('No messages found or empty array');
-                        messages = [];
-                    }
-                } catch (parseError) {
-                    console.error('Error parsing messages:', parseError);
-                    messages = [];
-                }
-            } else {
-                console.log(`Server returned ${response.status}: ${response.statusText}`);
-                messages = [];
-            }
-        } catch (error) {
-            console.error('Error loading messages:', error);
-            messages = [];
-        } finally {
-            loading = false;
-            setTimeout(scrollToBottom, 100);
+      loading = true;
+      try {
+        if (!currentUserId || !recipientId) {
+          console.error('Missing user IDs for loading messages');
+          loading = false;
+          return;
         }
+
+        // Use path parameters instead of query parameters
+        const response = await fetch(
+          `http://localhost:8080/messages/${currentUserId}/${recipientId}`,
+          { credentials: 'include' }
+        );
+
+        if (response.ok) {
+          try {
+            const historicalMessages = await response.json();
+
+            // Check if we got an array of messages
+            if (Array.isArray(historicalMessages) && historicalMessages.length > 0) {
+              // Process messages
+              historicalMessages.forEach((msg: any) => {
+                msg.type = MessageType.CHAT;
+              });
+
+              // Add to messages list
+              messages = historicalMessages;
+              console.log(`Loaded ${historicalMessages.length} messages`);
+            } else {
+              console.log('No messages found or empty array');
+              messages = [];
+            }
+          } catch (parseError) {
+            console.error('Error parsing messages:', parseError);
+            messages = [];
+          }
+        } else {
+          console.log(`Server returned ${response.status}: ${response.statusText}`);
+          messages = [];
+        }
+      } catch (error) {
+        console.error('Error loading messages:', error);
+        messages = [];
+      } finally {
+        loading = false;
+        setTimeout(scrollToBottom, 100);
+      }
     }
 
     // Format timestamp for display

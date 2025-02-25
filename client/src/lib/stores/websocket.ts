@@ -277,6 +277,9 @@ function normalizeMessage(message: any): WebSocketMessage {
 /**
  * Send a message through the WebSocket
  */
+/**
+ * Send a message through the WebSocket
+ */
 export function sendMessage(message: WebSocketMessage): boolean {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
         console.error('Cannot send message: WebSocket not connected');
@@ -284,31 +287,49 @@ export function sendMessage(message: WebSocketMessage): boolean {
     }
 
     try {
+        // For chat messages, make sure we have all required fields
+        if (message.type === MessageType.CHAT && 'content' in message) {
+            // Make sure the message has a chatId
+            if (!('chatId' in message) || !message.chatId) {
+                const chatMessage = message as ChatMessage;
+                // Create the chatId from user IDs if not present
+                if (chatMessage.senderId && chatMessage.recipientId) {
+                    message = {
+                        ...chatMessage,
+                        chatId: Math.min(chatMessage.senderId, chatMessage.recipientId) * 1000000 +
+                          Math.max(chatMessage.senderId, chatMessage.recipientId)
+                    };
+                }
+            }
+        }
+
+        // Send the message through WebSocket
         socket.send(JSON.stringify(message));
 
-        // If it's a chat message, add it to the messages store if it's not already present
-        if (message.type === MessageType.CHAT || message.type === MessageType.GROUP_CHAT) {
-            messages.update(msgs => {
-                // Create a unique identifier for the message
-                const messageId = `${message.type}-${message.createdAt}-${message.content}`;
+        // If it's a chat message, add it to the messages store
+        if ((message.type === MessageType.CHAT || message.type === MessageType.GROUP_CHAT) &&
+          'content' in message) {
 
-                // Check if the message already exists in the store
-                const existingMessageIndex = msgs.findIndex(msg => {
-                    if (msg.type === MessageType.CHAT && 'content' in msg) {
-                        return `${msg.type}-${msg.createdAt}-${msg.content}` === messageId;
-                    } else if (msg.type === MessageType.GROUP_CHAT && 'content' in msg) {
-                        return `${msg.type}-${msg.createdAt}-${msg.content}` === messageId;
+            // Add the message to our local store
+            messages.update(msgs => {
+                // Check if we already have this message (avoid duplicates)
+                const isDuplicate = msgs.some(msg => {
+                    if (msg.type === message.type &&
+                      'content' in msg &&
+                      'createdAt' in msg) {
+                        return msg.content === message.content &&
+                          msg.createdAt === message.createdAt;
                     }
                     return false;
                 });
 
-                if (existingMessageIndex === -1) {
+                if (!isDuplicate) {
                     return [...msgs, message];
-                } else {
-                    return msgs;
                 }
+                return msgs;
             });
 
+            // Update the active chat with the new message
             updateActiveChat(message as ChatMessage | GroupChatMessage);
         }
 
