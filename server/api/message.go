@@ -13,7 +13,7 @@ import (
 )
 
 func GetMessages(w http.ResponseWriter, r *http.Request) {
-	// Extract user IDs from URL path parameters
+
 	userIdStr := r.PathValue("userId")
 	contactIdStr := r.PathValue("contactId")
 
@@ -48,19 +48,70 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// First, get the chat ID for the conversation between these users
+	// First, get or create the chat ID for the conversation between these users
 	var chatId int
 	err = sqlite.DB.QueryRow(`
-        SELECT c.id 
-        FROM chats c
-        JOIN user_chat_status ucs1 ON c.id = ucs1.chat_id AND ucs1.user_id = ?
-        JOIN user_chat_status ucs2 ON c.id = ucs2.chat_id AND ucs2.user_id = ?
-        WHERE c.type = 'direct'
-    `, userId, contactId).Scan(&chatId)
+		SELECT c.id 
+		FROM chats c
+		JOIN user_chat_status ucs1 ON c.id = ucs1.chat_id AND ucs1.user_id = ?
+		JOIN user_chat_status ucs2 ON c.id = ucs2.chat_id AND ucs2.user_id = ?
+		WHERE c.type = 'direct'
+	`, userId, contactId).Scan(&chatId)
 
 	if err == sql.ErrNoRows {
-		// No chat exists yet, return an empty array
-		if err := json.NewEncoder(w).Encode([]models.ChatMessage{}); err != nil {
+		// No chat exists yet - we'll need to create one
+		// Using a transaction to ensure both operations complete together
+		tx, err := sqlite.DB.Begin()
+		if err != nil {
+			http.Error(w, "Database error", http.StatusInternalServerError)
+			log.Printf("Error starting transaction: %v", err)
+			return
+		}
+
+		// Create the chat
+		result, err := tx.Exec("INSERT INTO chats (type) VALUES ('direct')")
+		if err != nil {
+			tx.Rollback()
+			http.Error(w, "Error creating chat", http.StatusInternalServerError)
+			log.Printf("Error creating chat: %v", err)
+			return
+		}
+
+		id, err := result.LastInsertId()
+		if err != nil {
+			tx.Rollback()
+			http.Error(w, "Error getting new chat ID", http.StatusInternalServerError)
+			log.Printf("Error getting chat ID: %v", err)
+			return
+		}
+		chatId = int(id)
+
+		// Add both users to the chat
+		_, err = tx.Exec(
+			"INSERT INTO user_chat_status (user_id, chat_id) VALUES (?, ?), (?, ?)",
+			userId, chatId, contactId, chatId,
+		)
+		if err != nil {
+			tx.Rollback()
+			http.Error(w, "Error adding users to chat", http.StatusInternalServerError)
+			log.Printf("Error adding users to chat: %v", err)
+			return
+		}
+
+		err = tx.Commit()
+		if err != nil {
+			http.Error(w, "Error finalizing chat creation", http.StatusInternalServerError)
+			log.Printf("Error committing transaction: %v", err)
+			return
+		}
+
+		// Return empty messages array with the new chat ID
+		response := map[string]interface{}{
+			"messages": []interface{}{},
+			"chatId":   chatId,
+		}
+
+		if err := json.NewEncoder(w).Encode(response); err != nil {
 			http.Error(w, "Error encoding response", http.StatusInternalServerError)
 		}
 		return
@@ -72,21 +123,18 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 
 	// Now get the messages for this chat
 	rows, err := sqlite.DB.Query(`
-        SELECT 
-            m.id,
-            m.chat_id,
-            m.sender_id,
-            m.content,
-            m.status,
-            m.message_type,
-            m.created_at,
-            u.username as sender_name,
-            u.avatar as sender_avatar
-        FROM chat_messages m
-        JOIN users u ON m.sender_id = u.id
-        WHERE m.chat_id = ?
-        ORDER BY m.created_at ASC
-    `, chatId)
+		SELECT 
+			m.id,
+			m.sender_id,
+			m.content,
+			m.created_at,
+			u.username as sender_name,
+			u.avatar as sender_avatar
+		FROM chat_messages m
+		JOIN users u ON m.sender_id = u.id
+		WHERE m.chat_id = ?
+		ORDER BY m.created_at ASC
+	`, chatId)
 
 	if err != nil {
 		handleDBError(w, err)
@@ -99,11 +147,8 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 		var msg models.ChatMessage
 		if err := rows.Scan(
 			&msg.ID,
-			&msg.ChatID,
 			&msg.SenderID,
 			&msg.Content,
-			&msg.Status,
-			&msg.MessageType,
 			&msg.CreatedAt,
 			&msg.SenderName,
 			&msg.SenderAvatar,
@@ -112,21 +157,31 @@ func GetMessages(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Set recipient ID based on sender
+		// Set recipient based on sender
 		if msg.SenderID == userId {
 			msg.RecipientID = contactId
 		} else {
 			msg.RecipientID = userId
 		}
 
+		// Set the chat ID
+		msg.ChatID = chatId
+
 		messages = append(messages, msg)
 	}
 
-	if err := json.NewEncoder(w).Encode(messages); err != nil {
+	// Return messages with chat ID
+	response := map[string]interface{}{
+		"messages": messages,
+		"chatId":   chatId,
+	}
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, "Error encoding response", http.StatusInternalServerError)
 		return
 	}
 }
+
 func handleDBError(w http.ResponseWriter, err error) {
 	if err == sql.ErrNoRows {
 		http.Error(w, "No messages found", http.StatusNotFound)

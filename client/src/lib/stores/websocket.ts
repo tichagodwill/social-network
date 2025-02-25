@@ -27,6 +27,7 @@ export interface BaseMessage {
 // Message Interfaces
 export interface ChatMessage extends BaseMessage {
     type: MessageType.CHAT;
+    chatId?: number;
     senderId: number;
     recipientId: number;
     content: string;
@@ -280,6 +281,9 @@ function normalizeMessage(message: any): WebSocketMessage {
 /**
  * Send a message through the WebSocket
  */
+/**
+ * Send a message through the WebSocket
+ */
 export function sendMessage(message: WebSocketMessage): boolean {
     if (!socket || socket.readyState !== WebSocket.OPEN) {
         console.error('Cannot send message: WebSocket not connected');
@@ -298,13 +302,19 @@ export function sendMessage(message: WebSocketMessage): boolean {
                         ...chatMessage,
                         chatId: Math.min(chatMessage.senderId, chatMessage.recipientId) * 1000000 +
                           Math.max(chatMessage.senderId, chatMessage.recipientId)
-                    };
+                    } as ChatMessage;
                 }
             }
         }
 
+        // Wrap the message in the format expected by the server
+        const serverMessage = {
+            type: message.type,
+            data: message
+        };
+
         // Send the message through WebSocket
-        socket.send(JSON.stringify(message));
+        socket.send(JSON.stringify(serverMessage));
 
         // If it's a chat message, add it to the messages store
         if ((message.type === MessageType.CHAT || message.type === MessageType.GROUP_CHAT) &&
@@ -611,7 +621,7 @@ function startHeartbeat(): void {
             // Send a ping message
             socket.send(JSON.stringify({ type: 'ping' }));
         }
-    }, 30000); // Send a ping every 30 seconds
+    }, 60000); // Send a ping every 30 seconds
 }
 
 /**

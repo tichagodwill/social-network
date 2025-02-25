@@ -37,6 +37,7 @@
     let loading = true;
 
     // Handle chat selection
+    // Handle chat selection
     async function handleSelectChat(chatId: number, isGroup: boolean) {
         loading = true;
 
@@ -56,25 +57,73 @@
                     };
                 }
             } else {
-                // For direct chats, we need to extract the other user's ID
+                // For direct chats, we need to get the other user's details
                 const currentUserId = getCurrentUserId();
-                const id1 = Math.floor(chatId / 1000000);
-                const id2 = chatId % 1000000;
-                const otherUserId = id1 === currentUserId ? id2 : id1;
 
-                // Fetch user details
-                const response = await fetch(`http://localhost:8080/user/${otherUserId}`, {
+                // First, get the chat participants
+                const chatResponse = await fetch(`http://localhost:8080/chat/${chatId}/participants`, {
                     credentials: 'include'
                 });
-                if (response.ok) {
-                    const userData = await response.json();
-                    selectedChat = {
-                        id: chatId,
-                        isGroup: false,
-                        recipientId: otherUserId,
-                        name: `${userData.user.first_name} ${userData.user.last_name}`,
-                        avatar: userData.user.avatar
-                    };
+
+                if (chatResponse.ok) {
+                    const participants = await chatResponse.json();
+
+                    // Find the other user (not the current user)
+                    const otherUser = participants.find((p: any) => p.id !== currentUserId);
+
+                    if (otherUser) {
+                        // Fetch user details if needed
+                        const response = await fetch(`http://localhost:8080/user/${otherUser.id}`, {
+                            credentials: 'include'
+                        });
+
+                        if (response.ok) {
+                            const userData = await response.json();
+                            selectedChat = {
+                                id: chatId,
+                                isGroup: false,
+                                recipientId: otherUser.id,
+                                name: `${userData.user.first_name} ${userData.user.last_name}`,
+                                avatar: userData.user.avatar
+                            };
+                        }
+                    } else {
+                        console.error('Could not find other participant in chat');
+                    }
+                } else {
+                    // Fallback - if you don't have a participants endpoint yet
+                    // We can create an alternative approach
+
+                    // Create a temporary chat connection to get the recipient ID
+                    const tempChatResponse = await fetch(`http://localhost:8080/messages/${currentUserId}/temp`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        credentials: 'include',
+                        body: JSON.stringify({ chatId: chatId })
+                    });
+
+                    if (tempChatResponse.ok) {
+                        const chatInfo = await tempChatResponse.json();
+                        const otherUserId = chatInfo.recipientId;
+
+                        // Now fetch the user details
+                        const userResponse = await fetch(`http://localhost:8080/user/${otherUserId}`, {
+                            credentials: 'include'
+                        });
+
+                        if (userResponse.ok) {
+                            const userData = await userResponse.json();
+                            selectedChat = {
+                                id: chatId,
+                                isGroup: false,
+                                recipientId: otherUserId,
+                                name: `${userData.user.first_name} ${userData.user.last_name}`,
+                                avatar: userData.user.avatar
+                            };
+                        }
+                    }
                 }
             }
 

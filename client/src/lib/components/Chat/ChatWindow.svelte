@@ -1,31 +1,20 @@
 <!-- src/lib/components/Chat/ChatWindow.svelte -->
 <script lang="ts">
-    import { onMount, onDestroy } from 'svelte';
-    import { scale } from 'svelte/transition';
-    import { debounce } from 'lodash-es';
-    import { Spinner, Button, Avatar, Card, Badge } from 'flowbite-svelte';
-    import { browser } from "$app/environment";
-    import { auth } from '$lib/stores/auth';
-    import { get } from 'svelte/store';
-    import defaultProfileImg from '$lib/assets/default-profile.jpg';
+  import { onDestroy, onMount } from 'svelte'
+  import { scale } from 'svelte/transition'
+  import { debounce } from 'lodash-es'
+  import { Avatar, Badge, Button, Card, Spinner } from 'flowbite-svelte'
+  import { browser } from '$app/environment'
+  import { auth } from '$lib/stores/auth'
+  import { get } from 'svelte/store'
+  import defaultProfileImg from '$lib/assets/default-profile.jpg'
+  import { type ChatMessage, connectionState, ConnectionState, getChatMessages, type GroupChatMessage, initializeWebSocket, MessageType, resetUnreadCount, sendMessage } from '$lib/stores/websocket'
 
-    let Picker: any;
+  let Picker: any
     let emojiPickerLoaded = false;
     let emojiData: any;
 
-    import {
-        initializeWebSocket,
-        sendMessage,
-        MessageType,
-        getChatMessages,
-        resetUnreadCount,
-        type ChatMessage,
-        type GroupChatMessage,
-        connectionState,
-        ConnectionState
-    } from '$lib/stores/websocket';
-
-    // Props
+  // Props
     export let chatId: number;
     export let isGroup: boolean = false;
     export let recipientId: number | null = null; // For direct chats
@@ -137,6 +126,7 @@
 
     // Handle message submission
     // Function to send a chat message (updated)
+  // Function to send a chat message
     function sendChatMessage() {
       if (!messageText.trim()) return;
 
@@ -154,13 +144,9 @@
           userName: currentUserName
         };
       } else if (recipientId) {
-        // Create chat ID for direct chats
-        const privateChatId = Math.min(currentUserId, recipientId) * 1000000 +
-          Math.max(currentUserId, recipientId);
-
         messageToSend = {
           type: MessageType.CHAT,
-          chatId: chatId, // Use the chatId passed to the component
+          chatId: chatId, // Use the chatId from the server
           senderId: currentUserId,
           recipientId,
           content: messageText.trim(),
@@ -172,11 +158,10 @@
         return;
       }
 
-      // Send message and update local state
+      // Send message
       const success = sendMessage(messageToSend);
 
       if (success) {
-        // Message sent successfully - clear the input field
         messageText = '';
         isTyping = false;
       }
@@ -194,6 +179,7 @@
     }
 
     // Load historical messages
+  // Load historical messages
     async function loadMessages() {
       loading = true;
       try {
@@ -203,7 +189,7 @@
           return;
         }
 
-        // Use path parameters instead of query parameters
+        // Use path parameters
         const response = await fetch(
           `http://localhost:8080/messages/${currentUserId}/${recipientId}`,
           { credentials: 'include' }
@@ -211,20 +197,42 @@
 
         if (response.ok) {
           try {
-            const historicalMessages = await response.json();
+            const data = await response.json()
 
-            // Check if we got an array of messages
-            if (Array.isArray(historicalMessages) && historicalMessages.length > 0) {
+            // Check if we got the expected response format with messages and chatId
+            if (data && data.chatId) {
+              // Update the chat ID (very important!)
+              chatId = data.chatId
+
               // Process messages
-              historicalMessages.forEach((msg: any) => {
-                msg.type = MessageType.CHAT;
-              });
+              if (Array.isArray(data.messages)) {
+                data.messages.forEach((msg: any) => {
+                  msg.type = MessageType.CHAT
+                })
 
-              // Add to messages list
-              messages = historicalMessages;
-              console.log(`Loaded ${historicalMessages.length} messages`);
+                // Add to messages list
+                messages = data.messages
+                console.log(`Loaded ${data.messages.length} messages from chat ID ${chatId}`)
+              } else {
+                console.log('No messages found or empty array')
+                messages = []
+              }
+            }
+            // Handle backward compatibility - old format with just an array of messages
+            else if (Array.isArray(data)) {
+              data.forEach((msg: any) => {
+                msg.type = MessageType.CHAT
+              })
+
+              // If we have messages and chatId in the first message, update local chatId
+              if (data.length > 0 && data[0].chatId) {
+                chatId = data[0].chatId
+              }
+
+              messages = data
+              console.log(`Loaded ${data.length} messages`)
             } else {
-              console.log('No messages found or empty array');
+              console.log('Unexpected response format', data)
               messages = [];
             }
           } catch (parseError) {

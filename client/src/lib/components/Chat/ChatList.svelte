@@ -41,33 +41,31 @@
             }
 
             const response = await fetch(
-              `http://localhost:8080/contact/${currentUserId}`,
+              `http://localhost:8080/chats`,
               { credentials: 'include' }
             );
 
             if (response.ok) {
-                const contacts = await response.json();
-                activeChats.set(contacts.map((contact: any) => ({
-                    id: getPrivateChatIdFromUserIds(currentUserId, contact.id),
-                    name: `${contact.first_name} ${contact.last_name}`,
-                    avatar: contact.avatar,
-                    unreadCount: 0,
-                    isGroup: false,
-                    lastMessage: contact.lastMessage,
-                    lastMessageTime: contact.lastMessageTime
+                const chats = await response.json();
+
+                // Process chats - they now have real IDs from the database
+                activeChats.set(chats.map((chat: any) => ({
+                    id: chat.id, // Use the real chat ID from database
+                    name: chat.name || `${chat.first_name} ${chat.last_name}`,
+                    avatar: chat.avatar,
+                    unreadCount: chat.unread_count || 0,
+                    isGroup: chat.type === 'group',
+                    lastMessage: chat.last_message,
+                    lastMessageTime: chat.last_message_time
                 })));
             }
         } catch (error) {
-            console.error('Error loading contacts:', error);
+            console.error('Error loading chats:', error);
         } finally {
             loading = false;
         }
     }
 
-    // Helper function to get chat ID from user IDs
-    function getPrivateChatIdFromUserIds(userId1: number, userId2: number): number {
-        return Math.min(userId1, userId2) * 1000000 + Math.max(userId1, userId2);
-    }
 
     // Format timestamp
     function formatLastMessageTime(timestamp?: string): string {

@@ -161,8 +161,10 @@ func main() {
 	mux.Handle("GET /notifications/{id}/read", authMiddleware(http.HandlerFunc(api.MarkNotificationAsRead)))
 
 	mux.Handle("GET /uploads/group_posts/{filename}", http.HandlerFunc(api.ServeGroupPostMedia))
-	mux.HandleFunc("POST /chat/direct", api.CreateOrGetDirectChat)
 
+	mux.Handle("POST /chat/direct", http.HandlerFunc(api.CreateOrGetDirectChat))
+	mux.Handle("GET /chats", http.HandlerFunc(api.GetUserChats))
+	mux.Handle("GET /chat/{chatId}/participants", http.HandlerFunc(api.GetChatParticipants))
 	// Group role routes
 	mux.Handle("GET /groups/{id}/role", authMiddleware(http.HandlerFunc(api.GetUserRoleInGroup)))
 

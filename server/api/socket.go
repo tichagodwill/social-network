@@ -136,8 +136,14 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 
 			switch msg.Type {
 			case "chat":
+				// Extract the chat message from the data field
+				chatData, err := json.Marshal(msg.Data)
+				if err != nil {
+					log.Printf("Error marshaling chat data: %v", err)
+					break
+				}
 				var chatMessage models.ChatMessage
-				if err := json.Unmarshal(message, &chatMessage); err != nil {
+				if err := json.Unmarshal(chatData, &chatMessage); err != nil {
 					log.Printf("WebSocket chat json unmarshal error: %v", err)
 					break
 				}
@@ -165,7 +171,16 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 					Data:        rsvpMessage,
 					TargetUsers: nil, // Broadcast to all users
 				}
+			case "ping":
+				pongMessage := models.WebSocketMessage{
+					Type: "pong",
+					Data: nil,
+				}
 
+				// Send the pong response back to the client
+				if err := conn.WriteJSON(pongMessage); err != nil {
+					log.Printf("Error sending pong: %v", err)
+				}
 			default:
 				log.Printf("Unknown message type: %s", msg.Type)
 			}
