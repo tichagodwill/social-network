@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Bell } from 'lucide-svelte';
+  import { Bell, Calendar } from 'lucide-svelte';
   import { Button, Dropdown, DropdownItem } from 'flowbite-svelte';
   import { onMount, onDestroy } from 'svelte';
   import { goto } from '$app/navigation';
@@ -13,7 +13,9 @@
   import { fade } from 'svelte/transition';
 
   // Add a toast notification system
-  let toast = { message: '', type: '', visible: false };
+  let toastMessage = '';
+  let toastVisible = false;
+  let toastType: 'success' | 'error' | 'info' = 'info';
   let loading = false;
   let isOpen = false;
 
@@ -34,24 +36,26 @@
     return notification.userId === $auth?.user?.id;
   }
 
-  function showToast(message: string, type: 'success' | 'error' | 'info') {
-    toast = { message, type, visible: true };
+  function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
+    toastMessage = message;
+    toastType = type;
+    toastVisible = true;
     setTimeout(() => {
-      toast = { ...toast, visible: false };
+      toastVisible = false;
     }, 3000);
   }
 
   async function handleInviteResponse(notification: any, action: 'accept' | 'reject') {
     try {
       loading = true;
-
+      
       // First handle the invitation response
       const response = await fetch(`http://localhost:8080/groups/${notification.groupId}/invitations/${notification.invitationId}/${action}`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json'
-        },
-        credentials: 'include'
+        }
       });
 
       if (!response.ok) {
@@ -59,31 +63,25 @@
         throw new Error(errorData.error || `Failed to ${action} invitation`);
       }
 
-      // After successful invitation handling, mark the notification as read
-      await markNotificationAsRead(notification.id);
+      // Update the notifications list
+      notifications.update(notes => 
+        notes.map(note => 
+          note.id === notification.id 
+            ? { ...note, isProcessed: true }
+            : note
+        )
+      );
 
-      if (action === 'accept') {
-        // Show success message for accepting
-        showToast('Successfully joined the group!', 'success');
+      showToast(`Successfully ${action}ed invitation`, 'success');
 
-        // Close the notification dropdown
-        isOpen = false;
-
-        // Navigate to the group page immediately after accepting
-        if (notification.groupId) {
-          goto(`/groups/${notification.groupId}`);
-        }
-      } else {
-        // Show message for rejecting
-        showToast('Invitation rejected', 'info');
+      // Refresh the page if we're on the group page
+      if (window.location.pathname.includes(`/groups/${notification.groupId}`)) {
+        window.location.reload();
       }
-    } catch (error: any) {
+
+    } catch (error) {
       console.error('Error handling invitation response:', error);
-      if (error.message.includes('already processed')) {
-        showToast('This invitation has already been processed', 'info');
-      } else {
-        showToast(error.message || `Failed to ${action} invitation`, 'error');
-      }
+      showToast(error instanceof Error ? error.message : 'Failed to process invitation', 'error');
     } finally {
       loading = false;
     }
@@ -138,28 +136,22 @@
     }
   }
 
-  async function handleNotificationClick(notification: any, event: MouseEvent) {
+  async function handleNotificationClick(notification: any) {
     try {
-      event.stopPropagation();
-      event.preventDefault();
-
       if (!notification.isRead) {
-        // Use the centralized markNotificationAsRead function
         await markNotificationAsRead(notification.id);
-
-        // Show success toast
-        showToast('Notification marked as read', 'success');
-
-        // Handle navigation for group invitations
-        if (notification.type === 'group_invitation' && !notification.isProcessed && notification.groupId) {
-          isOpen = false;
-          goto(`/groups/${notification.groupId}`);
-        }
       }
+
+      // Handle navigation or other actions based on notification type
+      if (notification.link) {
+        goto(notification.link);
+      }
+
+      // Close dropdown after handling notification
+      isOpen = false;
     } catch (error) {
       console.error('Error handling notification click:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to mark notification as read';
-      showToast(errorMessage, 'error');
+      showToast('Failed to mark notification as read', 'error');
     }
   }
 </script>
@@ -195,10 +187,12 @@
         </div>
       {:else}
         {#each $notifications as notification (notification.id)}
+          <!-- Debug notification -->
+          <!-- {JSON.stringify(notification)} -->
           <div
             class="px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200 cursor-pointer
                                {notification.isRead ? 'opacity-75' : 'bg-blue-50 dark:bg-blue-900/20'}"
-            on:click={(event) => handleNotificationClick(notification, event)}
+            on:click={(event) => handleNotificationClick(notification)}
           >
             <div class="text-sm font-medium text-gray-900 dark:text-white">
               {notification.content}
@@ -258,9 +252,13 @@
               </div>
             {/if}
 
-            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              {formatDate(notification.createdAt)}
-            </div>
+            {#if notification.type === 'group_event'}
+              <div class="flex items-center space-x-2">
+                <p class="text-sm text-gray-700 dark:text-gray-300">
+                  {notification.content}
+                </p>
+              </div>
+            {/if}
           </div>
         {/each}
         <div class="px-4 py-2 border-t border-gray-200 dark:border-gray-700">
@@ -278,18 +276,18 @@
   </Dropdown>
 </div>
 
-{#if toast.visible}
+{#if toastVisible}
   <div
-    class="fixed bottom-4 right-4 p-4 rounded-lg shadow-lg z-50 transition-all duration-300"
-    class:bg-green-100={toast.type === 'success'}
-    class:bg-red-100={toast.type === 'error'}
-    class:bg-blue-100={toast.type === 'info'}
-    class:text-green-800={toast.type === 'success'}
-    class:text-red-800={toast.type === 'error'}
-    class:text-blue-800={toast.type === 'info'}
-    transition:fade={{ duration: 300 }}
+    class="fixed bottom-4 right-4 p-4 rounded-lg shadow-lg z-50"
+    class:bg-green-100={toastType === 'success'}
+    class:bg-red-100={toastType === 'error'}
+    class:bg-blue-100={toastType === 'info'}
+    class:text-green-800={toastType === 'success'}
+    class:text-red-800={toastType === 'error'}
+    class:text-blue-800={toastType === 'info'}
+    transition:fade={{ duration: 200 }}
   >
-    {toast.message}
+    {toastMessage}
   </div>
 {/if}
 

@@ -125,80 +125,181 @@ export const activeChats: Writable<ActiveChat[]> = writable([]);
 
 // Store for notifications
 export const notifications: Writable<NotificationMessage[]> = writable([]);
-export const unreadNotificationsCount = derived(
+
+// Create a writable store for unread count that we'll keep in sync
+export const unreadNotificationsCount: Writable<number> = writable(0);
+
+// Create a derived store to automatically calculate unread count
+const derivedUnreadCount = derived(
   notifications,
   $notifications => $notifications.filter(n => !n.isRead).length
 );
 
+// Subscribe to the derived store to keep the writable store in sync
+derivedUnreadCount.subscribe((count) => {
+    unreadNotificationsCount.set(count);
+});
+
 // WebSocket instance
-let socket: WebSocket | null = null;
+let wsInstance: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
 const MAX_RECONNECT_DELAY = 30000; // 30 seconds max
-let reconnectDelay = 1000; // Start with 1 second
+const INITIAL_RECONNECT_DELAY = 1000;
+let reconnectDelay = INITIAL_RECONNECT_DELAY;
+let isReconnecting = false;
+
+// Constants for connection management
+const CONNECTION_TIMEOUT = 5000;
+const RECONNECT_DELAY = 2000;
+const MAX_RECONNECT_ATTEMPTS = 5;
+let reconnectAttempts = 0;
 
 /**
  * Initialize WebSocket connection
  */
 export function initializeWebSocket(): void {
-    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-        console.log('WebSocket connection already exists');
+    let currentState: ConnectionState;
+    const unsubscribe = connectionState.subscribe(state => {
+        currentState = state;
+    });
+    unsubscribe();
+
+    if (currentState === ConnectionState.CONNECTING) {
+        console.log('Already attempting to connect...');
+        return;
+    }
+
+    // Reset reconnect attempts if this is a fresh connection
+    if (currentState === ConnectionState.CLOSED) {
+        reconnectAttempts = 0;
+    }
+
+    if (wsInstance?.readyState === WebSocket.OPEN) {
+        console.log('WebSocket connection already exists and is open');
         return;
     }
 
     connectionState.set(ConnectionState.CONNECTING);
+    cleanupConnection();
 
-    const currentUserId = getCurrentUserId();
-    if (!currentUserId) {
-        console.error('Cannot initialize WebSocket: No user ID available');
-        connectionState.set(ConnectionState.ERROR);
-        return;
-    }
-
-    // Connect to your Go backend's WebSocket endpoint
-    socket = new WebSocket('ws://localhost:8080/ws');
-
-    socket.onopen = () => {
-        console.log('WebSocket connection established');
-        connectionState.set(ConnectionState.OPEN);
-        reconnectDelay = 1000;
-        startHeartbeat();
-        loadInitialNotifications().catch(error => {
-            console.error('Failed to load initial notifications:', error);
-        });
-    };
-
-    socket.onmessage = (event) => {
+    const connectWithRetry = () => {
         try {
-            let message;
-            const data = JSON.parse(event.data);
+            wsInstance = new WebSocket('ws://localhost:8080/ws');
+            wsInstance.binaryType = 'arraybuffer';
 
-            // Handle different server message formats
-            if (data.type === 'notification' && data.data) {
-                // Server sends notification in { type: 'notification', data: {...} } format
-                message = normalizeNotification(data.data);
-            } else {
-                // Regular message format
-                message = normalizeMessage(data);
-            }
+            let isConnected = false;
+            let connectionTimeout: NodeJS.Timeout;
 
-            handleMessage(message);
+            // Set connection timeout
+            connectionTimeout = setTimeout(() => {
+                if (!isConnected) {
+                    console.log('Connection attempt timed out');
+                    wsInstance?.close();
+                    connectionState.set(ConnectionState.ERROR);
+                    scheduleReconnect();
+                }
+            }, CONNECTION_TIMEOUT);
+
+            wsInstance.onopen = () => {
+                console.log('WebSocket connection established');
+                isConnected = true;
+                connectionState.set(ConnectionState.OPEN);
+                reconnectAttempts = 0; // Reset attempts on successful connection
+                
+                if (connectionTimeout) {
+                    clearTimeout(connectionTimeout);
+                }
+
+                if (heartbeatInterval) {
+                    clearInterval(heartbeatInterval);
+                }
+
+                // Start heartbeat and load notifications after connection is stable
+                setTimeout(() => {
+                    if (isConnected && wsInstance?.readyState === WebSocket.OPEN) {
+                        startHeartbeat();
+                        loadInitialNotifications().catch(console.error);
+                    }
+                }, 500);
+            };
+
+            wsInstance.onmessage = (event) => {
+                try {
+                    let message;
+                    const data = JSON.parse(event.data);
+                    console.log("Received WebSocket message:", JSON.stringify(data, null, 2));
+
+                    // Handle different server message formats
+                    if (data.type === 'notification' && data.data) {
+                        message = normalizeNotification(data.data);
+
+                        // Update notifications store immediately
+                        notifications.update(notes => {
+                            return [message, ...notes];
+                        });
+
+                        // The unread count will be automatically updated via the derived store
+
+                        // Show toast for event notifications
+                        if (message.type === 'group_event') {
+                            showToast(message.content, 'info');
+                        }
+                    } else {
+                        message = normalizeMessage(data);
+                    }
+
+                    handleMessage(message);
+                } catch (error) {
+                    console.error('Error handling WebSocket message:', error);
+                    console.error('Message data:', event.data);
+                }
+            };
+
+            wsInstance.onclose = (event) => {
+                const reason = event.reason || 'Unknown reason';
+                console.log(`WebSocket connection closed: ${event.code} (${reason})`);
+                isConnected = false;
+
+                // Only change state if it wasn't intentionally closed
+                if (event.code !== 1000) {
+                    connectionState.set(ConnectionState.CLOSED);
+                    scheduleReconnect();
+                }
+
+                if (heartbeatInterval) {
+                    clearInterval(heartbeatInterval);
+                    heartbeatInterval = null;
+                }
+
+                if (connectionTimeout) {
+                    clearTimeout(connectionTimeout);
+                }
+
+                wsInstance = null;
+                cleanupConnection();
+            };
+
+            wsInstance.onerror = (error) => {
+                console.error('WebSocket error occurred:', {
+                    error,
+                    readyState: wsInstance?.readyState,
+                    url: wsInstance?.url
+                });
+                connectionState.set(ConnectionState.ERROR);
+                reconnectAttempts++;
+                scheduleReconnect();
+            };
+
         } catch (error) {
-            console.error('Error parsing WebSocket message:', error);
+            console.error('Error initializing WebSocket:', error);
+            connectionState.set(ConnectionState.ERROR);
+            reconnectAttempts++;
+            scheduleReconnect();
         }
     };
 
-    socket.onclose = (event) => {
-        console.log(`WebSocket connection closed: ${event.code} ${event.reason}`);
-        connectionState.set(ConnectionState.CLOSED);
-        cleanupConnection();
-        scheduleReconnect();
-    };
-
-    socket.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        connectionState.set(ConnectionState.ERROR);
-    };
+    connectWithRetry();
 }
 
 /**
@@ -278,14 +379,8 @@ function normalizeMessage(message: any): WebSocketMessage {
 /**
  * Send a message through the WebSocket
  */
-/**
- * Send a message through the WebSocket
- */
-/**
- * Send a message through the WebSocket
- */
 export function sendMessage(message: WebSocketMessage): boolean {
-    if (!socket || socket.readyState !== WebSocket.OPEN) {
+    if (!wsInstance || wsInstance.readyState !== WebSocket.OPEN) {
         console.error('Cannot send message: WebSocket not connected');
         return false;
     }
@@ -314,7 +409,7 @@ export function sendMessage(message: WebSocketMessage): boolean {
         };
 
         // Send the message through WebSocket
-        socket.send(JSON.stringify(serverMessage));
+        wsInstance.send(JSON.stringify(serverMessage));
 
         // If it's a chat message, add it to the messages store
         if ((message.type === MessageType.CHAT || message.type === MessageType.GROUP_CHAT) &&
@@ -354,9 +449,9 @@ export function sendMessage(message: WebSocketMessage): boolean {
  * Close the WebSocket connection
  */
 export function closeConnection(): void {
-    if (socket) {
-        socket.close(1000, 'User initiated close');
-        cleanupConnection();
+    if (wsInstance) {
+        wsInstance.close();
+        wsInstance = null;
     }
 }
 
@@ -382,6 +477,20 @@ function handleMessage(message: WebSocketMessage): void {
             updateActiveChat(message as GroupChatMessage);
             break;
         case MessageType.NOTIFICATION:
+            // Handle the notification
+            if (message.data) {
+                const notification = normalizeNotification(message.data);
+                
+                // Add the new notification to the store
+                notifications.update(notes => [notification, ...notes]);
+                
+                // Show toast notification for group events
+                if (notification.type === 'group_event') {
+                    // You can implement a toast notification system or use an existing one
+                    showToast(notification.content, 'info');
+                }
+            }
+            break;
         case MessageType.GROUP_INVITATION:
         case MessageType.JOIN_REQUEST:
         case MessageType.FOLLOW_REQUEST:
@@ -616,21 +725,47 @@ function getPrivateChatIdFromUserIds(userId1: number, userId2: number): number {
  * Send a ping message to keep the connection alive
  */
 function startHeartbeat(): void {
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+    }
+
     heartbeatInterval = setInterval(() => {
-        if (socket && socket.readyState === WebSocket.OPEN) {
-            // Send a ping message
-            socket.send(JSON.stringify({ type: 'ping' }));
+        if (wsInstance?.readyState === WebSocket.OPEN) {
+            try {
+                // Add timestamp to help track latency
+                wsInstance.send(JSON.stringify({ 
+                    type: 'ping',
+                    timestamp: Date.now()
+                }));
+            } catch (error) {
+                console.error('Error sending heartbeat:', error);
+                cleanupConnection();
+                scheduleReconnect();
+            }
         }
-    }, 60000); // Send a ping every 30 seconds
+    }, 20000); // 20 seconds interval
 }
 
 /**
  * Clean up resources
  */
 function cleanupConnection(): void {
+    if (wsInstance) {
+        // Only close if not already closing/closed
+        if (wsInstance.readyState === WebSocket.OPEN) {
+            wsInstance.close(1000, 'Normal closure');
+        }
+        wsInstance = null;
+    }
+    
     if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
         heartbeatInterval = null;
+    }
+    
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
     }
 }
 
@@ -642,15 +777,17 @@ function scheduleReconnect(): void {
         clearTimeout(reconnectTimer);
     }
 
+    // Stop reconnecting after max attempts
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        console.log('Max reconnection attempts reached');
+        connectionState.set(ConnectionState.ERROR);
+        return;
+    }
+
     reconnectTimer = setTimeout(() => {
-        console.log(`Attempting to reconnect in ${reconnectDelay}ms...`);
+        console.log(`Reconnect attempt ${reconnectAttempts + 1} of ${MAX_RECONNECT_ATTEMPTS}`);
         initializeWebSocket();
-        // Exponential backoff with jitter
-        reconnectDelay = Math.min(
-          MAX_RECONNECT_DELAY,
-          reconnectDelay * 1.5 + Math.random() * 1000
-        );
-    }, reconnectDelay);
+    }, RECONNECT_DELAY);
 }
 
 export async function loadInitialNotifications(): Promise<void> {
@@ -689,7 +826,7 @@ export async function markAllNotificationsAsRead(): Promise<void> {
 
         if (response.ok) {
             notifications.update(notes =>
-              notes.map(note => ({ ...note, isRead: true }))
+                notes.map(note => ({ ...note, isRead: true }))
             );
         } else {
             console.error('Failed to mark all notifications as read:', response.status);
@@ -706,19 +843,36 @@ export async function markAllNotificationsAsRead(): Promise<void> {
 export async function markNotificationAsRead(notificationId: number): Promise<void> {
     try {
         const response = await fetch(`http://localhost:8080/notifications/${notificationId}/read`, {
-            method: 'GET',
-            credentials: 'include'
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
         });
 
-        if (response.ok) {
-            notifications.update(notes =>
-              notes.map(note =>
-                note.id === notificationId ? { ...note, isRead: true } : note
-              )
-            );
-        } else {
-            throw new Error(`Failed to mark notification as read: ${response.status}`);
+        let errorMessage = 'Failed to mark notification as read';
+        
+        if (!response.ok) {
+            if (response.headers.get('content-type')?.includes('application/json')) {
+                const errorData = await response.json();
+                errorMessage = errorData.error || `Failed to mark notification as read: ${response.status}`;
+            } else {
+                errorMessage = `Failed to mark notification as read: ${response.statusText}`;
+            }
+            throw new Error(errorMessage);
         }
+
+        // Update the notifications store with the new state
+        notifications.update(notifications => 
+            notifications.map(notification => 
+                notification.id === notificationId 
+                    ? { ...notification, isRead: true }
+                    : notification
+            )
+        );
+
+        // The unread count will be automatically updated via the derived store
+
     } catch (error) {
         console.error('Error marking notification as read:', error);
         throw error;
@@ -797,4 +951,13 @@ export async function requestNotificationPermission(): Promise<boolean> {
     }
 
     return false;
+}
+
+// Add this helper function if you don't have it already
+function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
+    // Dispatch a custom event that your toast component can listen to
+    const event = new CustomEvent('show-toast', {
+        detail: { message, type }
+    });
+    window.dispatchEvent(event);
 }

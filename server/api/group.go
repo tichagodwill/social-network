@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"social-network/models"
 	m "social-network/models"
 	"social-network/pkg/db/sqlite"
 	"social-network/util"
@@ -1154,6 +1155,93 @@ func CreateGroupEvent(w http.ResponseWriter, r *http.Request) {
 		"id":      eventID,
 		"message": "Event created successfully",
 	})
+
+	// After successfully creating the event, notify group members
+	go func() {
+		log.Printf("Starting notification process for event '%s' in group %d", event.Title, groupID)
+
+		// Get all group members immediately
+		rows, err := sqlite.DB.Query(`
+			SELECT user_id 
+			FROM group_members 
+			WHERE group_id = ? AND user_id != ?`,
+			groupID, event.CreatorID)
+		if err != nil {
+			log.Printf("Error getting group members: %v", err)
+			return
+		}
+		defer rows.Close()
+
+		var groupName string
+		err = sqlite.DB.QueryRow("SELECT title FROM groups WHERE id = ?", groupID).Scan(&groupName)
+		if err != nil {
+			log.Printf("Error getting group name: %v", err)
+			return
+		}
+
+		// Create notifications in a transaction
+		tx, err := sqlite.DB.Begin()
+		if err != nil {
+			log.Printf("Error starting transaction: %v", err)
+			return
+		}
+
+		for rows.Next() {
+			var memberID int
+			if err := rows.Scan(&memberID); err != nil {
+				log.Printf("Error scanning member ID: %v", err)
+				continue
+			}
+
+			// Insert notification
+			result, err := tx.Exec(`
+				INSERT INTO notifications (
+					user_id, type, content, group_id, created_at, is_read
+				) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, false)`,
+				memberID,
+				"group_event",
+				fmt.Sprintf("New event '%s' created in group '%s'", event.Title, groupName),
+				groupID,
+			)
+			if err != nil {
+				log.Printf("Error creating notification for member %d: %v", memberID, err)
+				continue
+			}
+
+			notificationID, _ := result.LastInsertId()
+
+			// Broadcast immediately
+			notification := models.WebSocketMessage{
+				Type: "notification",
+				Data: map[string]interface{}{
+					"id":        notificationID,
+					"type":      "group_event",
+					"content":   fmt.Sprintf("New event '%s' created in group '%s'", event.Title, groupName),
+					"groupId":   groupID,
+					"link":      fmt.Sprintf("/groups/%d", groupID),
+					"isRead":    false,
+					"createdAt": time.Now().Format(time.RFC3339),
+					"userId":    memberID, // Add this to ensure proper routing
+				},
+			}
+
+			log.Printf("Sending event notification to member %d: %+v", memberID, notification)
+			broadcast <- models.BroadcastMessage{
+				Data:        notification,
+				TargetUsers: map[int]bool{memberID: true},
+			}
+		}
+
+		if err = tx.Commit(); err != nil {
+			log.Printf("Error committing notifications: %v", err)
+			tx.Rollback()
+			return
+		}
+	}()
+
+	log.Printf("Event created successfully, notification process started in background")
+	// Return the created event
+	json.NewEncoder(w).Encode(event)
 }
 
 // Update the RespondToGroupEvent function to use these helpers
@@ -2383,13 +2471,12 @@ func HandleJoinRequest(w http.ResponseWriter, r *http.Request) {
 func GetMemberRole(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	groupID, err := strconv.Atoi(r.PathValue("id"))
-	if err != nil {
-		sendJSONError(w, "Invalid group ID", http.StatusBadRequest)
+	groupID := r.PathValue("id")
+	if groupID == "" {
+		sendJSONError(w, "Group ID is required", http.StatusBadRequest)
 		return
 	}
 
-	// Get current user
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
 		sendJSONError(w, "Unauthorized", http.StatusUnauthorized)
@@ -2399,26 +2486,29 @@ func GetMemberRole(w http.ResponseWriter, r *http.Request) {
 	var userID int
 	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
 	if err != nil {
-		sendJSONError(w, "Failed to get user information", http.StatusInternalServerError)
+		sendJSONError(w, "User not found", http.StatusNotFound)
 		return
 	}
 
-	// Get user's role
 	var role string
 	err = sqlite.DB.QueryRow(`
 		SELECT role FROM group_members 
 		WHERE group_id = ? AND user_id = ?`,
 		groupID, userID).Scan(&role)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			sendJSONError(w, "Not a member of this group", http.StatusNotFound)
-		} else {
-			sendJSONError(w, "Database error", http.StatusInternalServerError)
-		}
+
+	if err == sql.ErrNoRows {
+		sendJSONResponse(w, http.StatusOK, map[string]interface{}{
+			"role": nil,
+		})
 		return
 	}
 
-	sendJSONResponse(w, http.StatusOK, map[string]string{
+	if err != nil {
+		sendJSONError(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	sendJSONResponse(w, http.StatusOK, map[string]interface{}{
 		"role": role,
 	})
 }

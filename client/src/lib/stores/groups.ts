@@ -132,4 +132,22 @@ function createGroupsStore() {
     };
 }
 
-export const groups = createGroupsStore(); 
+export const groups = createGroupsStore();
+
+export async function getInvitationStatus(groupId: number) {
+    try {
+        const response = await fetch(`http://localhost:8080/groups/${groupId}/invitations/status`, {
+            credentials: 'include'
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to get invitation status');
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Error getting invitation status:', error);
+        throw error;
+    }
+} 

@@ -39,84 +39,137 @@ func init() {
 
 func handleBroadcasts() {
 	for msg := range broadcast {
+		log.Printf("Starting broadcast: Data=%+v, TargetUsers=%+v", msg.Data, msg.TargetUsers)
+
 		socketManager.Mu.RLock()
+		activeConnections := len(socketManager.Sockets)
+		log.Printf("Broadcasting to %d active connections", activeConnections)
+
 		for userID, conn := range socketManager.Sockets {
-			// Skip if this message is not for this user
 			if msg.TargetUsers != nil && !msg.TargetUsers[userID] {
 				continue
 			}
 
-			if err := conn.WriteJSON(msg.Data); err != nil {
-				log.Printf("Error broadcasting to user %d: %v", userID, err)
-				conn.Close()
-				delete(socketManager.Sockets, userID)
-			}
+			// Create a copy of the connection for this iteration
+			currentConn := conn
+
+			// Use a goroutine to handle each send operation
+			go func(userID int, conn *websocket.Conn) {
+				conn.SetWriteDeadline(time.Now().Add(time.Second * 5))
+
+				// Check connection before sending
+				if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second)); err != nil {
+					log.Printf("Connection check failed for user %d: %v", userID, err)
+					socketManager.Mu.Lock()
+					conn.Close()
+					delete(socketManager.Sockets, userID)
+					socketManager.Mu.Unlock()
+					return
+				}
+
+				if err := conn.WriteJSON(msg.Data); err != nil {
+					log.Printf("Failed to send to user %d: %v", userID, err)
+					socketManager.Mu.Lock()
+					conn.Close()
+					delete(socketManager.Sockets, userID)
+					socketManager.Mu.Unlock()
+				} else {
+					log.Printf("Successfully sent notification to user %d: %+v", userID, msg.Data)
+				}
+			}(userID, currentConn)
 		}
 		socketManager.Mu.RUnlock()
 	}
 }
 
+// Add helper function to get connected user IDs
+func getConnectedUserIDs() []int {
+	userIDs := make([]int, 0, len(socketManager.Sockets))
+	for userID := range socketManager.Sockets {
+		userIDs = append(userIDs, userID)
+	}
+	return userIDs
+}
+
 func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("New WebSocket connection attempt")
+
+	// Use a single mutex for connection management
+	var connectionMutex sync.Mutex
+	connectionMutex.Lock()
+	defer connectionMutex.Unlock()
+
+	// Get user info from session before upgrading
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
-		log.Printf("WebSocket session error: %v", err)
+		log.Printf("Error getting username from session: %v", err)
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
+	// Get user ID from username
 	var userID int
 	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
 	if err != nil {
-		log.Printf("WebSocket database error: %v", err)
-		http.Error(w, "Failed to get user information", http.StatusInternalServerError)
+		log.Printf("Error getting user ID: %v", err)
+		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
 
-	// Configure WebSocket connection
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("WebSocket upgrade error: %v", err)
-		return
-	}
-
-	// Set connection properties
-	conn.SetReadLimit(4096) // 4KB message size limit
-	conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	conn.SetPongHandler(func(string) error {
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
-	})
-
-	// Handle existing connection
+	// Check if user already has an active connection
 	socketManager.Mu.Lock()
 	if existingConn, exists := socketManager.Sockets[userID]; exists {
-		// Send close message to existing connection
-		existingConn.WriteMessage(
+		log.Printf("User %d already has an active connection, closing it", userID)
+		existingConn.WriteControl(
 			websocket.CloseMessage,
-			websocket.FormatCloseMessage(websocket.CloseNormalClosure, "New connection established"),
+			websocket.FormatCloseMessage(websocket.CloseNormalClosure, "New connection"),
+			time.Now().Add(time.Second),
 		)
 		existingConn.Close()
-		log.Printf("Closed existing connection for user %s", username)
+		delete(socketManager.Sockets, userID)
+		// Add a small delay to ensure proper cleanup
+		time.Sleep(time.Millisecond * 100)
 	}
-	socketManager.Sockets[userID] = conn
 	socketManager.Mu.Unlock()
 
-	// Start ping ticker
-	ticker := time.NewTicker(54 * time.Second)
-	defer ticker.Stop()
+	// Upgrade the connection
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("Error upgrading to WebSocket: %v", err)
+		return
+	}
 
-	// Clean up on disconnect
+	// Set up connection cleanup
 	defer func() {
+		log.Printf("Cleaning up connection for user %d", userID)
 		socketManager.Mu.Lock()
-		if _, ok := socketManager.Sockets[userID]; ok {
-			delete(socketManager.Sockets, userID)
-			log.Printf("Removed connection for user %s", username)
-		}
+		delete(socketManager.Sockets, userID)
 		socketManager.Mu.Unlock()
 		conn.Close()
 	}()
 
-	// Handle incoming messages
+	// Store the new connection
+	socketManager.Mu.Lock()
+	socketManager.Sockets[userID] = conn
+	socketManager.Mu.Unlock()
+
+	log.Printf("WebSocket connection established for user %d", userID)
+
+	// Setup ping/pong handlers
+	conn.SetPingHandler(func(data string) error {
+		err := conn.WriteControl(websocket.PongMessage, []byte(data), time.Now().Add(time.Second*5))
+		if err == nil {
+			conn.SetReadDeadline(time.Now().Add(time.Second * 120))
+		}
+		return err
+	})
+
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(time.Second * 120))
+		return nil
+	})
+
+	// Main message loop
 	for {
 		messageType, message, err := conn.ReadMessage()
 		if err != nil {
@@ -240,5 +293,16 @@ func Broadcast(message interface{}) {
 	broadcast <- models.BroadcastMessage{
 		Data:        message,
 		TargetUsers: nil, // nil means broadcast to all
+	}
+}
+
+func cleanupConnection(userID int, conn *websocket.Conn) {
+	socketManager.Mu.Lock()
+	defer socketManager.Mu.Unlock()
+
+	if currentConn, exists := socketManager.Sockets[userID]; exists && currentConn == conn {
+		delete(socketManager.Sockets, userID)
+		conn.Close()
+		log.Printf("Connection cleaned up for user %d", userID)
 	}
 }
