@@ -244,14 +244,22 @@
             const response = await fetch(`http://localhost:8080/groups/${groupId}/members/role`, {
                 credentials: 'include'
             });
-            
-            if (response.ok) {
-                const data = await response.json();
-                role = data.role;
-                console.log('Role received:', data.role);
+
+            if (!response.ok) {
+                if (response.status === 404) {
+                    // User is not a member
+                    role = '';
+                    return;
+                }
+                throw new Error('Failed to get member role');
             }
+
+            const data = await response.json();
+            role = data.role || '';
+            console.log('Current role:', role);
         } catch (error) {
             console.error('Error checking membership status:', error);
+            role = '';
         }
     }
 

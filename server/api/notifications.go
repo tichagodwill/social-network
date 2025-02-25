@@ -118,84 +118,76 @@ func GetNotifications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
 func MarkNotificationAsRead(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	username, err := util.GetUsernameFromSession(r)
-	if err != nil {
-		log.Printf("Session error: %v", err)
-		sendJSONError(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	notificationID := r.URL.Query().Get("id")
+	// Get notification ID from URL
+	notificationID := r.PathValue("id")
 	if notificationID == "" {
-		log.Printf("No notification ID provided")
-		sendJSONError(w, "No notification ID provided", http.StatusBadRequest)
+		sendJSONError(w, "Notification ID is required", http.StatusBadRequest)
 		return
 	}
 
 	nID, err := strconv.Atoi(notificationID)
 	if err != nil {
-		log.Printf("Invalid notification ID: %v", err)
 		sendJSONError(w, "Invalid notification ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get current user
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		sendJSONError(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	var userID int
 	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
 	if err != nil {
-		log.Printf("Failed to get user ID: %v", err)
 		sendJSONError(w, "Failed to get user information", http.StatusInternalServerError)
 		return
 	}
 
-	var exists bool
-	err = sqlite.DB.QueryRow(`
-        SELECT EXISTS (
-            SELECT 1 FROM notifications 
-            WHERE id = ? AND user_id = ?
-        )`, nID, userID).Scan(&exists)
-
-	if err != nil {
-		log.Printf("Error checking notification existence: %v", err)
-		sendJSONError(w, "Database error", http.StatusInternalServerError)
-		return
-	}
-
-	if !exists {
-		log.Printf("Notification %d not found for user %d", nID, userID)
-		sendJSONError(w, "Notification not found", http.StatusNotFound)
-		return
-	}
-
+	// Start transaction
 	tx, err := sqlite.DB.Begin()
 	if err != nil {
-		log.Printf("Failed to begin transaction: %v", err)
 		sendJSONError(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 	defer tx.Rollback()
 
-	result, err := tx.Exec(`
+	// Verify notification belongs to user
+	var notificationExists bool
+	err = tx.QueryRow(`
+        SELECT EXISTS(
+            SELECT 1 FROM notifications 
+            WHERE id = ? AND user_id = ?
+        )`, nID, userID).Scan(&notificationExists)
+
+	if err != nil {
+		sendJSONError(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	if !notificationExists {
+		sendJSONError(w, "Notification not found", http.StatusNotFound)
+		return
+	}
+
+	// Update notification
+	_, err = tx.Exec(`
         UPDATE notifications 
-        SET is_read = true
+        SET is_read = true 
         WHERE id = ? AND user_id = ?`,
 		nID, userID)
 
 	if err != nil {
-		log.Printf("Error updating notification: %v", err)
-		sendJSONError(w, "Failed to mark notification as read", http.StatusInternalServerError)
+		sendJSONError(w, "Failed to update notification", http.StatusInternalServerError)
 		return
 	}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil || rowsAffected == 0 {
-		log.Printf("Error updating notification or no rows affected: %v", err)
-		sendJSONError(w, "Failed to mark notification as read", http.StatusInternalServerError)
-		return
-	}
-
+	// Get updated unread count
 	var unreadCount int
 	err = tx.QueryRow(`
         SELECT COUNT(*) 
@@ -204,18 +196,15 @@ func MarkNotificationAsRead(w http.ResponseWriter, r *http.Request) {
 		userID).Scan(&unreadCount)
 
 	if err != nil {
-		log.Printf("Error getting unread count: %v", err)
 		sendJSONError(w, "Failed to get unread count", http.StatusInternalServerError)
 		return
 	}
 
 	if err = tx.Commit(); err != nil {
-		log.Printf("Error committing transaction: %v", err)
 		sendJSONError(w, "Failed to save changes", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("Successfully marked notification %d as read", nID)
 	sendJSONResponse(w, http.StatusOK, map[string]interface{}{
 		"message":        "Notification marked as read",
 		"unreadCount":    unreadCount,

@@ -189,3 +189,10 @@ export interface Comment {
     created_at: string;
     author_name:string;
 }
+
+export type NotificationType = 
+    | 'group_invitation'
+    | 'join_request'
+    | 'group_event'
+    | 'follow_request'
+    | 'follow_accepted';

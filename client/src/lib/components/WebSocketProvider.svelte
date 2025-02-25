@@ -17,12 +17,17 @@
   let lastConnectionState = ConnectionState.CLOSED;
   let notificationPermissionRequested = false;
 
+  let currentState: ConnectionState;
+  connectionState.subscribe(state => {
+    currentState = state;
+  });
+
   function handleVisibilityChange() {
     if (document.visibilityState === 'visible') {
       // Try to reconnect if the connection is closed or in error state
       if (
-        $connectionState === ConnectionState.CLOSED ||
-        $connectionState === ConnectionState.ERROR
+        currentState === ConnectionState.CLOSED ||
+        currentState === ConnectionState.ERROR
       ) {
         initializeWebSocket();
       }
@@ -30,22 +35,22 @@
   }
 
   // Watch connection state and show appropriate notifications
-  $: if ($connectionState !== lastConnectionState) {
-    if ($connectionState === ConnectionState.OPEN && lastConnectionState !== ConnectionState.CONNECTING) {
+  $: if (currentState !== lastConnectionState) {
+    if (currentState === ConnectionState.OPEN && lastConnectionState !== ConnectionState.CONNECTING) {
       toast.success('Connected to server');
-    } else if ($connectionState === ConnectionState.ERROR) {
+    } else if (currentState === ConnectionState.ERROR) {
       toast.error('Connection to server failed');
-    } else if ($connectionState === ConnectionState.CLOSED && lastConnectionState === ConnectionState.OPEN) {
+    } else if (currentState === ConnectionState.CLOSED && lastConnectionState === ConnectionState.OPEN) {
       toast.info('Disconnected from server. Reconnecting...');
     }
 
-    lastConnectionState = $connectionState;
+    lastConnectionState = currentState;
   }
 
   // Watch connection state for reconnection logic
-  $: if ($connectionState === ConnectionState.ERROR || $connectionState === ConnectionState.CLOSED) {
+  $: if (currentState === ConnectionState.ERROR || currentState === ConnectionState.CLOSED) {
     startReconnectTimer();
-  } else if ($connectionState === ConnectionState.OPEN) {
+  } else if (currentState === ConnectionState.OPEN) {
     stopReconnectTimer();
   }
 
@@ -83,7 +88,7 @@
   }
 
   // Initialize WebSocket on authentication change
-  $: if (browser && $auth.isAuthenticated && $connectionState === ConnectionState.CLOSED) {
+  $: if (browser && $auth.isAuthenticated && currentState === ConnectionState.CLOSED) {
     initializeWebSocket();
     setupNotifications();
   }
@@ -102,8 +107,16 @@
   onDestroy(() => {
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     stopReconnectTimer();
-    closeConnection();
+    if (currentState === ConnectionState.OPEN) {
+      closeConnection();
+    }
   });
 </script>
+
+{#if currentState === ConnectionState.CONNECTING}
+  <div>Connecting...</div>
+{:else if currentState === ConnectionState.ERROR}
+  <div>Connection error. Attempting to reconnect...</div>
+{/if}
 
 <!-- This is a utility component with no UI -->

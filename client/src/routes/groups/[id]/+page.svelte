@@ -9,6 +9,7 @@
     import { onMount } from 'svelte';
     import { groups } from '$lib/stores/groups';
     import type { GroupMember } from '$lib/types';
+    import { getInvitationStatus } from '$lib/stores/groups';
 
     export let data;
 
@@ -39,6 +40,11 @@
     $: canViewContent = isCreator() || isMember();
     $: groupId = group?.id;
 
+    let invitationStatus: { status: string; invitationId: number | null } = {
+        status: '',
+        invitationId: null
+    };
+
     // Watch for auth changes
     $: {
         if ($auth.isAuthenticated !== undefined) {
@@ -65,6 +71,15 @@
         await checkAuth;
         authChecked = true;
         loading = false;
+
+        if ($auth.isAuthenticated && groupId) {
+            try {
+                const status = await getInvitationStatus(groupId);
+                invitationStatus = status;
+            } catch (error) {
+                console.error('Error fetching invitation status:', error);
+            }
+        }
     });
 
     async function handleEdit(event: Event) {
@@ -140,6 +155,33 @@
 
     $: if (groupId && $auth.isAuthenticated) {
         getUserRole();
+    }
+
+    async function handleInvitation(action: 'accept' | 'reject') {
+        if (!invitationStatus.invitationId) return;
+        
+        try {
+            const response = await fetch(
+                `http://localhost:8080/groups/${groupId}/invitations/${invitationStatus.invitationId}/${action}`,
+                {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                }
+            );
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error || `Failed to ${action} invitation`);
+            }
+
+            // Refresh the page or update the UI
+            window.location.reload();
+        } catch (error) {
+            console.error(`Error ${action}ing invitation:`, error);
+        }
     }
 </script>
 
@@ -256,6 +298,32 @@
             <Button href="/groups" class="action-button" size="xl" gradient color="purpleToBlue">
                 Back to Groups
             </Button>
+        </div>
+    {:else if invitationStatus.status === 'pending'}
+        <div class="container mx-auto px-4 py-8">
+            <Card class="max-w-4xl mx-auto">
+                <h1 class="text-2xl font-bold mb-4">{group.title}</h1>
+                <p class="text-gray-600 dark:text-gray-300">{group.description}</p>
+                <div class="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg mt-4">
+                    <p class="text-lg font-medium mb-3">You have a pending invitation to this group</p>
+                    <div class="flex space-x-3">
+                        <Button 
+                            color="green" 
+                            size="sm"
+                            on:click={() => handleInvitation('accept')}
+                        >
+                            Accept Invitation
+                        </Button>
+                        <Button 
+                            color="red" 
+                            size="sm"
+                            on:click={() => handleInvitation('reject')}
+                        >
+                            Reject Invitation
+                        </Button>
+                    </div>
+                </div>
+            </Card>
         </div>
     {:else}
         <Card class="group-card {slideIn} w-full max-w-none mb-8 mt-8">

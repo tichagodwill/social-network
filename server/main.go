@@ -158,7 +158,7 @@ func main() {
 	mux.Handle("/ws", authMiddleware(http.HandlerFunc(api.WebSocketHandler)))
 
 	mux.Handle("GET /notifications", authMiddleware(http.HandlerFunc(api.GetNotifications)))
-	mux.Handle("GET /notifications/{id}/read", authMiddleware(http.HandlerFunc(api.MarkNotificationAsRead)))
+	mux.Handle("POST /notifications/{id}/read", authMiddleware(http.HandlerFunc(api.MarkNotificationAsRead)))
 
 	mux.Handle("GET /uploads/group_posts/{filename}", http.HandlerFunc(api.ServeGroupPostMedia))
 
@@ -167,6 +167,9 @@ func main() {
 	mux.Handle("GET /chat/{chatId}/participants", http.HandlerFunc(api.GetChatParticipants))
 	// Group role routes
 	mux.Handle("GET /groups/{id}/role", authMiddleware(http.HandlerFunc(api.GetUserRoleInGroup)))
+
+	// Setup routes
+	api.SetupRoutes(mux)
 
 	// Wrap the entire mux with CORS middleware
 	handler := middleware.CORS(mux)
