@@ -1,7 +1,7 @@
 // src/lib/stores/websocket.ts
-import { writable, derived, get } from 'svelte/store';
-import type { Writable } from 'svelte/store';
-import { auth } from '$lib/stores/auth';
+import {writable, derived, get} from 'svelte/store';
+import type {Writable} from 'svelte/store';
+import {auth} from '$lib/stores/auth';
 
 // Message Types
 export enum MessageType {
@@ -89,12 +89,12 @@ export interface FollowerRequestMessage extends BaseMessage {
 }
 
 export type WebSocketMessage =
-  | ChatMessage
-  | GroupChatMessage
-  | TypingIndicator
-  | EventRSVPMessage
-  | NotificationMessage
-  | FollowerRequestMessage;
+    | ChatMessage
+    | GroupChatMessage
+    | TypingIndicator
+    | EventRSVPMessage
+    | NotificationMessage
+    | FollowerRequestMessage;
 
 // WebSocket connection state
 export enum ConnectionState {
@@ -119,6 +119,7 @@ interface ActiveChat {
     lastMessage?: string;
     lastMessageTime?: string;
     isGroup: boolean;
+    recipientId?: number;
 }
 
 export const activeChats: Writable<ActiveChat[]> = writable([]);
@@ -131,8 +132,8 @@ export const unreadNotificationsCount: Writable<number> = writable(0);
 
 // Create a derived store to automatically calculate unread count
 const derivedUnreadCount = derived(
-  notifications,
-  $notifications => $notifications.filter(n => !n.isRead).length
+    notifications,
+    $notifications => $notifications.filter(n => !n.isRead).length
 );
 
 // Subscribe to the derived store to keep the writable store in sync
@@ -206,7 +207,7 @@ export function initializeWebSocket(): void {
                 isConnected = true;
                 connectionState.set(ConnectionState.OPEN);
                 reconnectAttempts = 0; // Reset attempts on successful connection
-                
+
                 if (connectionTimeout) {
                     clearTimeout(connectionTimeout);
                 }
@@ -330,21 +331,25 @@ function normalizeNotification(notification: any): NotificationMessage {
  * Normalize message from server format to our internal format
  */
 function normalizeMessage(message: any): WebSocketMessage {
+    // Check if the actual message data is in the 'data' property
+    const messageData = message.data || message;
+
     // Ensure we have a createdAt value for all messages
-    const createdAt = message.created_at || message.createdAt || new Date().toISOString();
+    const createdAt = messageData.created_at || messageData.createdAt || new Date().toISOString();
 
     // Handle different message types based on the type field
     switch (message.type) {
         case 'chat':
             return {
                 type: MessageType.CHAT,
-                id: message.id,
-                senderId: message.sender_id || message.senderId,
-                recipientId: message.recipient_id || message.recipientId,
-                content: message.content,
+                id: messageData.id,
+                chatId: messageData.chat_id || messageData.chatId,
+                senderId: messageData.sender_id || messageData.senderId,
+                recipientId: messageData.recipient_id || messageData.recipientId,
+                content: messageData.content,
                 createdAt,
-                senderName: message.sender_name || message.senderName,
-                senderAvatar: message.sender_avatar || message.senderAvatar
+                senderName: messageData.sender_name || messageData.senderName,
+                senderAvatar: messageData.sender_avatar || messageData.senderAvatar
             } as ChatMessage;
 
         case 'groupChat':
@@ -385,58 +390,27 @@ export function sendMessage(message: WebSocketMessage): boolean {
         return false;
     }
 
-    try {
-        // For chat messages, make sure we have all required fields
-        if (message.type === MessageType.CHAT && 'content' in message) {
-            // Make sure the message has a chatId
-            if (!('chatId' in message) || !message.chatId) {
-                const chatMessage = message as ChatMessage;
-                // Create the chatId from user IDs if not present
-                if (chatMessage.senderId && chatMessage.recipientId) {
-                    message = {
-                        ...chatMessage,
-                        chatId: Math.min(chatMessage.senderId, chatMessage.recipientId) * 1000000 +
-                          Math.max(chatMessage.senderId, chatMessage.recipientId)
-                    } as ChatMessage;
-                }
-            }
-        }
+    // For chat messages, we MUST have a chatId from the server
+    if (message.type === MessageType.CHAT && (!('chatId' in message) || !message.chatId)) {
+        console.error('Cannot send message without a valid chatId:', message);
+        return false;
+    }
 
+    try {
         // Wrap the message in the format expected by the server
         const serverMessage = {
             type: message.type,
             data: message
         };
 
+        console.log("Sending message with chatId:", (message as any).chatId);
+
         // Send the message through WebSocket
         wsInstance.send(JSON.stringify(serverMessage));
 
-        // If it's a chat message, add it to the messages store
-        if ((message.type === MessageType.CHAT || message.type === MessageType.GROUP_CHAT) &&
-          'content' in message) {
-
-            // Add the message to our local store
-            messages.update(msgs => {
-                // Check if we already have this message (avoid duplicates)
-                const isDuplicate = msgs.some(msg => {
-                    if (msg.type === message.type &&
-                      'content' in msg &&
-                      'createdAt' in msg) {
-                        return msg.content === message.content &&
-                          msg.createdAt === message.createdAt;
-                    }
-                    return false;
-                });
-
-                if (!isDuplicate) {
-                    return [...msgs, message];
-                }
-                return msgs;
-            });
-
-            // Update the active chat with the new message
-            updateActiveChat(message as ChatMessage | GroupChatMessage);
-        }
+        // We won't add the message to messages store here anymore
+        // The server will echo back our own messages
+        // This prevents duplicate messages showing up
 
         return true;
     } catch (error) {
@@ -444,7 +418,6 @@ export function sendMessage(message: WebSocketMessage): boolean {
         return false;
     }
 }
-
 /**
  * Close the WebSocket connection
  */
@@ -469,21 +442,33 @@ function handleMessage(message: WebSocketMessage): void {
 
     switch (message.type) {
         case MessageType.CHAT:
-            messages.update(msgs => [...msgs, message]);
+            // Add the message to the global store
+            messages.update(msgs => {
+                const updatedMsgs = [...msgs, message];
+                // Sort messages by timestamp
+                return updatedMsgs.sort((a, b) =>
+                    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+            });
             updateActiveChat(message as ChatMessage);
             break;
+
         case MessageType.GROUP_CHAT:
-            messages.update(msgs => [...msgs, message]);
+            messages.update(msgs => {
+                const updatedMsgs = [...msgs, message];
+                // Sort messages by timestamp
+                return updatedMsgs.sort((a, b) =>
+                    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+            });
             updateActiveChat(message as GroupChatMessage);
             break;
         case MessageType.NOTIFICATION:
             // Handle the notification
             if (message.data) {
                 const notification = normalizeNotification(message.data);
-                
+
                 // Add the new notification to the store
                 notifications.update(notes => [notification, ...notes]);
-                
+
                 // Show toast notification for group events
                 if (notification.type === 'group_event') {
                     // You can implement a toast notification system or use an existing one
@@ -512,18 +497,30 @@ function handleMessage(message: WebSocketMessage): void {
  * Check if a message is a duplicate
  */
 function isMessageDuplicate(message: WebSocketMessage): boolean {
-    if ((message.type === MessageType.CHAT || message.type === MessageType.GROUP_CHAT) && message.id !== undefined) {
+    if ((message.type === MessageType.CHAT || message.type === MessageType.GROUP_CHAT)) {
         const msgs = get(messages);
+
+        // If the message has an ID, check for ID duplicates
+        if (message.id !== undefined) {
+            return msgs.some(m =>
+                m.type === message.type &&
+                m.id === message.id &&
+                m.id !== undefined
+            );
+        }
+
+        // For messages without ID, check content + timestamp
         return msgs.some(m =>
-          m.type === message.type &&
-          m.id === message.id &&
-          m.id !== undefined
+            m.type === message.type &&
+            'content' in m && 'content' in message &&
+            m.content === message.content &&
+            m.createdAt === message.createdAt
         );
     } else if ((
-      message.type === MessageType.NOTIFICATION ||
-      message.type === MessageType.GROUP_INVITATION ||
-      message.type === MessageType.JOIN_REQUEST ||
-      message.type === MessageType.FOLLOW_REQUEST
+        message.type === MessageType.NOTIFICATION ||
+        message.type === MessageType.GROUP_INVITATION ||
+        message.type === MessageType.JOIN_REQUEST ||
+        message.type === MessageType.FOLLOW_REQUEST
     ) && message.id !== undefined) {
         const notes = get(notifications);
         return notes.some(n => n.id === message.id && n.id !== undefined);
@@ -554,9 +551,9 @@ function handleNotification(notification: NotificationMessage): void {
 
     // Show browser notification if supported and user gave permission
     if (
-      'Notification' in window &&
-      Notification.permission === 'granted' &&
-      document.visibilityState !== 'visible'
+        'Notification' in window &&
+        Notification.permission === 'granted' &&
+        document.visibilityState !== 'visible'
     ) {
         new Notification('Social Network', {
             body: notification.content,
@@ -596,16 +593,21 @@ function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
     activeChats.update(chats => {
         const isGroupMessage = message.type === MessageType.GROUP_CHAT;
         const chatId = isGroupMessage
-          ? (message as GroupChatMessage).groupId
-          : getPrivateChatId(message as ChatMessage);
+            ? (message as GroupChatMessage).groupId
+            : (message as ChatMessage).chatId;
 
-        // Find if chat already exists
-        const existingChatIndex = chats.findIndex(c =>
-          c.id === chatId && c.isGroup === isGroupMessage
+        if (!chatId) {
+            console.error('Message is missing required chatId or groupId:', message);
+            return chats;
+        }
+
+        // First check if we already have a chat with this ID
+        let existingChatIndex = chats.findIndex(c =>
+            c.id === chatId && c.isGroup === isGroupMessage
         );
 
+        // If found, update the existing chat
         if (existingChatIndex >= 0) {
-            // Update existing chat
             const updatedChats = [...chats];
             updatedChats[existingChatIndex] = {
                 ...updatedChats[existingChatIndex],
@@ -616,27 +618,19 @@ function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
             return updatedChats;
         }
 
-        // We need to fetch additional info for new chats
+        // If not found, fetch info for new chat
         if (isGroupMessage) {
             fetchGroupInfo((message as GroupChatMessage).groupId);
         } else {
-            fetchUserInfo(getOtherUserId(message as ChatMessage));
+            const otherUserId = getOtherUserId(message as ChatMessage);
+            if (otherUserId > 0) {
+                // We need to make an API call to get the chat ID
+                fetchChatInfo(otherUserId);
+            }
         }
 
         return chats;
     });
-}
-
-/**
- * Get private chat ID from a message
- */
-function getPrivateChatId(message: ChatMessage): number {
-    // For direct messages, we use a convention where the chat ID is min(senderId, recipientId)_max(senderId, recipientId)
-    const currentUserId = getCurrentUserId();
-    if (!currentUserId) return 0;
-
-    const otherUserId = message.senderId === currentUserId ? message.recipientId : message.senderId;
-    return Math.min(currentUserId, otherUserId) * 1000000 + Math.max(currentUserId, otherUserId);
 }
 
 /**
@@ -645,6 +639,12 @@ function getPrivateChatId(message: ChatMessage): number {
 function getOtherUserId(message: ChatMessage): number {
     const currentUserId = getCurrentUserId();
     if (!currentUserId) return 0;
+
+    // Safety check to ensure we have valid user IDs
+    if (message.senderId === undefined || message.recipientId === undefined) {
+        console.error('Invalid message: missing sender or recipient ID', message);
+        return 0;
+    }
 
     return message.senderId === currentUserId ? message.recipientId : message.senderId;
 }
@@ -667,16 +667,24 @@ async function fetchGroupInfo(groupId: number): Promise<void> {
         });
         if (response.ok) {
             const groupData = await response.json();
-            activeChats.update(chats => [
-                ...chats,
-                {
-                    id: groupId,
-                    name: groupData.name,
-                    avatar: groupData.avatar,
-                    unreadCount: 1,
-                    isGroup: true
+            activeChats.update(chats => {
+                // Check if group already exists
+                const existingChat = chats.some(chat =>
+                    chat.id === groupId && chat.isGroup === true
+                );
+
+                // Only add if doesn't exist
+                if (!existingChat) {
+                    return [...chats, {
+                        id: groupId,
+                        name: groupData.name,
+                        avatar: groupData.avatar,
+                        unreadCount: 1,
+                        isGroup: true
+                    }];
                 }
-            ]);
+                return chats;
+            });
         }
     } catch (error) {
         console.error('Error fetching group info:', error);
@@ -684,41 +692,62 @@ async function fetchGroupInfo(groupId: number): Promise<void> {
 }
 
 /**
- * Fetch user information
+ * Fetch chat information for a user
  */
-async function fetchUserInfo(userId: number): Promise<void> {
+async function fetchChatInfo(userId: number): Promise<void> {
     try {
-        const response = await fetch(`http://localhost:8080/user/${userId}`, {
+        const currentUserId = getCurrentUserId();
+        if (!currentUserId) return;
+
+        // Get or create a chat with this user
+        const response = await fetch(`http://localhost:8080/chats/user/${userId}`, {
+            method: 'GET',
             credentials: 'include'
         });
+
         if (response.ok) {
-            const userData = await response.json();
-            const currentUserId = getCurrentUserId();
-            if (!currentUserId) return;
+            const chatData = await response.json();
 
-            const chatId = getPrivateChatIdFromUserIds(currentUserId, userId);
+            // Now fetch user details to get name and avatar
+            const userResponse = await fetch(`http://localhost:8080/user/${userId}`, {
+                credentials: 'include'
+            });
 
-            activeChats.update(chats => [
-                ...chats,
-                {
-                    id: chatId,
-                    name: `${userData.firstName} ${userData.lastName}`,
-                    avatar: userData.avatar,
-                    unreadCount: 1,
-                    isGroup: false
-                }
-            ]);
+            if (userResponse.ok) {
+                const userData = await userResponse.json();
+
+                // Get user name and avatar
+                const firstName = userData.user?.first_name || userData.first_name || "Unknown";
+                const lastName = userData.user?.last_name || userData.last_name || "User";
+                const avatar = userData.user?.avatar || userData.avatar;
+
+                // Update active chats
+                activeChats.update(chats => {
+                    // Check if chat already exists
+                    const existingChat = chats.some(chat =>
+                        chat.id === chatData.id && !chat.isGroup
+                    );
+
+                    // Only add if doesn't exist
+                    if (!existingChat) {
+                        return [...chats, {
+                            id: chatData.id,
+                            name: `${firstName} ${lastName}`,
+                            avatar: avatar,
+                            unreadCount: 1,
+                            isGroup: false,
+                            recipientId: userId,
+                            lastMessage: "",
+                            lastMessageTime: new Date().toISOString()
+                        }];
+                    }
+                    return chats;
+                });
+            }
         }
     } catch (error) {
-        console.error('Error fetching user info:', error);
+        console.error('Error fetching chat info:', error);
     }
-}
-
-/**
- * Get private chat ID from user IDs
- */
-function getPrivateChatIdFromUserIds(userId1: number, userId2: number): number {
-    return Math.min(userId1, userId2) * 1000000 + Math.max(userId1, userId2);
 }
 
 /**
@@ -733,7 +762,7 @@ function startHeartbeat(): void {
         if (wsInstance?.readyState === WebSocket.OPEN) {
             try {
                 // Add timestamp to help track latency
-                wsInstance.send(JSON.stringify({ 
+                wsInstance.send(JSON.stringify({
                     type: 'ping',
                     timestamp: Date.now()
                 }));
@@ -757,12 +786,12 @@ function cleanupConnection(): void {
         }
         wsInstance = null;
     }
-    
+
     if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
         heartbeatInterval = null;
     }
-    
+
     if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
@@ -814,6 +843,7 @@ export async function loadInitialNotifications(): Promise<void> {
         notifications.set([]); // Set empty array on error
     }
 }
+
 /**
  * Mark all notifications as read
  */
@@ -826,7 +856,7 @@ export async function markAllNotificationsAsRead(): Promise<void> {
 
         if (response.ok) {
             notifications.update(notes =>
-                notes.map(note => ({ ...note, isRead: true }))
+                notes.map(note => ({...note, isRead: true}))
             );
         } else {
             console.error('Failed to mark all notifications as read:', response.status);
@@ -851,7 +881,7 @@ export async function markNotificationAsRead(notificationId: number): Promise<vo
         });
 
         let errorMessage = 'Failed to mark notification as read';
-        
+
         if (!response.ok) {
             if (response.headers.get('content-type')?.includes('application/json')) {
                 const errorData = await response.json();
@@ -863,10 +893,10 @@ export async function markNotificationAsRead(notificationId: number): Promise<vo
         }
 
         // Update the notifications store with the new state
-        notifications.update(notifications => 
-            notifications.map(notification => 
-                notification.id === notificationId 
-                    ? { ...notification, isRead: true }
+        notifications.update(notifications =>
+            notifications.map(notification =>
+                notification.id === notificationId
+                    ? {...notification, isRead: true}
                     : notification
             )
         );
@@ -884,11 +914,11 @@ export async function markNotificationAsRead(notificationId: number): Promise<vo
  */
 export function resetUnreadCount(chatId: number, isGroup: boolean): void {
     activeChats.update(chats =>
-      chats.map(chat =>
-        chat.id === chatId && chat.isGroup === isGroup
-          ? { ...chat, unreadCount: 0 }
-          : chat
-      )
+        chats.map(chat =>
+            chat.id === chatId && chat.isGroup === isGroup
+                ? {...chat, unreadCount: 0}
+                : chat
+        )
     );
 }
 
@@ -899,37 +929,19 @@ export function getChatMessages(chatId: number, isGroup: boolean) {
     return derived(messages, $messages => {
         if (isGroup) {
             return $messages.filter(
-              msg => msg.type === MessageType.GROUP_CHAT &&
-                'groupId' in msg &&
-                msg.groupId === chatId
+                msg => msg.type === MessageType.GROUP_CHAT &&
+                    'groupId' in msg &&
+                    msg.groupId === chatId
             );
         } else {
-            // For private chats, we need to check both directions
-            const currentUserId = getCurrentUserId();
-            if (!currentUserId) return [];
-
+            // Only match on chatId for chat messages
             return $messages.filter(
-              msg => msg.type === MessageType.CHAT &&
-                'senderId' in msg && 'recipientId' in msg &&
-                (
-                  (msg.senderId === currentUserId &&
-                    msg.recipientId === getRecipientIdFromChatId(chatId, currentUserId)) ||
-                  (msg.recipientId === currentUserId &&
-                    msg.senderId === getRecipientIdFromChatId(chatId, currentUserId))
-                )
+                msg => msg.type === MessageType.CHAT &&
+                    'chatId' in msg &&
+                    msg.chatId === chatId
             );
         }
     });
-}
-
-/**
- * Get recipient ID from a chat ID
- */
-function getRecipientIdFromChatId(chatId: number, currentUserId: number): number {
-    const id1 = Math.floor(chatId / 1000000);
-    const id2 = chatId % 1000000;
-
-    return id1 === currentUserId ? id2 : id1;
 }
 
 /**
@@ -957,7 +969,7 @@ export async function requestNotificationPermission(): Promise<boolean> {
 function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
     // Dispatch a custom event that your toast component can listen to
     const event = new CustomEvent('show-toast', {
-        detail: { message, type }
+        detail: {message, type}
     });
     window.dispatchEvent(event);
 }

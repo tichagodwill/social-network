@@ -197,6 +197,17 @@
     onDestroy(() => {
         window.removeEventListener('resize', handleResize);
     });
+
+    function handleChatIdChange({ oldId, newId }: { oldId: number, newId: number }): void {
+        if (selectedChat && selectedChat.id === oldId) {
+            selectedChat = { ...selectedChat, id: newId };
+            // Update URL params
+            const newParams = new URLSearchParams();
+            newParams.set('id', newId.toString());
+            newParams.set('type', selectedChat.isGroup ? 'group' : 'direct');
+            goto(`/chat?${newParams.toString()}`, { replaceState: true });
+        }
+    }
 </script>
 
 <svelte:head>
@@ -265,6 +276,7 @@
                           recipientId={selectedChat.recipientId}
                           recipientName={selectedChat.name}
                           recipientAvatar={selectedChat.avatar}
+                          on:chatIdChanged={(event) => handleChatIdChange(event.detail)}
                         />
                     </div>
                 {:else}
