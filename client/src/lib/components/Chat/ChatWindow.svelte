@@ -219,6 +219,24 @@
         return;
       }
 
+      // Clear previous messages first to avoid duplicates when selecting the same chat
+      // Fix for the issue where clicking handleChatSelect causes duplicates
+      loadedHistoricalMessages = [];
+      messages = [];
+
+      // Clear WebSocket messages for this chat from the global store
+      // This ensures we don't get duplicate messages when switching between chats
+      globalMessages.update(msgs => {
+        return msgs.filter(msg => {
+          if (msg.type === MessageType.CHAT && 'chatId' in msg) {
+            return msg.chatId !== chatId;
+          } else if (msg.type === MessageType.GROUP_CHAT && 'groupId' in msg) {
+            return msg.groupId !== chatId;
+          }
+          return true;
+        });
+      });
+
       // Use path parameters
       const response = await fetch(
               `http://localhost:8080/messages/${currentUserId}/${recipientId}`,

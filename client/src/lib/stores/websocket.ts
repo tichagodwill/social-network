@@ -418,6 +418,7 @@ export function sendMessage(message: WebSocketMessage): boolean {
         return false;
     }
 }
+
 /**
  * Close the WebSocket connection
  */
@@ -461,6 +462,7 @@ function handleMessage(message: WebSocketMessage): void {
             });
             updateActiveChat(message as GroupChatMessage);
             break;
+
         case MessageType.NOTIFICATION:
             // Handle the notification
             if (message.data) {
@@ -528,7 +530,6 @@ function isMessageDuplicate(message: WebSocketMessage): boolean {
 
     return false;
 }
-
 /**
  * Handle chat messages
  */
@@ -585,10 +586,23 @@ function handleFollowerRequest(request: FollowerRequestMessage): void {
 }
 
 /**
+ * Helper functions for message types
+ */
+export function isGroupChatMessage(message: any): message is GroupChatMessage {
+    return message.type === MessageType.GROUP_CHAT;
+}
+
+/**
  * Update active chats when new messages arrive
  */
 function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
     if (!('content' in message)) return;
+
+    // Get current user ID to check if the message is from the current user
+    const currentUserId = getCurrentUserId();
+    const isFromCurrentUser = isGroupChatMessage(message)
+        ? message.userId === currentUserId
+        : message.senderId === currentUserId;
 
     activeChats.update(chats => {
         const isGroupMessage = message.type === MessageType.GROUP_CHAT;
@@ -609,11 +623,17 @@ function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
         // If found, update the existing chat
         if (existingChatIndex >= 0) {
             const updatedChats = [...chats];
+
+            // Only increment unread count if message is NOT from current user
+            const newUnreadCount = isFromCurrentUser
+                ? updatedChats[existingChatIndex].unreadCount
+                : updatedChats[existingChatIndex].unreadCount + 1;
+
             updatedChats[existingChatIndex] = {
                 ...updatedChats[existingChatIndex],
                 lastMessage: message.content,
                 lastMessageTime: message.createdAt,
-                unreadCount: updatedChats[existingChatIndex].unreadCount + 1
+                unreadCount: newUnreadCount
             };
             return updatedChats;
         }
@@ -632,7 +652,6 @@ function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
         return chats;
     });
 }
-
 /**
  * Get the other user's ID from a chat message
  */

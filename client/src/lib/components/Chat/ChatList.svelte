@@ -1,10 +1,10 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
-    import { Avatar, Badge, Input, Spinner } from 'flowbite-svelte';
+    import {onMount} from 'svelte';
+    import {Avatar, Badge, Input, Spinner} from 'flowbite-svelte';
 
-    import { activeChats } from '$lib/stores/websocket';
-    import { get } from 'svelte/store';
-    import { auth } from '$lib/stores/auth';
+    import {activeChats} from '$lib/stores/websocket';
+    import {get} from 'svelte/store';
+    import {auth} from '$lib/stores/auth';
     import defaultProfileImg from '$lib/assets/default-profile.jpg';
 
     // Props
@@ -22,7 +22,7 @@
     let selectedChatId: number | null = null;
 
     $: filteredChats = $activeChats.filter(chat =>
-      chat.name.toLowerCase().includes(searchQuery.toLowerCase())
+        chat.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     // Get current user ID from auth store
@@ -41,8 +41,8 @@
             }
 
             const response = await fetch(
-              `http://localhost:8080/chats`,
-              { credentials: 'include' }
+                `http://localhost:8080/chats`,
+                {credentials: 'include'}
             );
 
             if (response.ok) {
@@ -82,9 +82,9 @@
         if (diffMins < 60) return `${diffMins}m ago`;
         if (diffHours < 24) return `${diffHours}h ago`;
         if (diffDays === 1) return 'Yesterday';
-        if (diffDays < 7) return date.toLocaleDateString([], { weekday: 'short' });
+        if (diffDays < 7) return date.toLocaleDateString([], {weekday: 'short'});
 
-        return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        return date.toLocaleDateString([], {month: 'short', day: 'numeric'});
     }
 
     // Truncate message for preview
@@ -109,12 +109,15 @@
         scrollbar-width: thin;
         scrollbar-color: #ccc #f4f4f4;
     }
+
     .custom-scrollbar::-webkit-scrollbar {
         width: 8px;
     }
+
     .custom-scrollbar::-webkit-scrollbar-track {
         background: #f4f4f4;
     }
+
     .custom-scrollbar::-webkit-scrollbar-thumb {
         background-color: #ccc;
         border-radius: 10px;
@@ -125,10 +128,10 @@
     <!-- Search header -->
     <div class="p-4 border-b">
         <Input
-          type="text"
-          placeholder="Search conversations..."
-          bind:value={searchQuery}
-          size="md"
+                type="text"
+                placeholder="Search conversations..."
+                bind:value={searchQuery}
+                size="md"
         >
             {@html MagnifyingGlass}
         </Input>
@@ -138,7 +141,7 @@
     <div class="flex-1 overflow-y-auto custom-scrollbar">
         {#if loading}
             <div class="flex justify-center items-center p-8">
-                <Spinner size="6" />
+                <Spinner size="6"/>
             </div>
         {:else if filteredChats.length === 0}
             <div class="flex flex-col items-center justify-center p-8 text-center text-gray-500">
@@ -155,20 +158,21 @@
                     {@const isActive = selectedChatId === chat.id}
                     <li>
                         <button
-                          class="w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-150 {isActive ? 'bg-gray-100 dark:bg-gray-700' : ''}"
-                          on:click={() => handleChatSelect(chat.id, chat.isGroup)}
+                                class="w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-150 {isActive ? 'bg-gray-100 dark:bg-gray-700' : ''}"
+                                on:click={() => handleChatSelect(chat.id, chat.isGroup)}
                         >
                             <div class="flex items-start gap-3">
                                 <!-- Avatar with online indicator -->
                                 <div class="relative">
                                     <Avatar
-                                      src={chat.avatar || defaultProfileImg}
-                                      alt={chat.name}
-                                      class="w-12 h-12"
-                                      rounded={chat.isGroup ? false : true}
+                                            src={chat.avatar || defaultProfileImg}
+                                            alt={chat.name}
+                                            class="w-12 h-12"
+                                            rounded={chat.isGroup ? false : true}
                                     />
                                     {#if chat.isGroup}
-                                        <Badge color="purple" class="absolute -top-1 -right-1 text-xs w-6 h-6 flex items-center justify-center rounded-full p-0">
+                                        <Badge color="purple"
+                                               class="absolute -top-1 -right-1 text-xs w-6 h-6 flex items-center justify-center rounded-full p-0">
                                             <span>G</span>
                                         </Badge>
                                     {/if}
