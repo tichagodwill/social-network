@@ -206,12 +206,26 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 					break
 				}
 
-				// Echo the message back (for real this time)
+				// Echo the message back to the sender
 				if err := conn.WriteMessage(messageType, message); err != nil {
 					log.Printf("WebSocket write error: %v", err)
 					break
 				}
 
+				// NEW CODE: Send the message to the recipient if they're online
+				recipientID := chatMessage.RecipientID
+				socketManager.Mu.RLock()
+				recipientConn, recipientOnline := socketManager.Sockets[recipientID]
+				socketManager.Mu.RUnlock()
+
+				if recipientOnline {
+					log.Printf("Recipient %d is online, sending message", recipientID)
+					if err := recipientConn.WriteMessage(messageType, message); err != nil {
+						log.Printf("Error sending message to recipient %d: %v", recipientID, err)
+					}
+				} else {
+					log.Printf("Recipient %d is offline", recipientID)
+				}
 			case "eventRSVP":
 				var rsvpMessage models.EventRSVPMessage
 				if err := json.Unmarshal(message, &rsvpMessage); err != nil {
