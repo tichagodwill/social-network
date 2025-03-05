@@ -56,7 +56,8 @@
                     unreadCount: chat.unread_count || 0,
                     isGroup: chat.type === 'group',
                     lastMessage: chat.last_message,
-                    lastMessageTime: chat.last_message_time
+                    lastMessageTime: chat.last_message_time,
+                    potential: chat.potential || false // New flag for potential chats
                 })));
             }
         } catch (error) {
@@ -94,8 +95,13 @@
     }
 
     function handleChatSelect(chatId: number, isGroup: boolean) {
-        selectedChatId = chatId;
-        onSelectChat(chatId, isGroup);
+        if (chatId < 0) {
+            // Handle potential chats with negative IDs
+            onSelectChat(chatId, isGroup);
+        } else {
+            selectedChatId = chatId;
+            onSelectChat(chatId, isGroup);
+        }
     }
 
     // Load chats on mount
@@ -188,7 +194,11 @@
                                     </div>
 
                                     <p class="text-sm text-gray-600 dark:text-gray-300 truncate">
-                                        {truncateMessage(chat.lastMessage) || 'Start a conversation...'}
+                                        {#if chat.potential}
+                                            Start a new conversation
+                                        {:else}
+                                            {truncateMessage(chat.lastMessage) || 'Start a conversation...'}
+                                        {/if}
                                     </p>
 
                                     <!-- Unread counter -->
@@ -197,6 +207,13 @@
                                             <Badge color="red" class="px-2 py-1">
                                                 {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
                                             </Badge>
+                                        </div>
+                                    {/if}
+                                    
+                                    <!-- Potential chat indicator -->
+                                    {#if chat.potential}
+                                        <div class="mt-1">
+                                            <Badge color="blue" class="px-2 py-1">New</Badge>
                                         </div>
                                     {/if}
                                 </div>

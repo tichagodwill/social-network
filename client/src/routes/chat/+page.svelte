@@ -37,11 +37,37 @@
     let loading = true;
 
     // Handle chat selection
-    // Handle chat selection
     async function handleSelectChat(chatId: number, isGroup: boolean) {
         loading = true;
 
         try {
+            // Handle potential chats (negative IDs)
+            if (chatId < 0) {
+                // Convert to positive user ID
+                const userId = Math.abs(chatId);
+                
+                // Create a chat room with this user
+                const response = await fetch('http://localhost:8080/chat/direct', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({ userId })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    // Use the newly created chat ID
+                    chatId = data.id;
+                    isGroup = false;
+                } else {
+                    console.error('Failed to create chat room');
+                    loading = false;
+                    return;
+                }
+            }
+
             if (isGroup) {
                 // Fetch group details
                 const response = await fetch(`http://localhost:8080/groups/${chatId}`, {

@@ -295,6 +295,77 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
 		chats = append(chats, chatItem)
 	}
 
+	// Now get all users who follow and are followed by the current user (mutual follows)
+	// but don't have a chat yet
+	rows, err = sqlite.DB.Query(`
+        SELECT
+            u.id,
+            u.first_name,
+            u.last_name,
+            u.username,
+            u.avatar
+        FROM users u
+        WHERE u.id IN (
+            -- Users who both follow and are followed by the current user
+            SELECT f1.followed_id 
+            FROM followers f1
+            JOIN followers f2 ON f1.followed_id = f2.follower_id AND f2.followed_id = f1.follower_id
+            WHERE f1.follower_id = ? 
+            AND f1.status = 'accepted' 
+            AND f2.status = 'accepted'
+            -- Exclude users who already have a chat with current user
+            AND NOT EXISTS (
+                SELECT 1 FROM chats c
+                JOIN user_chat_status ucs1 ON c.id = ucs1.chat_id AND ucs1.user_id = ?
+                JOIN user_chat_status ucs2 ON c.id = ucs2.chat_id AND ucs2.user_id = u.id
+                WHERE c.type = 'direct'
+            )
+        )
+    `, userId, userId)
+
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		log.Printf("Error getting mutual follows: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var user struct {
+			ID        int    `json:"id"`
+			FirstName string `json:"first_name"`
+			LastName  string `json:"last_name"`
+			Username  string `json:"username"`
+			Avatar    string `json:"avatar"`
+		}
+
+		if err := rows.Scan(
+			&user.ID,
+			&user.FirstName,
+			&user.LastName,
+			&user.Username,
+			&user.Avatar,
+		); err != nil {
+			log.Printf("Error scanning user: %v", err)
+			continue
+		}
+
+		// Add this user as a potential chat
+		chatItem := map[string]interface{}{
+			"id":            -user.ID, // Use negative ID to indicate it's a potential chat, not a real one yet
+			"type":          "direct",
+			"unread_count":  0,
+			"participant_id": user.ID,
+			"first_name":    user.FirstName,
+			"last_name":     user.LastName,
+			"username":      user.Username,
+			"avatar":        user.Avatar,
+			"potential":     true, // Flag to indicate this is a potential chat
+		}
+
+		chats = append(chats, chatItem)
+	}
+
 	if err := json.NewEncoder(w).Encode(chats); err != nil {
 		http.Error(w, "Error encoding response", http.StatusInternalServerError)
 		return
