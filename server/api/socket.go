@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	models "social-network/models"
-	"social-network/pkg/db/sqlite"
-	"social-network/util"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"social-network/models"
+	"social-network/pkg/db/sqlite"
+	"social-network/util"
 )
 
 var (
@@ -210,7 +210,7 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 						Type: "error",
 						Data: map[string]interface{}{
 							"message": err.Error(),
-							"code": "mutual_follow_required",
+							"code": "follow_required",
 						},
 					}
 					
@@ -283,69 +283,70 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// SaveMessage saves a chat message to the database
+// SaveMessage saves a message to the database and returns its ID
 func SaveMessage(message models.ChatMessage) error {
-	// For direct chats, check if there's a mutual follow relationship before saving the message
-	// First, check if this is a direct chat
+	// Check if the message is for a direct chat
 	var chatType string
 	err := sqlite.DB.QueryRow("SELECT type FROM chats WHERE id = ?", message.ChatID).Scan(&chatType)
 	if err != nil {
-		log.Printf("Error checking chat type: %v", err)
-		return err
+		return fmt.Errorf("chat not found: %w", err)
 	}
 
+	// For direct chats, check if there's at least one follow relationship
 	if chatType == "direct" {
-		// Get the other participant's ID (the recipient)
-		var otherUserId int
-		err = sqlite.DB.QueryRow(`
-            SELECT user_id FROM user_chat_status 
-            WHERE chat_id = ? AND user_id != ?
-        `, message.ChatID, message.SenderID).Scan(&otherUserId)
-		
+		// Get the other participant in the chat
+		var otherUserID int
+		err := sqlite.DB.QueryRow(`
+			SELECT user_id FROM user_chat_status 
+			WHERE chat_id = ? AND user_id != ?
+		`, message.ChatID, message.SenderID).Scan(&otherUserID)
+
 		if err != nil {
-			log.Printf("Error finding chat recipient: %v", err)
-			return err
+			return fmt.Errorf("failed to find other participant: %w", err)
 		}
-		
-		// Check for mutual follow relationship
-		var mutualFollowExists bool
+
+		// Check if at least one user follows the other
+		var followExists bool
 		err = sqlite.DB.QueryRow(`
-            SELECT EXISTS (
-                SELECT 1 FROM followers f1
-                JOIN followers f2 ON f1.followed_id = f2.follower_id AND f2.followed_id = f1.follower_id
-                WHERE f1.follower_id = ? AND f1.followed_id = ?
-                AND f1.status = 'accepted' AND f2.status = 'accepted'
-            )
-        `, message.SenderID, otherUserId).Scan(&mutualFollowExists)
-		
+			SELECT EXISTS (
+				SELECT 1 FROM followers 
+				WHERE ((follower_id = ? AND followed_id = ?) 
+				OR (follower_id = ? AND followed_id = ?))
+				AND status = 'accepted'
+			)
+		`, message.SenderID, otherUserID, otherUserID, message.SenderID).Scan(&followExists)
+
 		if err != nil {
-			log.Printf("Error checking mutual follow: %v", err)
-			return err
+			return fmt.Errorf("database error: %w", err)
 		}
-		
-		if !mutualFollowExists {
-			log.Printf("Cannot send message: users don't have mutual follow relationship")
-			return fmt.Errorf("cannot send message: both users must follow each other")
+
+		if !followExists {
+			return fmt.Errorf("cannot send message: at least one user must follow the other")
 		}
 	}
 
-	// Insert the message
-	_, err = sqlite.DB.Exec(`
-        INSERT INTO chat_messages (
-            chat_id,
-            sender_id,
-            content,
-            created_at
-        ) VALUES (?, ?, ?, ?)`,
-		message.ChatID,
-		message.SenderID,
-		message.Content,
-		message.CreatedAt,
-	)
+	// Insert the message into the database
+	statement, err := sqlite.DB.Prepare(`
+		INSERT INTO chat_messages (chat_id, sender_id, content, created_at)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+	`)
 	if err != nil {
-		log.Printf("Error saving message: %v", err)
-		return err
+		return fmt.Errorf("database error: %w", err)
 	}
+	defer statement.Close()
+
+	result, err := statement.Exec(message.ChatID, message.SenderID, message.Content)
+	if err != nil {
+		return fmt.Errorf("failed to save message: %w", err)
+	}
+
+	messageID, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("failed to get message ID: %w", err)
+	}
+
+	message.ID = int(messageID)
+
 	return nil
 }
 

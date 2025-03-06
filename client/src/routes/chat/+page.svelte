@@ -231,11 +231,11 @@
                 await handleSelectChat(parseInt(chatId), isGroup);
             } catch (error) {
                 console.error('Failed to load chat from URL:', error);
-                // If loading fails, it might be due to lack of mutual follow relationship
+                // If loading fails, it might be due to lack of follow relationship
                 // Show a friendly error message
                 const toastEvent = new CustomEvent('toast', {
                     detail: {
-                        message: 'Cannot access this chat. Both users must follow each other.',
+                        message: 'Cannot access this chat. At least one user must follow the other.',
                         type: 'error'
                     }
                 });

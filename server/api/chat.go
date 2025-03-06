@@ -61,25 +61,25 @@ func CreateOrGetDirectChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if there's a mutual follow relationship between users (both users following each other)
-	var mutualFollowExists bool
+	// Check if there's at least one follow relationship between users (either user following the other)
+	var followExists bool
 	err = sqlite.DB.QueryRow(`
         SELECT EXISTS (
-            SELECT 1 FROM followers f1
-            JOIN followers f2 ON f1.followed_id = f2.follower_id AND f2.followed_id = f1.follower_id
-            WHERE f1.follower_id = ? AND f1.followed_id = ?
-            AND f1.status = 'accepted' AND f2.status = 'accepted'
+            SELECT 1 FROM followers 
+            WHERE ((follower_id = ? AND followed_id = ?) 
+            OR (follower_id = ? AND followed_id = ?))
+            AND status = 'accepted'
         )`,
-		currentUser.ID, req.UserId,
-	).Scan(&mutualFollowExists)
+		currentUser.ID, req.UserId, req.UserId, currentUser.ID,
+	).Scan(&followExists)
 
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 
-	if !mutualFollowExists {
-		http.Error(w, "Cannot start chat: both users must follow each other", http.StatusForbidden)
+	if !followExists {
+		http.Error(w, "Cannot start chat: at least one user must follow the other", http.StatusForbidden)
 		return
 	}
 
@@ -151,7 +151,7 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get all chats for the user where there's a mutual follow relationship
+	// Get all chats for the user where at least one user follows the other
 	rows, err := sqlite.DB.Query(`
         SELECT
             c.id,
@@ -172,12 +172,23 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
         FROM chats c
         JOIN user_chat_status ucs ON c.id = ucs.chat_id AND ucs.user_id = ?
         WHERE c.type = 'direct' AND EXISTS (
-            -- Only show chats where there's a mutual follow relationship
+            -- Only show chats where at least one user follows the other
             SELECT 1 
             FROM user_chat_status ucs2
-            JOIN followers f1 ON f1.follower_id = ? AND f1.followed_id = ucs2.user_id AND f1.status = 'accepted'
-            JOIN followers f2 ON f2.follower_id = ucs2.user_id AND f2.followed_id = ? AND f2.status = 'accepted'
             WHERE ucs2.chat_id = c.id AND ucs2.user_id != ?
+            AND (
+                -- Either current user follows the other user
+                EXISTS (
+                    SELECT 1 FROM followers 
+                    WHERE follower_id = ? AND followed_id = ucs2.user_id AND status = 'accepted'
+                )
+                OR 
+                -- Or the other user follows the current user
+                EXISTS (
+                    SELECT 1 FROM followers 
+                    WHERE follower_id = ucs2.user_id AND followed_id = ? AND status = 'accepted'
+                )
+            )
         )
         -- Include group chats as they operate under different visibility rules
         OR c.type != 'direct'
@@ -305,8 +316,7 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
 		chats = append(chats, chatItem)
 	}
 
-	// Now get all users who follow and are followed by the current user (mutual follows)
-	// but don't have a chat yet
+	// Now get all users who don't have a chat yet but either the current user follows them or they follow the current user
 	rows, err = sqlite.DB.Query(`
         SELECT
             u.id,
@@ -316,13 +326,16 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
             u.avatar
         FROM users u
         WHERE u.id IN (
-            -- Users who both follow and are followed by the current user
-            SELECT f1.followed_id 
-            FROM followers f1
-            JOIN followers f2 ON f1.followed_id = f2.follower_id AND f2.followed_id = f1.follower_id
-            WHERE f1.follower_id = ? 
-            AND f1.status = 'accepted' 
-            AND f2.status = 'accepted'
+            -- Users who either follow or are followed by the current user
+            SELECT f.followed_id 
+            FROM followers f
+            WHERE f.follower_id = ? 
+            AND f.status = 'accepted'
+            UNION
+            SELECT f.follower_id 
+            FROM followers f
+            WHERE f.followed_id = ? 
+            AND f.status = 'accepted'
             -- Exclude users who already have a chat with current user
             AND NOT EXISTS (
                 SELECT 1 FROM chats c
@@ -331,11 +344,11 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
                 WHERE c.type = 'direct'
             )
         )
-    `, userId, userId)
+    `, userId, userId, userId)
 
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
-		log.Printf("Error getting mutual follows: %v", err)
+		log.Printf("Error getting potential chat users: %v", err)
 		return
 	}
 	defer rows.Close()
@@ -382,50 +395,45 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// GetChatParticipants returns the participants of a chat
+// GetChatParticipants returns all participants of a specific chat
 func GetChatParticipants(w http.ResponseWriter, r *http.Request) {
-	pathSegments := strings.Split(r.URL.Path, "/")
-	if len(pathSegments) < 4 {
-		http.Error(w, "Invalid path", http.StatusBadRequest)
-		return
-	}
-
-	chatIdStr := pathSegments[3]
-	chatId, err := strconv.Atoi(chatIdStr)
-	if err != nil {
-		http.Error(w, "Invalid chat ID", http.StatusBadRequest)
-		return
-	}
-
+	// Get authenticated user
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	var authUserId int
-	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&authUserId)
+	var userId int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userId)
 	if err != nil {
 		http.Error(w, "User not found", http.StatusNotFound)
 		return
 	}
 
-	// Check if the user is a participant of the chat
-	var isParticipant bool
-	err = sqlite.DB.QueryRow(`
-        SELECT EXISTS (
-            SELECT 1 FROM user_chat_status 
-            WHERE chat_id = ? AND user_id = ?
-        )`, chatId, authUserId).Scan(&isParticipant)
-
+	// Get chat ID from URL
+	vars := mux.Vars(r)
+	chatIdStr := vars["chatId"]
+	chatId, err := strconv.Atoi(chatIdStr)
 	if err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		log.Printf("Error checking chat participation: %v", err)
+		http.Error(w, "Invalid chat ID", http.StatusBadRequest)
 		return
 	}
 
-	if !isParticipant {
-		http.Error(w, "Unauthorized: not a chat participant", http.StatusUnauthorized)
+	// Check if the user is a participant in this chat
+	var isMember bool
+	err = sqlite.DB.QueryRow(
+		"SELECT EXISTS(SELECT 1 FROM user_chat_status WHERE user_id = ? AND chat_id = ?)",
+		userId, chatId,
+	).Scan(&isMember)
+
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	if !isMember {
+		http.Error(w, "You are not a participant in this chat", http.StatusForbidden)
 		return
 	}
 
@@ -433,66 +441,62 @@ func GetChatParticipants(w http.ResponseWriter, r *http.Request) {
 	var chatType string
 	err = sqlite.DB.QueryRow("SELECT type FROM chats WHERE id = ?", chatId).Scan(&chatType)
 	if err != nil {
-		http.Error(w, "Database error", http.StatusInternalServerError)
-		log.Printf("Error checking chat type: %v", err)
+		http.Error(w, "Chat not found", http.StatusNotFound)
 		return
 	}
 
-	// If it's a direct chat, check for mutual follow relationship for all participants
+	// For direct chats, check if there's at least one follow relationship
 	if chatType == "direct" {
-		// Get the other participant's ID
+		// Get the other participant
 		var otherUserId int
 		err = sqlite.DB.QueryRow(`
             SELECT user_id FROM user_chat_status 
             WHERE chat_id = ? AND user_id != ?
-        `, chatId, authUserId).Scan(&otherUserId)
-		
+        `, chatId, userId).Scan(&otherUserId)
 		if err != nil {
-			http.Error(w, "Database error", http.StatusInternalServerError)
-			log.Printf("Error finding other participant: %v", err)
+			http.Error(w, "Could not find other participant", http.StatusNotFound)
 			return
 		}
-		
-		// Check for mutual follow relationship
-		var mutualFollowExists bool
+
+		// Check if there's at least one follow relationship (either user follows the other)
+		var followExists bool
 		err = sqlite.DB.QueryRow(`
             SELECT EXISTS (
-                SELECT 1 FROM followers f1
-                JOIN followers f2 ON f1.followed_id = f2.follower_id AND f2.followed_id = f1.follower_id
-                WHERE f1.follower_id = ? AND f1.followed_id = ?
-                AND f1.status = 'accepted' AND f2.status = 'accepted'
+                SELECT 1 FROM followers 
+                WHERE ((follower_id = ? AND followed_id = ?) 
+                OR (follower_id = ? AND followed_id = ?))
+                AND status = 'accepted'
             )
-        `, authUserId, otherUserId).Scan(&mutualFollowExists)
-		
+        `, userId, otherUserId, otherUserId, userId).Scan(&followExists)
+
 		if err != nil {
 			http.Error(w, "Database error", http.StatusInternalServerError)
-			log.Printf("Error checking mutual follow: %v", err)
 			return
 		}
-		
-		if !mutualFollowExists {
-			http.Error(w, "Cannot view chat: both users must follow each other", http.StatusForbidden)
+
+		if !followExists {
+			http.Error(w, "Cannot view chat: at least one user must follow the other", http.StatusForbidden)
 			return
 		}
 	}
 
-	// Get all participants
-	rows, err := sqlite.DB.Query(`
+	participantsQuery := `
         SELECT 
-            u.id,
-            u.username,
-            u.first_name,
-            u.last_name,
-            u.avatar
+            u.id, 
+            u.username, 
+            u.first_name, 
+            u.last_name, 
+            u.avatar,
+            COALESCE((SELECT status FROM followers WHERE follower_id = ? AND followed_id = u.id), 'none') as follow_status,
+            COALESCE((SELECT status FROM followers WHERE follower_id = u.id AND followed_id = ?), 'none') as followed_status
         FROM users u
         JOIN user_chat_status ucs ON u.id = ucs.user_id
         WHERE ucs.chat_id = ?
-        ORDER BY u.username
-    `, chatId)
+    `
 
+	rows, err := sqlite.DB.Query(participantsQuery, userId, userId, chatId)
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
-		log.Printf("Error getting chat participants: %v", err)
 		return
 	}
 	defer rows.Close()
@@ -500,11 +504,13 @@ func GetChatParticipants(w http.ResponseWriter, r *http.Request) {
 	var participants []map[string]interface{}
 	for rows.Next() {
 		var participant struct {
-			ID        int    `json:"id"`
-			Username  string `json:"username"`
-			FirstName string `json:"first_name"`
-			LastName  string `json:"last_name"`
-			Avatar    string `json:"avatar"`
+			ID            int    `json:"id"`
+			Username      string `json:"username"`
+			FirstName     string `json:"first_name"`
+			LastName      string `json:"last_name"`
+			Avatar        string `json:"avatar"`
+			FollowStatus  string `json:"follow_status"`
+			FollowedStatus string `json:"followed_status"`
 		}
 
 		if err := rows.Scan(
@@ -513,20 +519,27 @@ func GetChatParticipants(w http.ResponseWriter, r *http.Request) {
 			&participant.FirstName,
 			&participant.LastName,
 			&participant.Avatar,
+			&participant.FollowStatus,
+			&participant.FollowedStatus,
 		); err != nil {
 			log.Printf("Error scanning participant: %v", err)
 			continue
 		}
 
-		participants = append(participants, map[string]interface{}{
-			"id":         participant.ID,
-			"username":   participant.Username,
-			"first_name": participant.FirstName,
-			"last_name":  participant.LastName,
-			"avatar":     participant.Avatar,
-		})
+		participantMap := map[string]interface{}{
+			"id":             participant.ID,
+			"username":       participant.Username,
+			"first_name":     participant.FirstName,
+			"last_name":      participant.LastName,
+			"avatar":         participant.Avatar,
+			"follow_status":  participant.FollowStatus,
+			"followed_status": participant.FollowedStatus,
+		}
+
+		participants = append(participants, participantMap)
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(participants); err != nil {
 		http.Error(w, "Error encoding response", http.StatusInternalServerError)
 		return
