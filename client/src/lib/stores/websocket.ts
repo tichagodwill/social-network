@@ -11,6 +11,7 @@ export enum MessageType {
     TYPING = 'typing',
     NOTIFICATION = 'notification',
     FOLLOWER_REQUEST = 'followerRequest',
+    ERROR = 'error', // Add error message type
     // Add server notification types
     GROUP_INVITATION = 'group_invitation',
     JOIN_REQUEST = 'join_request',
@@ -88,13 +89,20 @@ export interface FollowerRequestMessage extends BaseMessage {
     followerAvatar?: string;
 }
 
+export interface ErrorMessage extends BaseMessage {
+    type: MessageType.ERROR;
+    message: string;
+    code: string;
+}
+
 export type WebSocketMessage =
     | ChatMessage
     | GroupChatMessage
     | TypingIndicator
     | EventRSVPMessage
     | NotificationMessage
-    | FollowerRequestMessage;
+    | FollowerRequestMessage
+    | ErrorMessage;
 
 // WebSocket connection state
 export enum ConnectionState {
@@ -331,6 +339,42 @@ function normalizeNotification(notification: any): NotificationMessage {
  * Normalize message from server format to our internal format
  */
 function normalizeMessage(message: any): WebSocketMessage {
+    if (!message || !message.type) {
+        console.error('Invalid message format:', message);
+        return {
+            type: MessageType.ERROR,
+            message: 'Invalid message format',
+            code: 'invalid_format',
+            createdAt: new Date().toISOString()
+        };
+    }
+
+    // Handle error messages
+    if (message.type === 'error') {
+        return {
+            type: MessageType.ERROR,
+            message: message.data?.message || 'An error occurred',
+            code: message.data?.code || 'unknown_error',
+            createdAt: new Date().toISOString()
+        };
+    }
+
+    // Handle chat messages
+    if (message.type === 'chat') {
+        const chatMessage: ChatMessage = {
+            type: MessageType.CHAT,
+            id: message.id || Date.now(),
+            chatId: message.chatId,
+            senderId: message.senderId,
+            recipientId: message.recipientId,
+            content: message.content || '',
+            createdAt: message.createdAt || new Date().toISOString(),
+            senderName: message.senderName,
+            senderAvatar: message.senderAvatar
+        };
+        return chatMessage;
+    }
+
     // Check if the actual message data is in the 'data' property
     const messageData = message.data || message;
 
@@ -339,19 +383,6 @@ function normalizeMessage(message: any): WebSocketMessage {
 
     // Handle different message types based on the type field
     switch (message.type) {
-        case 'chat':
-            return {
-                type: MessageType.CHAT,
-                id: messageData.id,
-                chatId: messageData.chat_id || messageData.chatId,
-                senderId: messageData.sender_id || messageData.senderId,
-                recipientId: messageData.recipient_id || messageData.recipientId,
-                content: messageData.content,
-                createdAt,
-                senderName: messageData.sender_name || messageData.senderName,
-                senderAvatar: messageData.sender_avatar || messageData.senderAvatar
-            } as ChatMessage;
-
         case 'groupChat':
             return {
                 type: MessageType.GROUP_CHAT,
@@ -433,103 +464,48 @@ export function closeConnection(): void {
  * Handle incoming messages based on type
  */
 function handleMessage(message: WebSocketMessage): void {
-    console.log('Received message:', message);
-
-    // Skip duplicate messages
-    if (isMessageDuplicate(message)) {
-        console.log('Skipping duplicate message');
+    if (!message || !message.type) {
+        console.error('Invalid message format:', message);
         return;
     }
 
+    // Check for duplicate messages
+    if (isMessageDuplicate(message)) {
+        return;
+    }
+
+    console.log('Processing message:', message);
+
+    // Handle different message types
     switch (message.type) {
         case MessageType.CHAT:
-            // Add the message to the global store
-            messages.update(msgs => {
-                const updatedMsgs = [...msgs, message];
-                // Sort messages by timestamp
-                return updatedMsgs.sort((a, b) =>
-                    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-            });
-            updateActiveChat(message as ChatMessage);
+            handleChatMessage(message as ChatMessage);
             break;
 
         case MessageType.GROUP_CHAT:
-            messages.update(msgs => {
-                const updatedMsgs = [...msgs, message];
-                // Sort messages by timestamp
-                return updatedMsgs.sort((a, b) =>
-                    new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-            });
-            updateActiveChat(message as GroupChatMessage);
+            handleGroupChatMessage(message as GroupChatMessage);
             break;
 
         case MessageType.NOTIFICATION:
-            // Handle the notification
-            if (message.data) {
-                const notification = normalizeNotification(message.data);
-
-                // Add the new notification to the store
-                notifications.update(notes => [notification, ...notes]);
-
-                // Show toast notification for group events
-                if (notification.type === 'group_event') {
-                    // You can implement a toast notification system or use an existing one
-                    showToast(notification.content, 'info');
-                }
-            }
-            break;
         case MessageType.GROUP_INVITATION:
         case MessageType.JOIN_REQUEST:
         case MessageType.FOLLOW_REQUEST:
             handleNotification(message as NotificationMessage);
             break;
-        case MessageType.EVENT_RSVP:
-            // Handle RSVP updates
-            break;
+
         case MessageType.FOLLOWER_REQUEST:
             handleFollowerRequest(message as FollowerRequestMessage);
             break;
-        case MessageType.TYPING:
-            // Handle typing indicators
+            
+        case MessageType.ERROR:
+            handleErrorMessage(message as ErrorMessage);
             break;
+
+        default:
+            console.log('Unhandled message type:', message.type);
     }
 }
 
-/**
- * Check if a message is a duplicate
- */
-function isMessageDuplicate(message: WebSocketMessage): boolean {
-    if ((message.type === MessageType.CHAT || message.type === MessageType.GROUP_CHAT)) {
-        const msgs = get(messages);
-
-        // If the message has an ID, check for ID duplicates
-        if (message.id !== undefined) {
-            return msgs.some(m =>
-                m.type === message.type &&
-                m.id === message.id &&
-                m.id !== undefined
-            );
-        }
-
-        // For messages without ID, check content + timestamp
-        return msgs.some(m =>
-            m.type === message.type &&
-            'content' in m && 'content' in message &&
-            m.content === message.content &&
-            m.createdAt === message.createdAt
-        );
-    } else if ((
-        message.type === MessageType.NOTIFICATION ||
-        message.type === MessageType.GROUP_INVITATION ||
-        message.type === MessageType.JOIN_REQUEST ||
-        message.type === MessageType.FOLLOW_REQUEST
-    ) && message.id !== undefined) {
-        const notes = get(notifications);
-        return notes.some(n => n.id === message.id && n.id !== undefined);
-    }
-
-    return false;
-}
 /**
  * Handle chat messages
  */
@@ -583,6 +559,15 @@ function handleFollowerRequest(request: FollowerRequestMessage): void {
 
         notifications.update(notes => [notification, ...notes]);
     }
+}
+
+/**
+ * Handle error messages
+ */
+function handleErrorMessage(message: ErrorMessage): void {
+    console.error('Error message received:', message);
+    // Show toast notification for the error
+    showToast(message.message, 'error');
 }
 
 /**

@@ -35,6 +35,7 @@
     let isMobileView = false;
     let showChatList = true;
     let loading = true;
+    let websocketConnected = false; // Track connection state
 
     // Handle chat selection
     async function handleSelectChat(chatId: number, isGroup: boolean) {
@@ -62,7 +63,21 @@
                     chatId = data.id;
                     isGroup = false;
                 } else {
-                    console.error('Failed to create chat room');
+                    // Handle error - likely both users don't follow each other anymore
+                    const errorText = await response.text();
+                    // Show error toast
+                    const toastEvent = new CustomEvent('toast', {
+                        detail: {
+                            message: errorText || 'Failed to create chat room. Both users must follow each other.',
+                            type: 'error'
+                        }
+                    });
+                    document.dispatchEvent(toastEvent);
+                    
+                    // Refresh the chat list to reflect current follow relationships
+                    const chatListRefreshEvent = new CustomEvent('refresh-chat-list');
+                    document.dispatchEvent(chatListRefreshEvent);
+                    
                     loading = false;
                     return;
                 }
@@ -205,8 +220,34 @@
         loading = false;
     }
 
-    onMount(() => {
-        // Initialize websocket connection
+    onMount(async () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const chatId = urlParams.get('id');
+        const chatType = urlParams.get('type');
+
+        if (chatId && chatType) {
+            try {
+                const isGroup = chatType === 'group';
+                await handleSelectChat(parseInt(chatId), isGroup);
+            } catch (error) {
+                console.error('Failed to load chat from URL:', error);
+                // If loading fails, it might be due to lack of mutual follow relationship
+                // Show a friendly error message
+                const toastEvent = new CustomEvent('toast', {
+                    detail: {
+                        message: 'Cannot access this chat. Both users must follow each other.',
+                        type: 'error'
+                    }
+                });
+                document.dispatchEvent(toastEvent);
+                
+                // Clear the URL parameters and reset the selected chat
+                goto('/chat', { replaceState: true });
+                selectedChat = null;
+            }
+        }
+
+        // This will set up WebSocket connection
         initializeWebSocket();
 
         // Request notification permission

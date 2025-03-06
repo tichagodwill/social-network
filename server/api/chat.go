@@ -8,6 +8,7 @@ import (
 	"social-network/pkg/db/sqlite"
 	"social-network/util"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -60,25 +61,25 @@ func CreateOrGetDirectChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if there's a follow relationship between users (either user following the other)
-	var followExists bool
+	// Check if there's a mutual follow relationship between users (both users following each other)
+	var mutualFollowExists bool
 	err = sqlite.DB.QueryRow(`
         SELECT EXISTS (
-            SELECT 1 FROM followers 
-            WHERE ((follower_id = ? AND followed_id = ?) 
-            OR (follower_id = ? AND followed_id = ?))
-            AND status = 'accepted'
+            SELECT 1 FROM followers f1
+            JOIN followers f2 ON f1.followed_id = f2.follower_id AND f2.followed_id = f1.follower_id
+            WHERE f1.follower_id = ? AND f1.followed_id = ?
+            AND f1.status = 'accepted' AND f2.status = 'accepted'
         )`,
-		currentUser.ID, req.UserId, req.UserId, currentUser.ID,
-	).Scan(&followExists)
+		currentUser.ID, req.UserId,
+	).Scan(&mutualFollowExists)
 
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
 
-	if !followExists {
-		http.Error(w, "Cannot start chat: at least one user must follow the other", http.StatusForbidden)
+	if !mutualFollowExists {
+		http.Error(w, "Cannot start chat: both users must follow each other", http.StatusForbidden)
 		return
 	}
 
@@ -150,7 +151,7 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get all chats for the user
+	// Get all chats for the user where there's a mutual follow relationship
 	rows, err := sqlite.DB.Query(`
         SELECT
             c.id,
@@ -169,10 +170,19 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
              WHERE chat_id = c.id
              ORDER BY created_at DESC LIMIT 1) as last_message_time
         FROM chats c
-        JOIN user_chat_status ucs ON c.id = ucs.chat_id
-        WHERE ucs.user_id = ?
+        JOIN user_chat_status ucs ON c.id = ucs.chat_id AND ucs.user_id = ?
+        WHERE c.type = 'direct' AND EXISTS (
+            -- Only show chats where there's a mutual follow relationship
+            SELECT 1 
+            FROM user_chat_status ucs2
+            JOIN followers f1 ON f1.follower_id = ? AND f1.followed_id = ucs2.user_id AND f1.status = 'accepted'
+            JOIN followers f2 ON f2.follower_id = ucs2.user_id AND f2.followed_id = ? AND f2.status = 'accepted'
+            WHERE ucs2.chat_id = c.id AND ucs2.user_id != ?
+        )
+        -- Include group chats as they operate under different visibility rules
+        OR c.type != 'direct'
         ORDER BY last_message_time DESC NULLS LAST
-    `, userId, userId)
+    `, userId, userId, userId, userId, userId)
 
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
@@ -374,16 +384,19 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
 
 // GetChatParticipants returns the participants of a chat
 func GetChatParticipants(w http.ResponseWriter, r *http.Request) {
-	// Extract chat ID from URL path parameters
-	chatIdStr := r.PathValue("chatId")
+	pathSegments := strings.Split(r.URL.Path, "/")
+	if len(pathSegments) < 4 {
+		http.Error(w, "Invalid path", http.StatusBadRequest)
+		return
+	}
 
+	chatIdStr := pathSegments[3]
 	chatId, err := strconv.Atoi(chatIdStr)
 	if err != nil {
 		http.Error(w, "Invalid chat ID", http.StatusBadRequest)
 		return
 	}
 
-	// Ensure the authenticated user is a participant of the chat
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -414,6 +427,53 @@ func GetChatParticipants(w http.ResponseWriter, r *http.Request) {
 	if !isParticipant {
 		http.Error(w, "Unauthorized: not a chat participant", http.StatusUnauthorized)
 		return
+	}
+
+	// Check if this is a direct chat
+	var chatType string
+	err = sqlite.DB.QueryRow("SELECT type FROM chats WHERE id = ?", chatId).Scan(&chatType)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		log.Printf("Error checking chat type: %v", err)
+		return
+	}
+
+	// If it's a direct chat, check for mutual follow relationship for all participants
+	if chatType == "direct" {
+		// Get the other participant's ID
+		var otherUserId int
+		err = sqlite.DB.QueryRow(`
+            SELECT user_id FROM user_chat_status 
+            WHERE chat_id = ? AND user_id != ?
+        `, chatId, authUserId).Scan(&otherUserId)
+		
+		if err != nil {
+			http.Error(w, "Database error", http.StatusInternalServerError)
+			log.Printf("Error finding other participant: %v", err)
+			return
+		}
+		
+		// Check for mutual follow relationship
+		var mutualFollowExists bool
+		err = sqlite.DB.QueryRow(`
+            SELECT EXISTS (
+                SELECT 1 FROM followers f1
+                JOIN followers f2 ON f1.followed_id = f2.follower_id AND f2.followed_id = f1.follower_id
+                WHERE f1.follower_id = ? AND f1.followed_id = ?
+                AND f1.status = 'accepted' AND f2.status = 'accepted'
+            )
+        `, authUserId, otherUserId).Scan(&mutualFollowExists)
+		
+		if err != nil {
+			http.Error(w, "Database error", http.StatusInternalServerError)
+			log.Printf("Error checking mutual follow: %v", err)
+			return
+		}
+		
+		if !mutualFollowExists {
+			http.Error(w, "Cannot view chat: both users must follow each other", http.StatusForbidden)
+			return
+		}
 	}
 
 	// Get all participants

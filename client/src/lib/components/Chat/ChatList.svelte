@@ -1,5 +1,5 @@
 <script lang="ts">
-    import {onMount} from 'svelte';
+    import {onMount, onDestroy} from 'svelte';
     import {Avatar, Badge, Input, Spinner} from 'flowbite-svelte';
 
     import {activeChats} from '$lib/stores/websocket';
@@ -107,6 +107,18 @@
     // Load chats on mount
     onMount(async () => {
         await loadChats();
+        
+        // Add event listener for refreshing the chat list
+        document.addEventListener('refresh-chat-list', async () => {
+            await loadChats();
+        });
+    });
+    
+    onDestroy(() => {
+        // Clean up event listener
+        document.removeEventListener('refresh-chat-list', async () => {
+            await loadChats();
+        });
     });
 </script>
 

@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	models "social-network/models"
@@ -203,6 +204,20 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 
 				if err := SaveMessage(chatMessage); err != nil {
 					log.Printf("Error saving message: %v", err)
+					
+					// Send an error response back to the sender
+					errorResponse := models.WebSocketMessage{
+						Type: "error",
+						Data: map[string]interface{}{
+							"message": err.Error(),
+							"code": "mutual_follow_required",
+						},
+					}
+					
+					if err := conn.WriteJSON(errorResponse); err != nil {
+						log.Printf("Error sending error response to client: %v", err)
+					}
+					
 					break
 				}
 
@@ -270,7 +285,52 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 
 // SaveMessage saves a chat message to the database
 func SaveMessage(message models.ChatMessage) error {
-	_, err := sqlite.DB.Exec(`
+	// For direct chats, check if there's a mutual follow relationship before saving the message
+	// First, check if this is a direct chat
+	var chatType string
+	err := sqlite.DB.QueryRow("SELECT type FROM chats WHERE id = ?", message.ChatID).Scan(&chatType)
+	if err != nil {
+		log.Printf("Error checking chat type: %v", err)
+		return err
+	}
+
+	if chatType == "direct" {
+		// Get the other participant's ID (the recipient)
+		var otherUserId int
+		err = sqlite.DB.QueryRow(`
+            SELECT user_id FROM user_chat_status 
+            WHERE chat_id = ? AND user_id != ?
+        `, message.ChatID, message.SenderID).Scan(&otherUserId)
+		
+		if err != nil {
+			log.Printf("Error finding chat recipient: %v", err)
+			return err
+		}
+		
+		// Check for mutual follow relationship
+		var mutualFollowExists bool
+		err = sqlite.DB.QueryRow(`
+            SELECT EXISTS (
+                SELECT 1 FROM followers f1
+                JOIN followers f2 ON f1.followed_id = f2.follower_id AND f2.followed_id = f1.follower_id
+                WHERE f1.follower_id = ? AND f1.followed_id = ?
+                AND f1.status = 'accepted' AND f2.status = 'accepted'
+            )
+        `, message.SenderID, otherUserId).Scan(&mutualFollowExists)
+		
+		if err != nil {
+			log.Printf("Error checking mutual follow: %v", err)
+			return err
+		}
+		
+		if !mutualFollowExists {
+			log.Printf("Cannot send message: users don't have mutual follow relationship")
+			return fmt.Errorf("cannot send message: both users must follow each other")
+		}
+	}
+
+	// Insert the message
+	_, err = sqlite.DB.Exec(`
         INSERT INTO chat_messages (
             chat_id,
             sender_id,
