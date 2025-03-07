@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"social-network/models"
 	"social-network/pkg/db/sqlite"
-	"social-network/server/models"
 	"social-network/util"
 	"strconv"
 	"time"
@@ -219,7 +219,7 @@ func CreateChatNotification(recipientID, senderID int, content string) error {
 	// Get sender info
 	var senderName, senderAvatar string
 	err := sqlite.DB.QueryRow(
-		"SELECT first_name || ' ' || last_name, avatar FROM users WHERE id = ?", 
+		"SELECT first_name || ' ' || last_name, avatar FROM users WHERE id = ?",
 		senderID).Scan(&senderName, &senderAvatar)
 	if err != nil {
 		return fmt.Errorf("error getting sender info: %w", err)
@@ -248,15 +248,15 @@ func CreateChatNotification(recipientID, senderID int, content string) error {
 	// Send WebSocket notification
 	notifyUsers := []int{recipientID}
 	notification := map[string]interface{}{
-		"id":           notificationID,
-		"type":         "message",
-		"content":      fmt.Sprintf("%s sent you a message: %s", senderName, truncateMessage(content)),
-		"userId":       recipientID,
-		"fromUserId":   senderID,
-		"fromUserName": senderName,
+		"id":             notificationID,
+		"type":           "message",
+		"content":        fmt.Sprintf("%s sent you a message: %s", senderName, truncateMessage(content)),
+		"userId":         recipientID,
+		"fromUserId":     senderID,
+		"fromUserName":   senderName,
 		"fromUserAvatar": senderAvatar,
-		"isRead":       false,
-		"createdAt":    time.Now().Format(time.RFC3339),
+		"isRead":         false,
+		"createdAt":      time.Now().Format(time.RFC3339),
 	}
 
 	// Broadcast the notification
