@@ -118,6 +118,9 @@ export const connectionState: Writable<ConnectionState> = writable(ConnectionSta
 // Store for all messages
 export const messages: Writable<WebSocketMessage[]> = writable([]);
 
+// Store for message tracking to prevent duplicates
+export const processedMessageIds: Writable<Set<string>> = writable(new Set());
+
 // Store for active chats
 interface ActiveChat {
     id: number;
@@ -210,7 +213,7 @@ export function initializeWebSocket(): void {
                 }
             }, CONNECTION_TIMEOUT);
 
-            wsInstance.onopen = () => {
+            wsInstance.onopen = (event) => {
                 console.log('WebSocket connection established');
                 isConnected = true;
                 connectionState.set(ConnectionState.OPEN);
@@ -224,13 +227,14 @@ export function initializeWebSocket(): void {
                     clearInterval(heartbeatInterval);
                 }
 
-                // Start heartbeat and load notifications after connection is stable
-                setTimeout(() => {
-                    if (isConnected && wsInstance?.readyState === WebSocket.OPEN) {
-                        startHeartbeat();
-                        loadInitialNotifications().catch(console.error);
-                    }
-                }, 500);
+                // Start heartbeat
+                startHeartbeat();
+
+                // Fetch initial notifications
+                loadInitialNotifications();
+
+                // Fetch active chats - this ensures we get the most up-to-date chat list
+                fetchActiveChats();
             };
 
             wsInstance.onmessage = (event) => {
@@ -359,27 +363,71 @@ function normalizeMessage(message: any): WebSocketMessage {
         };
     }
 
-    // Handle chat messages
-    if (message.type === 'chat') {
-        const chatMessage: ChatMessage = {
-            type: MessageType.CHAT,
-            id: message.id || Date.now(),
-            chatId: message.chatId,
-            senderId: message.senderId,
-            recipientId: message.recipientId,
-            content: message.content || '',
-            createdAt: message.createdAt || new Date().toISOString(),
-            senderName: message.senderName,
-            senderAvatar: message.senderAvatar
-        };
-        return chatMessage;
-    }
-
     // Check if the actual message data is in the 'data' property
     const messageData = message.data || message;
 
     // Ensure we have a createdAt value for all messages
     const createdAt = messageData.created_at || messageData.createdAt || new Date().toISOString();
+
+    // Handle chat messages
+    if (message.type === 'chat' || message.type === MessageType.CHAT) {
+        // Get the current user ID to handle missing recipients or senders
+        const currentUserId = getCurrentUserId();
+
+        // Extract fields, using either snake_case or camelCase versions, with fallbacks
+        const id = messageData.id || message.id || Date.now();
+        let chatId = messageData.chat_id || messageData.chatId || message.chat_id || message.chatId;
+        const senderId = messageData.sender_id || messageData.senderId || message.sender_id || message.senderId || currentUserId;
+        let recipientId = messageData.recipient_id || messageData.recipientId || message.recipient_id || message.recipientId;
+        const content = messageData.content || message.content || '';
+        const senderName = messageData.sender_name || messageData.senderName || message.sender_name || message.senderName;
+        const senderAvatar = messageData.sender_avatar || messageData.senderAvatar || message.sender_avatar || message.senderAvatar;
+
+        // If we still don't have chat ID but have both sender and recipient, check if we have a chat cache
+        if (!chatId && senderId && recipientId) {
+            console.log('Missing chatId, attempting to retrieve from active chats');
+            // Look in active chats for a match between these two users
+            const chats = get(activeChats);
+            const foundChat = chats.find(chat => 
+                !chat.isGroup && 
+                (chat.recipientId === recipientId || chat.recipientId === senderId));
+            
+            if (foundChat) {
+                chatId = foundChat.id;
+                console.log('Retrieved chatId from active chats:', chatId);
+            } else {
+                // Fallback - create a temporary chat ID from the two user IDs
+                // This should be replaced when the actual chat is created
+                chatId = id; // Use message ID as temporary chat ID
+                console.log('Created temporary chatId:', chatId);
+            }
+        }
+
+        // If still missing recipient ID and we're the sender, try to get it from active chats
+        if (!recipientId && senderId === currentUserId) {
+            const chats = get(activeChats);
+            const foundChat = chats.find(chat => chat.id === chatId && !chat.isGroup);
+            if (foundChat && foundChat.recipientId) {
+                recipientId = foundChat.recipientId;
+            }
+        }
+
+        // Create the normalized chat message
+        const chatMessage: ChatMessage = {
+            type: MessageType.CHAT,
+            id,
+            chatId,
+            senderId,
+            recipientId,
+            content,
+            createdAt,
+            senderName,
+            senderAvatar
+        };
+
+        console.log('Normalized chat message:', chatMessage);
+        return chatMessage;
+    }
 
     // Handle different message types based on the type field
     switch (message.type) {
@@ -510,7 +558,16 @@ function handleMessage(message: WebSocketMessage): void {
  * Handle chat messages
  */
 function handleChatMessage(message: ChatMessage): void {
+    console.log('Processing chat message:', message);
+    
+    // Add to messages store
+    messages.update(msgs => [...msgs, message]);
+    
+    // Update the active chats list
     updateActiveChat(message);
+    
+    // Refresh the chat list to ensure we have the latest data
+    fetchActiveChats();
 }
 
 /**
@@ -623,6 +680,36 @@ function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
             return updatedChats;
         }
 
+        // For direct chats, try to match by participant IDs if chatId doesn't match
+        if (!isGroupMessage) {
+            const chatMessage = message as ChatMessage;
+            const otherUserId = chatMessage.senderId === currentUserId 
+                ? chatMessage.recipientId 
+                : chatMessage.senderId;
+            
+            // Find chats with this user as a participant
+            existingChatIndex = chats.findIndex(c => 
+                !c.isGroup && c.recipientId === otherUserId
+            );
+            
+            if (existingChatIndex >= 0) {
+                // Update chat with the correct chatId
+                const updatedChats = [...chats];
+                const newUnreadCount = isFromCurrentUser
+                    ? updatedChats[existingChatIndex].unreadCount
+                    : updatedChats[existingChatIndex].unreadCount + 1;
+                
+                updatedChats[existingChatIndex] = {
+                    ...updatedChats[existingChatIndex],
+                    id: chatId, // Update with the correct chatId
+                    lastMessage: message.content,
+                    lastMessageTime: message.createdAt,
+                    unreadCount: newUnreadCount
+                };
+                return updatedChats;
+            }
+        }
+
         // If not found, fetch info for new chat
         if (isGroupMessage) {
             fetchGroupInfo((message as GroupChatMessage).groupId);
@@ -637,6 +724,7 @@ function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
         return chats;
     });
 }
+
 /**
  * Get the other user's ID from a chat message
  */
@@ -676,7 +764,7 @@ async function fetchGroupInfo(groupId: number): Promise<void> {
                 const existingChat = chats.some(chat =>
                     chat.id === groupId && chat.isGroup === true
                 );
-
+                
                 // Only add if doesn't exist
                 if (!existingChat) {
                     return [...chats, {
@@ -849,6 +937,36 @@ export async function loadInitialNotifications(): Promise<void> {
 }
 
 /**
+ * Fetch active chats
+ */
+export async function fetchActiveChats(): Promise<void> {
+    try {
+        const response = await fetch('http://localhost:8080/chats', {
+            credentials: 'include'
+        });
+        
+        if (response.ok) {
+            const chats = await response.json();
+            
+            // Process chats and update the store
+            activeChats.set(chats.map((chat: any) => ({
+                id: chat.id,
+                name: chat.name || `${chat.first_name} ${chat.last_name}`,
+                avatar: chat.avatar,
+                unreadCount: chat.unread_count || 0,
+                isGroup: chat.type === 'group',
+                lastMessage: chat.last_message,
+                lastMessageTime: chat.last_message_time,
+                recipientId: chat.participant_id,
+                potential: chat.potential || false
+            })));
+        }
+    } catch (error) {
+        console.error('Error fetching active chats:', error);
+    }
+}
+
+/**
  * Mark all notifications as read
  */
 export async function markAllNotificationsAsRead(): Promise<void> {
@@ -966,6 +1084,50 @@ export async function requestNotificationPermission(): Promise<boolean> {
         return permission === 'granted';
     }
 
+    return false;
+}
+
+/**
+ * Check if a message is a duplicate by ID or content
+ */
+function isMessageDuplicate(message: WebSocketMessage): boolean {
+    // Skip duplicate check for certain message types
+    if (message.type === 'pong' || message.type === 'ping') {
+        return false;
+    }
+    
+    // If it's a message without an ID, use content hash
+    let messageKey = '';
+    
+    if (message.id) {
+        messageKey = `${message.type}_${message.id}`;
+    } else if ('content' in message) {
+        // For messages without an ID but with content
+        const content = (message as any).content;
+        const sender = (message as any).senderId || (message as any).userId || '';
+        const timestamp = message.createdAt || new Date().toISOString();
+        messageKey = `${message.type}_${sender}_${content}_${timestamp}`;
+    } else {
+        // For messages without ID or content, just make a best effort
+        messageKey = `${message.type}_${JSON.stringify(message)}_${new Date().toISOString()}`;
+    }
+    
+    // Check if we've processed this message before
+    const processed = get(processedMessageIds);
+    if (processed.has(messageKey)) {
+        console.log('Duplicate message detected, ignoring:', messageKey);
+        return true;
+    }
+    
+    // Add to processed set
+    processed.add(messageKey);
+    // Limit the size of the processed set to prevent memory leaks
+    if (processed.size > 1000) {
+        const iterator = processed.values();
+        processed.delete(iterator.next().value);
+    }
+    processedMessageIds.set(processed);
+    
     return false;
 }
 

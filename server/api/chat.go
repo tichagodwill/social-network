@@ -8,7 +8,6 @@ import (
 	"social-network/pkg/db/sqlite"
 	"social-network/util"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -412,8 +411,7 @@ func GetChatParticipants(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get chat ID from URL
-	vars := mux.Vars(r)
-	chatIdStr := vars["chatId"]
+	chatIdStr := r.PathValue("chatId")
 	chatId, err := strconv.Atoi(chatIdStr)
 	if err != nil {
 		http.Error(w, "Invalid chat ID", http.StatusBadRequest)
