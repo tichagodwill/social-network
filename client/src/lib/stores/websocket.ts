@@ -949,17 +949,51 @@ export async function fetchActiveChats(): Promise<void> {
             const chats = await response.json();
             
             // Process chats and update the store
-            activeChats.set(chats.map((chat: any) => ({
-                id: chat.id,
-                name: chat.name || `${chat.first_name} ${chat.last_name}`,
-                avatar: chat.avatar,
-                unreadCount: chat.unread_count || 0,
-                isGroup: chat.type === 'group',
-                lastMessage: chat.last_message,
-                lastMessageTime: chat.last_message_time,
-                recipientId: chat.participant_id,
-                potential: chat.potential || false
-            })));
+            // Create a Set to track unique user IDs for deduplication
+            const processedUserIds = new Set<number>();
+            const processedChats = [];
+            
+            // First process all existing chats (non-potential)
+            for (const chat of chats) {
+                if (!chat.potential) {
+                    processedChats.push({
+                        id: chat.id,
+                        name: chat.name || `${chat.first_name} ${chat.last_name}`,
+                        avatar: chat.avatar,
+                        unreadCount: chat.unread_count || 0,
+                        isGroup: chat.type === 'group',
+                        lastMessage: chat.last_message,
+                        lastMessageTime: chat.last_message_time,
+                        recipientId: chat.participant_id,
+                        potential: false
+                    });
+                    
+                    // Track user IDs for direct chats to avoid duplicates
+                    if (chat.type !== 'group' && chat.participant_id) {
+                        processedUserIds.add(chat.participant_id);
+                    }
+                }
+            }
+            
+            // Then process potential chats, but only if we don't already have a chat with that user
+            for (const chat of chats) {
+                if (chat.potential && !processedUserIds.has(chat.participant_id)) {
+                    processedChats.push({
+                        id: chat.id,
+                        name: chat.name || `${chat.first_name} ${chat.last_name}`,
+                        avatar: chat.avatar,
+                        unreadCount: chat.unread_count || 0,
+                        isGroup: chat.type === 'group',
+                        lastMessage: chat.last_message,
+                        lastMessageTime: chat.last_message_time,
+                        recipientId: chat.participant_id,
+                        potential: true
+                    });
+                    processedUserIds.add(chat.participant_id);
+                }
+            }
+            
+            activeChats.set(processedChats);
         }
     } catch (error) {
         console.error('Error fetching active chats:', error);

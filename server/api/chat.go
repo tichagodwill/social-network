@@ -324,7 +324,7 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
             u.username,
             u.avatar
         FROM users u
-        WHERE u.id IN (
+        WHERE u.id != ? AND u.id IN (
             -- Users who either follow or are followed by the current user
             SELECT f.followed_id 
             FROM followers f
@@ -335,15 +335,18 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
             FROM followers f
             WHERE f.followed_id = ? 
             AND f.status = 'accepted'
-            -- Exclude users who already have a chat with current user
-            AND NOT EXISTS (
-                SELECT 1 FROM chats c
-                JOIN user_chat_status ucs1 ON c.id = ucs1.chat_id AND ucs1.user_id = ?
-                JOIN user_chat_status ucs2 ON c.id = ucs2.chat_id AND ucs2.user_id = u.id
-                WHERE c.type = 'direct'
+        )
+        -- Exclude users who already have a chat with current user
+        AND u.id NOT IN (
+            SELECT ucs2.user_id 
+            FROM user_chat_status ucs1
+            JOIN user_chat_status ucs2 ON ucs1.chat_id = ucs2.chat_id AND ucs2.user_id != ucs1.user_id
+            WHERE ucs1.user_id = ? AND EXISTS (
+                SELECT 1 FROM chats c 
+                WHERE c.id = ucs1.chat_id AND c.type = 'direct'
             )
         )
-    `, userId, userId, userId)
+    `, userId, userId, userId, userId)
 
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
