@@ -227,6 +227,11 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 					break
 				}
 
+				// Create a notification for the chat message
+				if err := createChatNotification(chatMessage); err != nil {
+					log.Printf("Error creating chat notification: %v", err)
+				}
+
 				// NEW CODE: Send the message to the recipient if they're online
 				recipientID := chatMessage.RecipientID
 				socketManager.Mu.RLock()
@@ -380,4 +385,9 @@ func cleanupConnection(userID int, conn *websocket.Conn) {
 		conn.Close()
 		log.Printf("Connection cleaned up for user %d", userID)
 	}
+}
+
+func createChatNotification(message models.ChatMessage) error {
+	// Call the notification creation function
+	return CreateChatNotification(message.RecipientID, message.SenderID, message.Content)
 }

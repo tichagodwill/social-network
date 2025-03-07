@@ -546,3 +546,115 @@ func GetChatParticipants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+// MarkChatAsRead marks all messages in a chat as read for the current user
+func MarkChatAsRead(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Get chat ID from URL
+	chatIDStr := r.PathValue("id")
+	chatID, err := strconv.Atoi(chatIDStr)
+	if err != nil {
+		http.Error(w, "Invalid chat ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get current user from session
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		http.Error(w, "Failed to get user information", http.StatusInternalServerError)
+		return
+	}
+
+	// Start a transaction
+	tx, err := sqlite.DB.Begin()
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	// Verify user is part of this chat
+	var chatExists bool
+	err = tx.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM user_chat_status 
+			WHERE chat_id = ? AND user_id = ?
+		)
+	`, chatID, userID).Scan(&chatExists)
+
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	if !chatExists {
+		http.Error(w, "Chat not found or you don't have access", http.StatusNotFound)
+		return
+	}
+
+	// Get the ID of the latest message in this chat
+	var latestMessageID int
+	err = tx.QueryRow(`
+		SELECT COALESCE(MAX(id), 0) 
+		FROM chat_messages 
+		WHERE chat_id = ?
+	`, chatID).Scan(&latestMessageID)
+
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	// Update the user_chat_status to mark all messages as read
+	_, err = tx.Exec(`
+		UPDATE user_chat_status 
+		SET last_read_message_id = ? 
+		WHERE chat_id = ? AND user_id = ?
+	`, latestMessageID, chatID, userID)
+
+	if err != nil {
+		http.Error(w, "Failed to update chat status", http.StatusInternalServerError)
+		return
+	}
+
+	// Also mark any notifications related to this chat as read
+	_, err = tx.Exec(`
+		UPDATE notifications 
+		SET is_read = true 
+		WHERE user_id = ? AND type = 'message' AND 
+		FROM_USER_ID IN (
+			SELECT user_id FROM user_chat_status 
+			WHERE chat_id = ? AND user_id != ?
+		)
+	`, userID, chatID, userID)
+
+	if err != nil {
+		http.Error(w, "Failed to update notifications", http.StatusInternalServerError)
+		return
+	}
+
+	// Commit the transaction
+	if err = tx.Commit(); err != nil {
+		http.Error(w, "Failed to save changes", http.StatusInternalServerError)
+		return
+	}
+
+	// Return success response
+	response := map[string]interface{}{
+		"chatId":       chatID,
+		"unreadCount":  0,
+		"success":      true,
+	}
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Error encoding response", http.StatusInternalServerError)
+	}
+}

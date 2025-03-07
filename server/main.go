@@ -165,6 +165,8 @@ func main() {
 	mux.Handle("POST /chat/direct", http.HandlerFunc(api.CreateOrGetDirectChat))
 	mux.Handle("GET /chats", http.HandlerFunc(api.GetUserChats))
 	mux.Handle("GET /chat/{chatId}/participants", http.HandlerFunc(api.GetChatParticipants))
+	mux.Handle("POST /chats/{id}/read", authMiddleware(http.HandlerFunc(api.MarkChatAsRead)))
+
 	// Group role routes
 	mux.Handle("GET /groups/{id}/role", authMiddleware(http.HandlerFunc(api.GetUserRoleInGroup)))
 

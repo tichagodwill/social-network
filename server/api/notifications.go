@@ -2,9 +2,11 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"social-network/pkg/db/sqlite"
+	"social-network/server/models"
 	"social-network/util"
 	"strconv"
 	"time"
@@ -211,6 +213,75 @@ func MarkNotificationAsRead(w http.ResponseWriter, r *http.Request) {
 		"notificationId": nID,
 		"isRead":         true,
 	})
+}
+
+func CreateChatNotification(recipientID, senderID int, content string) error {
+	// Get sender info
+	var senderName, senderAvatar string
+	err := sqlite.DB.QueryRow(
+		"SELECT first_name || ' ' || last_name, avatar FROM users WHERE id = ?", 
+		senderID).Scan(&senderName, &senderAvatar)
+	if err != nil {
+		return fmt.Errorf("error getting sender info: %w", err)
+	}
+
+	// Create notification
+	result, err := sqlite.DB.Exec(
+		`INSERT INTO notifications (type, content, user_id, from_user_id, is_read, created_at) 
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		"message",
+		fmt.Sprintf("%s sent you a message: %s", senderName, truncateMessage(content)),
+		recipientID,
+		senderID,
+		false,
+		time.Now())
+	if err != nil {
+		return fmt.Errorf("error inserting notification: %w", err)
+	}
+
+	// Get the notification ID
+	notificationID, err := result.LastInsertId()
+	if err != nil {
+		return fmt.Errorf("error getting notification ID: %w", err)
+	}
+
+	// Send WebSocket notification
+	notifyUsers := []int{recipientID}
+	notification := map[string]interface{}{
+		"id":           notificationID,
+		"type":         "message",
+		"content":      fmt.Sprintf("%s sent you a message: %s", senderName, truncateMessage(content)),
+		"userId":       recipientID,
+		"fromUserId":   senderID,
+		"fromUserName": senderName,
+		"fromUserAvatar": senderAvatar,
+		"isRead":       false,
+		"createdAt":    time.Now().Format(time.RFC3339),
+	}
+
+	// Broadcast the notification
+	broadcast <- models.BroadcastMessage{
+		Data:        models.WebSocketMessage{Type: "notification", Data: notification},
+		TargetUsers: mapIntSliceToMap(notifyUsers),
+	}
+
+	return nil
+}
+
+func truncateMessage(message string) string {
+	maxLen := 30
+	if len(message) <= maxLen {
+		return message
+	}
+	return message[:maxLen] + "..."
+}
+
+func mapIntSliceToMap(slice []int) map[int]bool {
+	result := make(map[int]bool, len(slice))
+	for _, v := range slice {
+		result[v] = true
+	}
+	return result
 }
 
 func sendJSONError(w http.ResponseWriter, message string, statusCode int) {

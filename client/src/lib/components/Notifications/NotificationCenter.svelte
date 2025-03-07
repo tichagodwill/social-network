@@ -3,8 +3,8 @@
     import { onMount } from 'svelte';
     import { slide } from 'svelte/transition';
     import { goto } from '$app/navigation';
-    import { Avatar, Button, Card, Badge, Popover } from 'flowbite-svelte';
-    import { BellOutline, CheckSolid } from 'flowbite-svelte-icons';
+    import { Avatar, Button, Card, Badge, Popover, ToggleSwitch } from 'flowbite-svelte';
+    import { BellOutline, CheckSolid, ChatBubbleOvalOutline } from 'flowbite-svelte-icons';
 
     import {
         notifications,
@@ -17,6 +17,12 @@
     // Component state
     let isOpen = false;
     let popover: HTMLElement;
+    let showOnlyUnread = true;
+
+    // Filtered notifications
+    $: filteredNotifications = showOnlyUnread 
+        ? $notifications.filter(n => !n.isRead)
+        : $notifications;
 
     // Format notification time
     function formatTime(timestamp: string): string {
@@ -95,23 +101,31 @@
                 <!-- Header -->
                 <div class="flex items-center justify-between p-4 border-b">
                     <h3 class="font-semibold">Notifications</h3>
-                    {#if $unreadNotificationsCount > 0}
-                        <Button size="xs" color="light" class="text-xs" on:click={handleMarkAllAsRead}>
-                            <CheckSolid class="w-3 h-3 mr-1" />
-                            Mark all as read
-                        </Button>
-                    {/if}
+                    <div class="flex items-center space-x-2">
+                        {#if $unreadNotificationsCount > 0}
+                            <Button size="xs" color="light" class="text-xs" on:click={handleMarkAllAsRead}>
+                                <CheckSolid class="w-3 h-3 mr-1" />
+                                Mark all as read
+                            </Button>
+                        {/if}
+                    </div>
+                </div>
+                
+                <!-- Filter toggle -->
+                <div class="px-4 py-2 border-b flex items-center justify-between">
+                    <span class="text-sm text-gray-600">Show only unread</span>
+                    <ToggleSwitch bind:checked={showOnlyUnread} size="sm" />
                 </div>
 
                 <!-- Notification list -->
                 <div class="overflow-y-auto custom-scrollbar flex-1">
-                    {#if $notifications.length === 0}
+                    {#if filteredNotifications.length === 0}
                         <div class="p-4 text-center text-gray-500">
-                            <p>No notifications yet</p>
+                            <p>{showOnlyUnread ? 'No unread notifications' : 'No notifications yet'}</p>
                         </div>
                     {:else}
                         <ul class="divide-y">
-                            {#each $notifications as notification (notification.id)}
+                            {#each filteredNotifications as notification (notification.id)}
                                 <li>
                                     <button
                                             class="w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-150 {notification.isRead ? '' : 'bg-primary-50 dark:bg-primary-900'}"
@@ -120,7 +134,11 @@
                                         <div class="flex gap-3">
                                             <!-- Notification icon/avatar -->
                                             <div class="flex-shrink-0">
-                                                {#if notification.link && notification.link.includes('/profile/')}
+                                                {#if notification.type === 'chat'}
+                                                    <div class="w-10 h-10 bg-blue-100 text-blue-600 flex items-center justify-center rounded-full">
+                                                        <ChatBubbleOvalOutline class="h-5 w-5" />
+                                                    </div>
+                                                {:else if notification.link && notification.link.includes('/profile/')}
                                                     <Avatar rounded size="md" />
                                                 {:else if notification.link && notification.link.includes('/groups/')}
                                                     <div class="w-10 h-10 bg-purple-100 text-purple-600 flex items-center justify-center rounded-md">

@@ -78,6 +78,7 @@ export interface NotificationMessage extends BaseMessage {
     followerAvatar?: string;
     followerId?: number;
     followedId?: number;
+    chatId?: number;
 }
 
 export interface FollowerRequestMessage extends BaseMessage {
@@ -335,7 +336,8 @@ function normalizeNotification(notification: any): NotificationMessage {
         followerName: notification.follower_name || notification.followerName,
         followerAvatar: notification.follower_avatar || notification.followerAvatar,
         followerId: notification.follower_id || notification.followerId,
-        followedId: notification.followed_id || notification.followedId
+        followedId: notification.followed_id || notification.followedId,
+        chatId: notification.chatId
     };
 }
 
@@ -560,14 +562,42 @@ function handleMessage(message: WebSocketMessage): void {
 function handleChatMessage(message: ChatMessage): void {
     console.log('Processing chat message:', message);
     
-    // Add to messages store
+    // Update the read status of the message if it's from the current user
+    const currentUserId = getCurrentUserId();
+    const isFromCurrentUser = message.senderId === currentUserId;
+    
+    // Add to messages
     messages.update(msgs => [...msgs, message]);
     
-    // Update the active chats list
+    // Update active chats
     updateActiveChat(message);
     
-    // Refresh the chat list to ensure we have the latest data
-    fetchActiveChats();
+    // If the message is from someone else, and we're not currently viewing this chat,
+    // add a notification for it
+    if (!isFromCurrentUser) {
+        const activeChatId = get(currentChatId);
+        // Only create notification if not currently viewing this chat
+        if (activeChatId !== message.chatId) {
+            // Format notification data
+            const notification: NotificationMessage = {
+                id: message.id,
+                type: MessageType.CHAT,
+                userId: message.recipientId,
+                fromUserId: message.senderId,
+                content: `${message.senderName || 'Someone'} sent you a message: ${message.content.substring(0, 30)}${message.content.length > 30 ? '...' : ''}`,
+                createdAt: message.createdAt,
+                link: `/chat/${message.chatId}`,
+                isRead: false,
+                chatId: message.chatId
+            };
+            
+            // Add to notifications
+            addNotification(notification);
+        } else {
+            // Mark chat messages as read if currently viewing
+            markChatAsRead(message.chatId);
+        }
+    }
 }
 
 /**
@@ -1063,6 +1093,57 @@ export async function markNotificationAsRead(notificationId: number): Promise<vo
         console.error('Error marking notification as read:', error);
         throw error;
     }
+}
+
+/**
+ * Mark a chat as read
+ */
+export async function markChatAsRead(chatId: number): Promise<void> {
+    try {
+        // Send request to mark chat as read
+        const response = await fetch(`http://localhost:8080/chats/${chatId}/read`, {
+            method: 'POST',
+            credentials: 'include'
+        });
+        
+        if (response.ok) {
+            // Update local state
+            activeChats.update(chats => {
+                return chats.map(chat => {
+                    if (chat.id === chatId) {
+                        return { ...chat, unreadCount: 0 };
+                    }
+                    return chat;
+                });
+            });
+            
+            // Also mark any related notifications as read
+            markNotificationsReadByChatId(chatId);
+        }
+    } catch (error) {
+        console.error('Error marking chat as read:', error);
+    }
+}
+
+/**
+ * Mark notifications for a specific chat as read
+ */
+export function markNotificationsReadByChatId(chatId: number): void {
+    notifications.update(notificationsList => {
+        const updatedNotifications = notificationsList.map(notification => {
+            if (notification.chatId === chatId && !notification.isRead) {
+                // If notification has an ID, also mark it as read on the server
+                if (notification.id) {
+                    markNotificationAsRead(notification.id);
+                }
+                return { ...notification, isRead: true };
+            }
+            return notification;
+        });
+        
+        updateUnreadCount();
+        return updatedNotifications;
+    });
 }
 
 /**
