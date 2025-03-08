@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"social-network/pkg/db/sqlite"
@@ -297,7 +298,7 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
                     description,
                     '' as avatar
                 FROM groups g
-                WHERE g.id = ?
+                WHERE g.chat_id = ? 
                 LIMIT 1
             `, chat.ID).Scan(
 				&groupInfo.Name,
@@ -377,15 +378,15 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
 
 		// Add this user as a potential chat
 		chatItem := map[string]interface{}{
-			"id":            -user.ID, // Use negative ID to indicate it's a potential chat, not a real one yet
-			"type":          "direct",
-			"unread_count":  0,
+			"id":             -user.ID, // Use negative ID to indicate it's a potential chat, not a real one yet
+			"type":           "direct",
+			"unread_count":   0,
 			"participant_id": user.ID,
-			"first_name":    user.FirstName,
-			"last_name":     user.LastName,
-			"username":      user.Username,
-			"avatar":        user.Avatar,
-			"potential":     true, // Flag to indicate this is a potential chat
+			"first_name":     user.FirstName,
+			"last_name":      user.LastName,
+			"username":       user.Username,
+			"avatar":         user.Avatar,
+			"potential":      true, // Flag to indicate this is a potential chat
 		}
 
 		chats = append(chats, chatItem)
@@ -394,6 +395,170 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(chats); err != nil {
 		http.Error(w, "Error encoding response", http.StatusInternalServerError)
 		return
+	}
+}
+
+// GetGroupChatMessages returns all messages for a group chat
+func GetGroupChatMessages(w http.ResponseWriter, r *http.Request) {
+	// Get authenticated user
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var userId int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userId)
+	if err != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// Get chatId from URL
+	chatIdStr := r.PathValue("chatId")
+	chatId, err := strconv.Atoi(chatIdStr)
+	if err != nil {
+		http.Error(w, "Invalid chat ID", http.StatusBadRequest)
+		return
+	}
+
+	// Check if this is actually a group chat
+	var chatType string
+	err = sqlite.DB.QueryRow("SELECT type FROM chats WHERE id = ?", chatId).Scan(&chatType)
+	if err != nil {
+		http.Error(w, "Chat not found", http.StatusNotFound)
+		return
+	}
+
+	if chatType != "group" {
+		http.Error(w, "Requested chat is not a group chat", http.StatusBadRequest)
+		return
+	}
+
+	// Check if the user is a member of this chat
+	var isMember bool
+	err = sqlite.DB.QueryRow(
+		"SELECT EXISTS(SELECT 1 FROM user_chat_status WHERE user_id = ? AND chat_id = ?)",
+		userId, chatId,
+	).Scan(&isMember)
+
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	if !isMember {
+		http.Error(w, "You are not a member of this group chat", http.StatusForbidden)
+		return
+	}
+
+	// Find the group associated with this chat (for additional info)
+	var groupId int
+	var groupName string
+	_ = sqlite.DB.QueryRow(`
+        SELECT id, title
+        FROM groups
+        WHERE chat_id = ?
+    `, chatId).Scan(&groupId, &groupName)
+	// Note: We continue even if the group query fails, as we care about messages
+
+	// Fetch messages for this chat
+	rows, err := sqlite.DB.Query(`
+        SELECT 
+            m.id,
+            m.sender_id,
+            u.first_name,
+            u.last_name,
+            u.username,
+            COALESCE(u.avatar, '') as avatar,
+            m.content,
+            m.created_at
+        FROM chat_messages m
+        JOIN users u ON m.sender_id = u.id
+        WHERE m.chat_id = ?
+        ORDER BY m.created_at ASC
+    `, chatId)
+
+	if err != nil {
+		http.Error(w, "Error fetching messages", http.StatusInternalServerError)
+		log.Printf("Error fetching group chat messages: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	// Process the messages
+	var messages []map[string]interface{}
+	for rows.Next() {
+		var msg struct {
+			ID        int       `json:"id"`
+			SenderID  int       `json:"sender_id"`
+			FirstName string    `json:"first_name"`
+			LastName  string    `json:"last_name"`
+			Username  string    `json:"username"`
+			Avatar    string    `json:"avatar"`
+			Content   string    `json:"content"`
+			CreatedAt time.Time `json:"created_at"`
+		}
+
+		var createdAtStr string
+		err := rows.Scan(
+			&msg.ID,
+			&msg.SenderID,
+			&msg.FirstName,
+			&msg.LastName,
+			&msg.Username,
+			&msg.Avatar,
+			&msg.Content,
+			&createdAtStr,
+		)
+
+		if err != nil {
+			log.Printf("Error scanning message row: %v", err)
+			continue
+		}
+
+		msg.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
+
+		// Format message in the structure expected by the frontend
+		messageItem := map[string]interface{}{
+			"id":         msg.ID,
+			"type":       "groupChat", // Matches MessageType.GROUP_CHAT in frontend
+			"groupId":    chatId,
+			"userId":     msg.SenderID,
+			"content":    msg.Content,
+			"createdAt":  createdAtStr,
+			"userName":   fmt.Sprintf("%s %s", msg.FirstName, msg.LastName),
+			"userAvatar": msg.Avatar,
+		}
+
+		messages = append(messages, messageItem)
+	}
+
+	// Update user's last read message timestamp
+	_, err = sqlite.DB.Exec(`
+        UPDATE user_chat_status
+        SET last_read_message_id = (
+            SELECT MAX(id) FROM chat_messages WHERE chat_id = ?
+        )
+        WHERE user_id = ? AND chat_id = ?
+    `, chatId, userId, chatId)
+
+	if err != nil {
+		log.Printf("Error updating last read timestamp: %v", err)
+		// Continue anyway, this is not critical
+	}
+
+	// Return messages with chat info
+	response := map[string]interface{}{
+		"chatId":    chatId,
+		"messages":  messages,
+		"groupId":   groupId,
+		"groupName": groupName,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Error encoding response", http.StatusInternalServerError)
 	}
 }
 
@@ -505,12 +670,12 @@ func GetChatParticipants(w http.ResponseWriter, r *http.Request) {
 	var participants []map[string]interface{}
 	for rows.Next() {
 		var participant struct {
-			ID            int    `json:"id"`
-			Username      string `json:"username"`
-			FirstName     string `json:"first_name"`
-			LastName      string `json:"last_name"`
-			Avatar        string `json:"avatar"`
-			FollowStatus  string `json:"follow_status"`
+			ID             int    `json:"id"`
+			Username       string `json:"username"`
+			FirstName      string `json:"first_name"`
+			LastName       string `json:"last_name"`
+			Avatar         string `json:"avatar"`
+			FollowStatus   string `json:"follow_status"`
 			FollowedStatus string `json:"followed_status"`
 		}
 
@@ -528,12 +693,12 @@ func GetChatParticipants(w http.ResponseWriter, r *http.Request) {
 		}
 
 		participantMap := map[string]interface{}{
-			"id":             participant.ID,
-			"username":       participant.Username,
-			"first_name":     participant.FirstName,
-			"last_name":      participant.LastName,
-			"avatar":         participant.Avatar,
-			"follow_status":  participant.FollowStatus,
+			"id":              participant.ID,
+			"username":        participant.Username,
+			"first_name":      participant.FirstName,
+			"last_name":       participant.LastName,
+			"avatar":          participant.Avatar,
+			"follow_status":   participant.FollowStatus,
 			"followed_status": participant.FollowedStatus,
 		}
 
@@ -649,9 +814,9 @@ func MarkChatAsRead(w http.ResponseWriter, r *http.Request) {
 
 	// Return success response
 	response := map[string]interface{}{
-		"chatId":       chatID,
-		"unreadCount":  0,
-		"success":      true,
+		"chatId":      chatID,
+		"unreadCount": 0,
+		"success":     true,
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {

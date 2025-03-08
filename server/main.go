@@ -164,6 +164,7 @@ func main() {
 
 	mux.Handle("POST /chat/direct", http.HandlerFunc(api.CreateOrGetDirectChat))
 	mux.Handle("GET /chats", http.HandlerFunc(api.GetUserChats))
+	mux.Handle("GET /group-chats/{chatId}", http.HandlerFunc(api.GetGroupChatMessages))
 	mux.Handle("GET /chat/{chatId}/participants", http.HandlerFunc(api.GetChatParticipants))
 	mux.Handle("POST /chats/{id}/read", authMiddleware(http.HandlerFunc(api.MarkChatAsRead)))
 

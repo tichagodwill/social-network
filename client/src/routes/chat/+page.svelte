@@ -85,7 +85,7 @@
 
             if (isGroup) {
                 // Fetch group details
-                const response = await fetch(`http://localhost:8080/groups/${chatId}`, {
+                const response = await fetch(`http://localhost:8080/group-chats/${chatId}`, {
                     credentials: 'include'
                 });
                 if (response.ok) {
@@ -93,7 +93,7 @@
                     selectedChat = {
                         id: chatId,
                         isGroup: true,
-                        name: groupData.name,
+                        name: groupData.groupName,
                         avatar: groupData.avatar
                     };
                 }

@@ -35,3 +35,14 @@ VALUES
     (2, 2, 1, 2),
     (3, 1, 2, 3),
     (4, 3, 2, 4);
+
+-- Insert into groups table with chat_id reference
+INSERT OR IGNORE INTO groups (id, title, description, creator_id, chat_id, created_at)
+VALUES
+    (1, 'Sample Group', 'This is a test group', 1, 2, '2025-02-23 08:05:00');
+
+-- Insert into group_members table
+INSERT OR IGNORE INTO group_members (group_id, user_id, role, joined_at)
+VALUES
+    (1, 1, 'creator', '2025-02-23 08:05:00'),
+    (1, 3, 'member', '2025-02-23 08:06:00');

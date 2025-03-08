@@ -5,6 +5,7 @@ CREATE TABLE groups (
     title TEXT NOT NULL,
     description TEXT NOT NULL,
     creator_id INTEGER REFERENCES users(id),
+    chat_id INTEGER REFERENCES chats(id),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

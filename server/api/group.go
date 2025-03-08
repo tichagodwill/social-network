@@ -107,11 +107,27 @@ func CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	// Create group
+	// Step 1: Create a chat for the group
 	result, err := tx.Exec(`
-		INSERT INTO groups (title, description, creator_id)
-		VALUES (?, ?, ?)`,
-		group.Title, group.Description, creatorID)
+       INSERT INTO chats (type, created_at)
+       VALUES ('group', CURRENT_TIMESTAMP)`)
+	if err != nil {
+		http.Error(w, "Failed to create group chat", http.StatusInternalServerError)
+		return
+	}
+
+	// Get the new chat ID
+	chatID, err := result.LastInsertId()
+	if err != nil {
+		http.Error(w, "Failed to get new chat ID", http.StatusInternalServerError)
+		return
+	}
+
+	// Step 2: Create the group with a reference to the chat
+	result, err = tx.Exec(`
+       INSERT INTO groups (title, description, creator_id, chat_id)
+       VALUES (?, ?, ?, ?)`,
+		group.Title, group.Description, creatorID, chatID)
 	if err != nil {
 		http.Error(w, "Failed to create group", http.StatusInternalServerError)
 		return
@@ -124,13 +140,23 @@ func CreateGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Add creator as a member with creator role
+	// Step 3: Add creator as a member with creator role
 	_, err = tx.Exec(`
-		INSERT INTO group_members (group_id, user_id, role)
-		VALUES (?, ?, 'creator')`,
+       INSERT INTO group_members (group_id, user_id, role)
+       VALUES (?, ?, 'creator')`,
 		groupID, creatorID)
 	if err != nil {
 		http.Error(w, "Failed to add creator as a member", http.StatusInternalServerError)
+		return
+	}
+
+	// Step 4: Add creator to the group chat
+	_, err = tx.Exec(`
+       INSERT INTO user_chat_status (user_id, chat_id, joined_at)
+       VALUES (?, ?, CURRENT_TIMESTAMP)`,
+		creatorID, chatID)
+	if err != nil {
+		http.Error(w, "Failed to add creator to chat", http.StatusInternalServerError)
 		return
 	}
 
@@ -144,6 +170,7 @@ func CreateGroup(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"message": "Group created successfully",
 		"groupId": groupID,
+		"chatId":  chatID,
 	})
 }
 
@@ -1452,12 +1479,20 @@ func DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	// Verify user is creator
 	var isCreator bool
 	err = sqlite.DB.QueryRow(`
-		SELECT EXISTS(
-			SELECT 1 FROM groups 
-			WHERE id = ? AND creator_id = (SELECT id FROM users WHERE username = ?)
-		)`, groupID, username).Scan(&isCreator)
+       SELECT EXISTS(
+          SELECT 1 FROM groups 
+          WHERE id = ? AND creator_id = (SELECT id FROM users WHERE username = ?)
+       )`, groupID, username).Scan(&isCreator)
 	if err != nil || !isCreator {
 		http.Error(w, "Only group creator can delete group", http.StatusForbidden)
+		return
+	}
+
+	// Get the chat ID associated with this group
+	var chatID int
+	err = sqlite.DB.QueryRow("SELECT chat_id FROM groups WHERE id = ?", groupID).Scan(&chatID)
+	if err != nil {
+		http.Error(w, "Group not found or has no associated chat", http.StatusNotFound)
 		return
 	}
 
@@ -1469,10 +1504,58 @@ func DeleteGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	// Delete group and all related data
+	// Delete all related data
+	// The order matters here due to foreign key constraints
+
+	// Delete group members
+	_, err = tx.Exec("DELETE FROM group_members WHERE group_id = ?", groupID)
+	if err != nil {
+		http.Error(w, "Failed to delete group members", http.StatusInternalServerError)
+		return
+	}
+
+	// Delete events RSVPs
+	_, err = tx.Exec(`
+        DELETE FROM group_event_RSVP 
+        WHERE event_id IN (SELECT id FROM group_events WHERE group_id = ?)`,
+		groupID)
+	if err != nil {
+		http.Error(w, "Failed to delete event RSVPs", http.StatusInternalServerError)
+		return
+	}
+
+	// Delete events
+	_, err = tx.Exec("DELETE FROM group_events WHERE group_id = ?", groupID)
+	if err != nil {
+		http.Error(w, "Failed to delete events", http.StatusInternalServerError)
+		return
+	}
+
+	// Delete the group
 	_, err = tx.Exec("DELETE FROM groups WHERE id = ?", groupID)
 	if err != nil {
 		http.Error(w, "Failed to delete group", http.StatusInternalServerError)
+		return
+	}
+
+	// Delete user chat statuses
+	_, err = tx.Exec("DELETE FROM user_chat_status WHERE chat_id = ?", chatID)
+	if err != nil {
+		http.Error(w, "Failed to delete chat participants", http.StatusInternalServerError)
+		return
+	}
+
+	// Delete chat messages
+	_, err = tx.Exec("DELETE FROM chat_messages WHERE chat_id = ?", chatID)
+	if err != nil {
+		http.Error(w, "Failed to delete chat messages", http.StatusInternalServerError)
+		return
+	}
+
+	// Finally delete the chat itself
+	_, err = tx.Exec("DELETE FROM chats WHERE id = ?", chatID)
+	if err != nil {
+		http.Error(w, "Failed to delete chat", http.StatusInternalServerError)
 		return
 	}
 
@@ -1483,7 +1566,7 @@ func DeleteGroup(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
-		"message": "Group deleted successfully",
+		"message": "Group and associated chat deleted successfully",
 	})
 }
 
