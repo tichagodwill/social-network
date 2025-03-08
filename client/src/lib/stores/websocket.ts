@@ -719,8 +719,8 @@ function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
             
             // Find chats with this user as a participant
             existingChatIndex = chats.findIndex(c => 
-                !c.isGroup && c.recipientId === otherUserId
-            );
+                !c.isGroup && 
+                (c.recipientId === otherUserId));
             
             if (existingChatIndex >= 0) {
                 // Update chat with the correct chatId
@@ -1126,6 +1126,19 @@ export async function markChatAsRead(chatId: number): Promise<void> {
 }
 
 /**
+ * Reset unread count for a specific chat
+ */
+export function resetUnreadCount(chatId: number, isGroup: boolean): void {
+    activeChats.update(chats =>
+        chats.map(chat =>
+            chat.id === chatId && chat.isGroup === isGroup
+                ? {...chat, unreadCount: 0}
+                : chat
+        )
+    );
+}
+
+/**
  * Mark notifications for a specific chat as read
  */
 export function markNotificationsReadByChatId(chatId: number): void {
@@ -1147,16 +1160,60 @@ export function markNotificationsReadByChatId(chatId: number): void {
 }
 
 /**
- * Reset unread count for a specific chat
+ * Add a new notification to the store
  */
-export function resetUnreadCount(chatId: number, isGroup: boolean): void {
-    activeChats.update(chats =>
-        chats.map(chat =>
-            chat.id === chatId && chat.isGroup === isGroup
-                ? {...chat, unreadCount: 0}
-                : chat
-        )
-    );
+export function addNotification(notification: NotificationMessage): void {
+    // Add to notifications store
+    notifications.update(list => {
+        // Check if this notification already exists to avoid duplicates
+        const exists = list.some(n => 
+            (n.id && n.id === notification.id) || 
+            (n.content === notification.content && 
+             n.createdAt === notification.createdAt &&
+             n.userId === notification.userId)
+        );
+        
+        if (!exists) {
+            return [notification, ...list];
+        }
+        return list;
+    });
+    
+    // Update the unread count
+    updateUnreadCount();
+    
+    // Show browser notification if enabled
+    if (!notification.isRead) {
+        showBrowserNotification(notification);
+    }
+}
+
+/**
+ * Show browser notification
+ */
+export function showBrowserNotification(notification: NotificationMessage): void {
+    if (Notification.permission === 'granted' && document.visibilityState !== 'visible') {
+        const notif = new Notification('Social Network', {
+            body: notification.content,
+            icon: '/favicon.ico'
+        });
+        
+        notif.onclick = () => {
+            window.focus();
+            if (notification.link) {
+                window.location.href = notification.link;
+            }
+            notif.close();
+        };
+    }
+}
+
+/**
+ * Helper function to update unread count
+ */
+function updateUnreadCount(): void {
+    const unreadCount = get(notifications).filter(n => !n.isRead).length;
+    unreadNotificationsCount.set(unreadCount);
 }
 
 /**
@@ -1246,10 +1303,11 @@ function isMessageDuplicate(message: WebSocketMessage): boolean {
     return false;
 }
 
-// Add this helper function if you don't have it already
-function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
-    // Dispatch a custom event that your toast component can listen to
-    const event = new CustomEvent('show-toast', {
+/**
+ * Helper function to show toast notifications
+ */
+export function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
+    const event = new CustomEvent('toast', {
         detail: {message, type}
     });
     window.dispatchEvent(event);
