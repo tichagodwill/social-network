@@ -113,6 +113,9 @@ export enum ConnectionState {
     ERROR = 'error'
 }
 
+// Add a store for the currently active chat ID
+export const currentChatId: Writable<number | null> = writable(null);
+
 // Store for connection state
 export const connectionState: Writable<ConnectionState> = writable(ConnectionState.CLOSED);
 

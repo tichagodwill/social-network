@@ -17,6 +17,7 @@
         MessageType,
         resetUnreadCount,
         sendMessage,
+        currentChatId,
         messages as globalMessages
     } from '$lib/stores/websocket'
 
@@ -454,7 +455,7 @@
             // Update user info
             currentUserId = getCurrentUserId();
             currentUserName = getCurrentUserName();
-
+            currentChatId.set(chatId);
             // Load message history
             await loadMessages();
 
@@ -462,10 +463,16 @@
             resetUnread();
         }
     });
+    $: {
+        if (chatId) {
+            currentChatId.set(chatId);
 
+        }
+    }
     onDestroy(() => {
         // Clean up subscription
         unsubscribe();
+        currentChatId.set(null);
     });
 </script>
 <Card class="w-full h-full flex flex-col overflow-hidden max-w-full">
