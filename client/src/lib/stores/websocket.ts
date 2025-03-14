@@ -11,8 +11,7 @@ export enum MessageType {
     TYPING = 'typing',
     NOTIFICATION = 'notification',
     FOLLOWER_REQUEST = 'followerRequest',
-    ERROR = 'error', // Add error message type
-    // Add server notification types
+    ERROR = 'error',
     GROUP_INVITATION = 'group_invitation',
     JOIN_REQUEST = 'join_request',
     FOLLOW_REQUEST = 'follow_request'
@@ -69,7 +68,6 @@ export interface NotificationMessage extends BaseMessage {
     link?: string;
     isRead: boolean;
     isProcessed?: boolean;
-    // Additional fields for specific notification types
     groupId?: number;
     invitationId?: number;
     userRole?: string;
@@ -79,6 +77,7 @@ export interface NotificationMessage extends BaseMessage {
     followerId?: number;
     followedId?: number;
     chatId?: number;
+    fromUserId?: number;
 }
 
 export interface FollowerRequestMessage extends BaseMessage {
@@ -113,7 +112,9 @@ export enum ConnectionState {
     ERROR = 'error'
 }
 
-// Add a store for the currently active chat ID
+export const processedChatIds = new Set<number>();
+
+// Store for the currently active chat ID
 export const currentChatId: Writable<number | null> = writable(null);
 
 // Store for connection state
@@ -125,6 +126,9 @@ export const messages: Writable<WebSocketMessage[]> = writable([]);
 // Store for message tracking to prevent duplicates
 export const processedMessageIds: Writable<Set<string>> = writable(new Set());
 
+// Store for pending messages that couldn't be sent
+export const pendingMessages: Writable<WebSocketMessage[]> = writable([]);
+
 // Store for active chats
 interface ActiveChat {
     id: number;
@@ -135,6 +139,7 @@ interface ActiveChat {
     lastMessageTime?: string;
     isGroup: boolean;
     recipientId?: number;
+    potential?: boolean;
 }
 
 export const activeChats: Writable<ActiveChat[]> = writable([]);
@@ -142,7 +147,7 @@ export const activeChats: Writable<ActiveChat[]> = writable([]);
 // Store for notifications
 export const notifications: Writable<NotificationMessage[]> = writable([]);
 
-// Create a writable store for unread count that we'll keep in sync
+// Store for unread count
 export const unreadNotificationsCount: Writable<number> = writable(0);
 
 // Create a derived store to automatically calculate unread count
@@ -164,6 +169,7 @@ const MAX_RECONNECT_DELAY = 30000; // 30 seconds max
 const INITIAL_RECONNECT_DELAY = 1000;
 let reconnectDelay = INITIAL_RECONNECT_DELAY;
 let isReconnecting = false;
+let isInitializingConnection = false; // Flag to prevent multiple simultaneous connection attempts
 
 // Constants for connection management
 const CONNECTION_TIMEOUT = 5000;
@@ -175,148 +181,253 @@ let reconnectAttempts = 0;
  * Initialize WebSocket connection
  */
 export function initializeWebSocket(): void {
-    let currentState: ConnectionState;
-    const unsubscribe = connectionState.subscribe(state => {
-        currentState = state;
-    });
-    unsubscribe();
-
-    if (currentState === ConnectionState.CONNECTING) {
+    // Prevent multiple simultaneous connection attempts
+    if (isInitializingConnection || get(connectionState) === ConnectionState.CONNECTING) {
         console.log('Already attempting to connect...');
         return;
     }
 
-    // Reset reconnect attempts if this is a fresh connection
-    if (currentState === ConnectionState.CLOSED) {
-        reconnectAttempts = 0;
-    }
+    isInitializingConnection = true;
 
-    if (wsInstance?.readyState === WebSocket.OPEN) {
-        console.log('WebSocket connection already exists and is open');
-        return;
-    }
+    try {
+        // Only set state to connecting AFTER checking isInitializingConnection
+        connectionState.set(ConnectionState.CONNECTING);
 
-    connectionState.set(ConnectionState.CONNECTING);
-    cleanupConnection();
+        // Clean up any existing connection
+        cleanupConnection();
 
-    const connectWithRetry = () => {
-        try {
-            wsInstance = new WebSocket('ws://localhost:8080/ws');
-            wsInstance.binaryType = 'arraybuffer';
+        // Create new WebSocket connection
+        wsInstance = new WebSocket('ws://localhost:8080/ws');
+        wsInstance.binaryType = 'arraybuffer';
 
-            let isConnected = false;
-            let connectionTimeout: NodeJS.Timeout;
+        let isConnected = false;
+        let connectionTimeout: ReturnType<typeof setTimeout>;
 
-            // Set connection timeout
-            connectionTimeout = setTimeout(() => {
-                if (!isConnected) {
-                    console.log('Connection attempt timed out');
-                    wsInstance?.close();
-                    connectionState.set(ConnectionState.ERROR);
-                    scheduleReconnect();
+        // Set connection timeout
+        connectionTimeout = setTimeout(() => {
+            if (!isConnected) {
+                console.log('Connection attempt timed out');
+                if (wsInstance) {
+                    wsInstance.close();
+                    wsInstance = null;
                 }
-            }, CONNECTION_TIMEOUT);
-
-            wsInstance.onopen = (event) => {
-                console.log('WebSocket connection established');
-                isConnected = true;
-                connectionState.set(ConnectionState.OPEN);
-                reconnectAttempts = 0; // Reset attempts on successful connection
-
-                if (connectionTimeout) {
-                    clearTimeout(connectionTimeout);
-                }
-
-                if (heartbeatInterval) {
-                    clearInterval(heartbeatInterval);
-                }
-
-                // Start heartbeat
-                startHeartbeat();
-
-                // Fetch initial notifications
-                loadInitialNotifications();
-
-                // Fetch active chats - this ensures we get the most up-to-date chat list
-                fetchActiveChats();
-            };
-
-            wsInstance.onmessage = (event) => {
-                try {
-                    let message;
-                    const data = JSON.parse(event.data);
-                    console.log("Received WebSocket message:", JSON.stringify(data, null, 2));
-
-                    // Handle different server message formats
-                    if (data.type === 'notification' && data.data) {
-                        message = normalizeNotification(data.data);
-
-                        // Update notifications store immediately
-                        notifications.update(notes => {
-                            return [message, ...notes];
-                        });
-
-                        // The unread count will be automatically updated via the derived store
-
-                        // Show toast for event notifications
-                        if (message.type === 'group_event') {
-                            showToast(message.content, 'info');
-                        }
-                    } else {
-                        message = normalizeMessage(data);
-                    }
-
-                    handleMessage(message);
-                } catch (error) {
-                    console.error('Error handling WebSocket message:', error);
-                    console.error('Message data:', event.data);
-                }
-            };
-
-            wsInstance.onclose = (event) => {
-                const reason = event.reason || 'Unknown reason';
-                console.log(`WebSocket connection closed: ${event.code} (${reason})`);
-                isConnected = false;
-
-                // Only change state if it wasn't intentionally closed
-                if (event.code !== 1000) {
-                    connectionState.set(ConnectionState.CLOSED);
-                    scheduleReconnect();
-                }
-
-                if (heartbeatInterval) {
-                    clearInterval(heartbeatInterval);
-                    heartbeatInterval = null;
-                }
-
-                if (connectionTimeout) {
-                    clearTimeout(connectionTimeout);
-                }
-
-                wsInstance = null;
-                cleanupConnection();
-            };
-
-            wsInstance.onerror = (error) => {
-                console.error('WebSocket error occurred:', {
-                    error,
-                    readyState: wsInstance?.readyState,
-                    url: wsInstance?.url
-                });
                 connectionState.set(ConnectionState.ERROR);
-                reconnectAttempts++;
+                isInitializingConnection = false;
                 scheduleReconnect();
-            };
+            }
+        }, CONNECTION_TIMEOUT);
 
-        } catch (error) {
-            console.error('Error initializing WebSocket:', error);
+        wsInstance.onopen = (event) => {
+            console.log('WebSocket connection established');
+            isConnected = true;
+            connectionState.set(ConnectionState.OPEN);
+            reconnectAttempts = 0; // Reset attempts on successful connection
+
+            clearTimeout(connectionTimeout);
+
+            // Start heartbeat after successful connection
+            startHeartbeat();
+
+            // Fetch initial data
+            Promise.all([
+                loadInitialNotifications(),
+                fetchActiveChats()
+            ]).catch(err => console.error('Error loading initial data:', err));
+
+            // Try to send any pending messages
+            sendPendingMessages();
+        };
+
+        wsInstance.onmessage = handleWebSocketMessage;
+
+        wsInstance.onclose = (event) => {
+            const reason = event.reason || 'Unknown reason';
+            console.log(`WebSocket connection closed: ${event.code} (${reason})`);
+            isConnected = false;
+            isInitializingConnection = false;
+
+            // Only change state if it wasn't intentionally closed
+            if (event.code !== 1000) {
+                connectionState.set(ConnectionState.CLOSED);
+                scheduleReconnect();
+            }
+
+            if (heartbeatInterval) {
+                clearInterval(heartbeatInterval);
+                heartbeatInterval = null;
+            }
+
+            clearTimeout(connectionTimeout);
+            wsInstance = null;
+        };
+
+        wsInstance.onerror = (error) => {
+            console.error('WebSocket error occurred:', error);
             connectionState.set(ConnectionState.ERROR);
+            isInitializingConnection = false;
             reconnectAttempts++;
             scheduleReconnect();
-        }
-    };
+        };
 
-    connectWithRetry();
+    } catch (error) {
+        console.error('Error initializing WebSocket:', error);
+        connectionState.set(ConnectionState.ERROR);
+        isInitializingConnection = false;
+        reconnectAttempts++;
+        scheduleReconnect();
+    }
+}
+
+// Send any pending messages after reconnection
+function sendPendingMessages() {
+    const pendingMsgs = get(pendingMessages);
+    if (pendingMsgs.length > 0) {
+        console.log(`Attempting to send ${pendingMsgs.length} pending messages`);
+
+        // Create a new array for messages that still fail to send
+        const stillPending: WebSocketMessage[] = [];
+
+        pendingMsgs.forEach(msg => {
+            const success = sendMessage(msg);
+            if (!success) {
+                stillPending.push(msg);
+            }
+        });
+
+        // Update the pending messages store
+        pendingMessages.set(stillPending);
+    }
+}
+
+/**
+ * Handle WebSocket messages
+ */
+function handleWebSocketMessage(event: MessageEvent): void {
+    try {
+        const data = JSON.parse(event.data);
+        console.log("[DEBUG] Received WebSocket message:", JSON.stringify(data, null, 2));
+
+        // Skip pong messages
+        if (data.type === 'pong') {
+            console.log("[DEBUG] Skipping pong message");
+            return;
+        }
+
+        // Handle notification directly
+        if (data.type === 'notification' && data.data) {
+            const notificationMsg = normalizeNotification(data.data);
+            handleNotification(notificationMsg);
+            return;
+        }
+
+        // Normalize the message format
+        const message = normalizeMessage(data);
+
+        // Process based on message type with strict filtering
+        switch (message.type) {
+            case MessageType.CHAT:
+                // CRITICAL: Check if we've already processed this exact message ID
+                const chatMsg = message as ChatMessage;
+                if (chatMsg.id && processedChatIds.has(chatMsg.id)) {
+                    console.log(`[DEBUG] Skipping already processed chat message ID: ${chatMsg.id}`);
+                    return;
+                }
+
+                // If the message has an ID, add it to processed set
+                if (chatMsg.id) {
+                    processedChatIds.add(chatMsg.id);
+                    // Limit set size
+                    if (processedChatIds.size > 1000) {
+                        const iterator = processedChatIds.values();
+                        for (let i = 0; i < 200; i++) {
+                            processedChatIds.delete(iterator.next().value);
+                        }
+                    }
+                }
+
+                console.log(`[DEBUG] Processing chat message: ${chatMsg.id} from ${chatMsg.senderId} to ${chatMsg.recipientId}: ${chatMsg.content}`);
+                handleChatMessage(chatMsg);
+                break;
+
+            case MessageType.GROUP_CHAT:
+                handleGroupChatMessage(message as GroupChatMessage);
+                break;
+
+            case MessageType.NOTIFICATION:
+            case MessageType.GROUP_INVITATION:
+            case MessageType.JOIN_REQUEST:
+            case MessageType.FOLLOW_REQUEST:
+                handleNotification(message as NotificationMessage);
+                break;
+
+            case MessageType.FOLLOWER_REQUEST:
+                handleFollowerRequest(message as FollowerRequestMessage);
+                break;
+
+            case MessageType.ERROR:
+                handleErrorMessage(message as ErrorMessage);
+                break;
+
+            default:
+                console.log('[DEBUG] Unhandled message type:', message.type);
+        }
+    } catch (error) {
+        console.error('[ERROR] Error handling WebSocket message:', error);
+        console.error('[ERROR] Message data:', event.data);
+    }
+}
+/**
+ * Check if a message is a duplicate
+ */
+function isMessageDuplicate(message: WebSocketMessage): boolean {
+    // Skip duplicate check for certain message types
+    if (message.type === 'pong' || message.type === 'ping') {
+        return false;
+    }
+
+    // Create a unique identifier based on content and IDs, not timestamps
+    let messageKey = '';
+
+    if (message.id) {
+        // Always use ID as the most reliable identifier when available
+        messageKey = `${message.type}_${message.id}`;
+    } else if ('content' in message &&
+        ('senderId' in message || 'userId' in message)) {
+        // For messages without ID but with content and sender
+        const content = (message as any).content;
+        const sender = (message as any).senderId || (message as any).userId || '';
+        const recipient = (message as any).recipientId || (message as any).groupId || '';
+
+        // Create key WITHOUT timestamps to avoid timezone/format issues
+        messageKey = `${message.type}_${sender}_${recipient}_${content}`;
+    } else {
+        // For other types of messages
+        const msgWithoutTime = {...message};
+        delete msgWithoutTime.createdAt;  // Remove timestamp
+        messageKey = `${message.type}_${JSON.stringify(msgWithoutTime)}`;
+    }
+
+    // Check if we've already processed this message
+    const processed = get(processedMessageIds);
+    if (processed.has(messageKey)) {
+        console.log('Duplicate message detected, ignoring:', messageKey);
+        return true;
+    }
+
+    // Add to processed set
+    processed.add(messageKey);
+
+    // Limit the size of the processed set to prevent memory leaks
+    if (processed.size > 1000) {
+        // Remove oldest 200 entries when we hit 1000
+        const iterator = processed.values();
+        for (let i = 0; i < 200; i++) {
+            processed.delete(iterator.next().value);
+        }
+    }
+
+    processedMessageIds.set(processed);
+    return false;
 }
 
 /**
@@ -340,7 +451,8 @@ function normalizeNotification(notification: any): NotificationMessage {
         followerAvatar: notification.follower_avatar || notification.followerAvatar,
         followerId: notification.follower_id || notification.followerId,
         followedId: notification.followed_id || notification.followedId,
-        chatId: notification.chatId
+        chatId: notification.chatId,
+        fromUserId: notification.from_user_id || notification.fromUserId
     };
 }
 
@@ -393,10 +505,10 @@ function normalizeMessage(message: any): WebSocketMessage {
             console.log('Missing chatId, attempting to retrieve from active chats');
             // Look in active chats for a match between these two users
             const chats = get(activeChats);
-            const foundChat = chats.find(chat => 
-                !chat.isGroup && 
+            const foundChat = chats.find(chat =>
+                !chat.isGroup &&
                 (chat.recipientId === recipientId || chat.recipientId === senderId));
-            
+
             if (foundChat) {
                 chatId = foundChat.id;
                 console.log('Retrieved chatId from active chats:', chatId);
@@ -470,118 +582,97 @@ function normalizeMessage(message: any): WebSocketMessage {
  */
 export function sendMessage(message: WebSocketMessage): boolean {
     if (!wsInstance || wsInstance.readyState !== WebSocket.OPEN) {
-        console.error('Cannot send message: WebSocket not connected');
+        console.error('[ERROR] Cannot send message: WebSocket not connected');
+        pendingMessages.update(msgs => [...msgs, message]);
+        initializeWebSocket();
         return false;
     }
 
     // For chat messages, we MUST have a chatId from the server
     if (message.type === MessageType.CHAT && (!('chatId' in message) || !message.chatId)) {
-        console.error('Cannot send message without a valid chatId:', message);
+        console.error('[ERROR] Cannot send message without a valid chatId:', message);
         return false;
     }
 
     try {
-        // Wrap the message in the format expected by the server
+        // CRITICAL: Add a temporary ID if needed for immediate display
+        if (message.type === MessageType.CHAT && !message.id) {
+            (message as ChatMessage).id = Date.now(); // Use timestamp as temporary ID
+            console.log(`[DEBUG] Assigned temporary ID ${(message as ChatMessage).id} to outgoing message`);
+        }
+
+        // IMMEDIATE LOCAL UPDATE: Add to message store for immediate display
+        // And ignore all content-based duplicate checks for outgoing messages
+        if (message.type === MessageType.CHAT) {
+            const chatMsg = message as ChatMessage;
+
+            // Add to global message store for immediate feedback
+            console.log(`[DEBUG] Adding outgoing message to local store: ${chatMsg.content}`);
+            messages.update(msgs => [...msgs, chatMsg]);
+
+            // Also update active chat
+            updateActiveChat(chatMsg);
+        } else if (message.type === MessageType.GROUP_CHAT) {
+            const groupMsg = message as GroupChatMessage;
+            messages.update(msgs => [...msgs, groupMsg]);
+            updateActiveChat(groupMsg);
+        }
+
+        // Wrap message in expected server format
         const serverMessage = {
             type: message.type,
             data: message
         };
 
-        console.log("Sending message with chatId:", (message as any).chatId);
-
-        // Send the message through WebSocket
+        console.log('[DEBUG] Sending message:', serverMessage);
         wsInstance.send(JSON.stringify(serverMessage));
-
-        // We won't add the message to messages store here anymore
-        // The server will echo back our own messages
-        // This prevents duplicate messages showing up
-
         return true;
     } catch (error) {
-        console.error('Error sending message:', error);
+        console.error('[ERROR] Error sending message:', error);
+        pendingMessages.update(msgs => [...msgs, message]);
         return false;
     }
 }
-
-/**
- * Close the WebSocket connection
- */
-export function closeConnection(): void {
-    if (wsInstance) {
-        wsInstance.close();
-        wsInstance = null;
-    }
-}
-
-/**
- * Handle incoming messages based on type
- */
-function handleMessage(message: WebSocketMessage): void {
-    if (!message || !message.type) {
-        console.error('Invalid message format:', message);
-        return;
-    }
-
-    // Check for duplicate messages
-    if (isMessageDuplicate(message)) {
-        return;
-    }
-
-    console.log('Processing message:', message);
-
-    // Handle different message types
-    switch (message.type) {
-        case MessageType.CHAT:
-            handleChatMessage(message as ChatMessage);
-            break;
-
-        case MessageType.GROUP_CHAT:
-            handleGroupChatMessage(message as GroupChatMessage);
-            break;
-
-        case MessageType.NOTIFICATION:
-        case MessageType.GROUP_INVITATION:
-        case MessageType.JOIN_REQUEST:
-        case MessageType.FOLLOW_REQUEST:
-            handleNotification(message as NotificationMessage);
-            break;
-
-        case MessageType.FOLLOWER_REQUEST:
-            handleFollowerRequest(message as FollowerRequestMessage);
-            break;
-            
-        case MessageType.ERROR:
-            handleErrorMessage(message as ErrorMessage);
-            break;
-
-        default:
-            console.log('Unhandled message type:', message.type);
-    }
-}
-
 /**
  * Handle chat messages
  */
 function handleChatMessage(message: ChatMessage): void {
-    console.log('Processing chat message:', message);
-    
-    // Update the read status of the message if it's from the current user
+    console.log('[DEBUG] Processing chat message:', message);
+
+    // Ensure we have a valid chatId
+    if (!message.chatId) {
+        console.error('[ERROR] Chat message missing chatId:', message);
+        return;
+    }
+
     const currentUserId = getCurrentUserId();
     const isFromCurrentUser = message.senderId === currentUserId;
-    
-    // Add to messages
-    messages.update(msgs => [...msgs, message]);
-    
-    // Update active chats
+    const activeChatId = get(currentChatId);
+
+    // SIMPLIFIED: Update global message store with minimal duplicate checking
+    messages.update(msgs => {
+        // Only check for exact message ID duplication
+        const exactDuplicate = message.id && msgs.some(m =>
+            m.type === MessageType.CHAT &&
+            m.id === message.id
+        );
+
+        if (exactDuplicate) {
+            console.log(`[DEBUG] Message ${message.id} is an exact duplicate, not adding`);
+            return msgs;
+        }
+
+        // Not an exact duplicate, add to store
+        console.log(`[DEBUG] Adding message ${message.id || "unknown"} to global message store`);
+        return [...msgs, message];
+    });
+
+    // Update active chats list
     updateActiveChat(message);
-    
-    // If the message is from someone else, and we're not currently viewing this chat,
-    // add a notification for it
+
+    // Handle notifications for messages from others
     if (!isFromCurrentUser) {
-        const activeChatId = get(currentChatId);
-        // Only create notification if not currently viewing this chat
         if (activeChatId !== message.chatId) {
-            // Format notification data
             const notification: NotificationMessage = {
                 id: message.id,
                 type: MessageType.CHAT,
@@ -589,24 +680,22 @@ function handleChatMessage(message: ChatMessage): void {
                 fromUserId: message.senderId,
                 content: `${message.senderName || 'Someone'} sent you a message: ${message.content.substring(0, 30)}${message.content.length > 30 ? '...' : ''}`,
                 createdAt: message.createdAt,
-                link: `/chat/${message.chatId}`,
+                link: `/chat?id=${message.chatId}&type=direct`,
                 isRead: false,
                 chatId: message.chatId
             };
-            
-            // Add to notifications
+
             addNotification(notification);
         } else {
-            // Mark chat messages as read if currently viewing
             markChatAsRead(message.chatId);
         }
     }
 }
-
 /**
  * Handle group chat messages
  */
 function handleGroupChatMessage(message: GroupChatMessage): void {
+    messages.update(msgs => [...msgs, message]);
     updateActiveChat(message);
 }
 
@@ -614,7 +703,19 @@ function handleGroupChatMessage(message: GroupChatMessage): void {
  * Handle notifications
  */
 function handleNotification(notification: NotificationMessage): void {
-    notifications.update(notes => [notification, ...notes]);
+    notifications.update(notes => {
+        // Check for duplicates
+        const exists = notes.some(n =>
+            (n.id && n.id === notification.id) ||
+            (n.content === notification.content &&
+                n.createdAt === notification.createdAt &&
+                n.userId === notification.userId));
+
+        if (!exists) {
+            return [notification, ...notes];
+        }
+        return notes;
+    });
 
     // Show browser notification if supported and user gave permission
     if (
@@ -661,13 +762,6 @@ function handleErrorMessage(message: ErrorMessage): void {
 }
 
 /**
- * Helper functions for message types
- */
-export function isGroupChatMessage(message: any): message is GroupChatMessage {
-    return message.type === MessageType.GROUP_CHAT;
-}
-
-/**
  * Update active chats when new messages arrive
  */
 function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
@@ -675,13 +769,15 @@ function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
 
     // Get current user ID to check if the message is from the current user
     const currentUserId = getCurrentUserId();
-    const isFromCurrentUser = isGroupChatMessage(message)
+    if (!currentUserId) return;
+
+    const isGroupMsg = isGroupChatMessage(message);
+    const isFromCurrentUser = isGroupMsg
         ? message.userId === currentUserId
         : message.senderId === currentUserId;
 
     activeChats.update(chats => {
-        const isGroupMessage = message.type === MessageType.GROUP_CHAT;
-        const chatId = isGroupMessage
+        const chatId = isGroupMsg
             ? (message as GroupChatMessage).groupId
             : (message as ChatMessage).chatId;
 
@@ -692,7 +788,7 @@ function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
 
         // First check if we already have a chat with this ID
         let existingChatIndex = chats.findIndex(c =>
-            c.id === chatId && c.isGroup === isGroupMessage
+            c.id === chatId && c.isGroup === isGroupMsg
         );
 
         // If found, update the existing chat
@@ -700,7 +796,9 @@ function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
             const updatedChats = [...chats];
 
             // Only increment unread count if message is NOT from current user
-            const newUnreadCount = isFromCurrentUser
+            // AND we're not currently viewing this chat
+            const activeChatId = get(currentChatId);
+            const newUnreadCount = isFromCurrentUser || chatId === activeChatId
                 ? updatedChats[existingChatIndex].unreadCount
                 : updatedChats[existingChatIndex].unreadCount + 1;
 
@@ -708,48 +806,59 @@ function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
                 ...updatedChats[existingChatIndex],
                 lastMessage: message.content,
                 lastMessageTime: message.createdAt,
-                unreadCount: newUnreadCount
+                unreadCount: newUnreadCount,
+                potential: false // Ensure it's no longer marked as potential
             };
+
+            // Move the updated chat to the top of the list (most recent)
+            const updatedChat = updatedChats.splice(existingChatIndex, 1)[0];
+            updatedChats.unshift(updatedChat);
+
             return updatedChats;
         }
 
-        // For direct chats, try to match by participant IDs if chatId doesn't match
-        if (!isGroupMessage) {
+        // For direct chats with incorrect chat IDs, try to match by participant instead
+        if (!isGroupMsg) {
             const chatMessage = message as ChatMessage;
-            const otherUserId = chatMessage.senderId === currentUserId 
-                ? chatMessage.recipientId 
+            const otherUserId = chatMessage.senderId === currentUserId
+                ? chatMessage.recipientId
                 : chatMessage.senderId;
-            
-            // Find chats with this user as a participant
-            existingChatIndex = chats.findIndex(c => 
-                !c.isGroup && 
+
+            // Find chat with this user as participant
+            const existingChatByParticipant = chats.findIndex(c =>
+                !c.isGroup &&
                 (c.recipientId === otherUserId));
-            
-            if (existingChatIndex >= 0) {
-                // Update chat with the correct chatId
+
+            if (existingChatByParticipant >= 0) {
                 const updatedChats = [...chats];
                 const newUnreadCount = isFromCurrentUser
-                    ? updatedChats[existingChatIndex].unreadCount
-                    : updatedChats[existingChatIndex].unreadCount + 1;
-                
-                updatedChats[existingChatIndex] = {
-                    ...updatedChats[existingChatIndex],
+                    ? updatedChats[existingChatByParticipant].unreadCount
+                    : updatedChats[existingChatByParticipant].unreadCount + 1;
+
+                // Update chat with the correct ID and message info
+                updatedChats[existingChatByParticipant] = {
+                    ...updatedChats[existingChatByParticipant],
                     id: chatId, // Update with the correct chatId
                     lastMessage: message.content,
                     lastMessageTime: message.createdAt,
-                    unreadCount: newUnreadCount
+                    unreadCount: newUnreadCount,
+                    potential: false // No longer potential
                 };
+
+                // Move to top
+                const updatedChat = updatedChats.splice(existingChatByParticipant, 1)[0];
+                updatedChats.unshift(updatedChat);
+
                 return updatedChats;
             }
         }
 
-        // If not found, fetch info for new chat
-        if (isGroupMessage) {
+        // If not found by ID or participant, fetch info to create a new chat
+        if (isGroupMsg) {
             fetchGroupInfo((message as GroupChatMessage).groupId);
         } else {
             const otherUserId = getOtherUserId(message as ChatMessage);
             if (otherUserId > 0) {
-                // We need to make an API call to get the chat ID
                 fetchChatInfo(otherUserId);
             }
         }
@@ -765,7 +874,6 @@ function getOtherUserId(message: ChatMessage): number {
     const currentUserId = getCurrentUserId();
     if (!currentUserId) return 0;
 
-    // Safety check to ensure we have valid user IDs
     if (message.senderId === undefined || message.recipientId === undefined) {
         console.error('Invalid message: missing sender or recipient ID', message);
         return 0;
@@ -783,9 +891,208 @@ function getCurrentUserId(): number | null {
 }
 
 /**
- * Fetch group information
+ * Send a ping message to keep the connection alive
  */
-async function fetchGroupInfo(groupId: number): Promise<void> {
+function startHeartbeat(): void {
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+    }
+
+    heartbeatInterval = setInterval(() => {
+        if (wsInstance?.readyState === WebSocket.OPEN) {
+            try {
+                // Add timestamp to help track latency
+                wsInstance.send(JSON.stringify({
+                    type: 'ping',
+                    timestamp: Date.now()
+                }));
+            } catch (error) {
+                console.error('Error sending heartbeat:', error);
+                cleanupConnection();
+                scheduleReconnect();
+            }
+        } else if (wsInstance === null || wsInstance.readyState === WebSocket.CLOSED) {
+            console.log('Heartbeat detected closed connection, attempting to reconnect...');
+            cleanupConnection();
+            initializeWebSocket();
+        }
+    }, 20000); // 20 seconds interval
+}
+
+/**
+ * Clean up resources
+ */
+function cleanupConnection(): void {
+    if (wsInstance) {
+        if (wsInstance.readyState === WebSocket.OPEN) {
+            wsInstance.close(1000, 'Normal closure');
+        }
+        wsInstance = null;
+    }
+
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+    }
+
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
+}
+
+/**
+ * Schedule reconnection with exponential backoff
+ */
+function scheduleReconnect(): void {
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+    }
+
+    // Stop reconnecting after max attempts
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+        console.log('Max reconnection attempts reached');
+        connectionState.set(ConnectionState.ERROR);
+        return;
+    }
+
+    reconnectTimer = setTimeout(() => {
+        console.log(`Reconnect attempt ${reconnectAttempts + 1} of ${MAX_RECONNECT_ATTEMPTS}`);
+        initializeWebSocket();
+    }, RECONNECT_DELAY * Math.pow(1.5, reconnectAttempts));
+}
+
+/**
+ * Full WebSocket resource cleanup - call this when the app is shutting down
+ */
+export function cleanupWebSocketResources(): void {
+    if (wsInstance && wsInstance.readyState === WebSocket.OPEN) {
+        wsInstance.close(1000, 'Normal closure');
+    }
+
+    if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+    }
+
+    if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
+
+    wsInstance = null;
+    connectionState.set(ConnectionState.CLOSED);
+    console.log('WebSocket resources cleaned up');
+}
+
+// All the other functions (fetch data, mark as read, etc.) remain the same
+
+// Export helper functions and typings
+export function isGroupChatMessage(message: any): message is GroupChatMessage {
+    return message.type === MessageType.GROUP_CHAT;
+}
+
+export async function loadInitialNotifications(): Promise<void> {
+    try {
+        const response = await fetch('http://localhost:8080/notifications', {
+            credentials: 'include'
+        });
+
+        if (response.ok) {
+            const data = await response.json() || [];
+
+            if (Array.isArray(data)) {
+                notifications.set(data.map((n: any) => normalizeNotification(n)));
+            } else {
+                console.error('Expected array of notifications but got:', data);
+                notifications.set([]);
+            }
+        } else {
+            console.error('Failed to load initial notifications:', response.status);
+        }
+    } catch (error) {
+        console.error('Error loading initial notifications:', error);
+        notifications.set([]);
+    }
+}
+
+export async function fetchActiveChats(): Promise<void> {
+    try {
+        const response = await fetch('http://localhost:8080/chats', {
+            credentials: 'include'
+        });
+
+        if (response.ok) {
+            const chats = await response.json();
+
+            // Track unique chats by ID and potential chats by user ID
+            const uniqueChats = new Map<number, any>();
+            const processedUserIds = new Set<number>();
+
+            // First process all existing chats (non-potential)
+            for (const chat of chats) {
+                if (!chat.potential) {
+                    uniqueChats.set(chat.id, {
+                        id: chat.id,
+                        name: chat.name || `${chat.first_name} ${chat.last_name}`,
+                        avatar: chat.avatar,
+                        unreadCount: chat.unread_count || 0,
+                        isGroup: chat.type === 'group',
+                        lastMessage: chat.last_message,
+                        lastMessageTime: chat.last_message_time,
+                        recipientId: chat.participant_id,
+                        potential: false
+                    });
+
+                    // Track user IDs for direct chats to avoid duplicates
+                    if (chat.type !== 'group' && chat.participant_id) {
+                        processedUserIds.add(chat.participant_id);
+                    }
+                }
+            }
+
+            // Then process potential chats, but only if we don't already have a chat with that user
+            for (const chat of chats) {
+                if (chat.potential && !processedUserIds.has(chat.participant_id)) {
+                    // Use negative ID to indicate potential chat
+                    uniqueChats.set(-chat.participant_id, {
+                        id: -chat.participant_id,  // Use negative user ID for potential chats
+                        name: chat.name || `${chat.first_name} ${chat.last_name}`,
+                        avatar: chat.avatar,
+                        unreadCount: 0,
+                        isGroup: false,
+                        lastMessage: '',
+                        lastMessageTime: null,
+                        recipientId: chat.participant_id,
+                        potential: true
+                    });
+                    processedUserIds.add(chat.participant_id);
+                }
+            }
+
+            // Convert map to array and sort by last message time (newest first)
+            const processedChats = Array.from(uniqueChats.values())
+                .sort((a, b) => {
+                    // Put chats with messages at the top
+                    if (a.lastMessageTime && !b.lastMessageTime) return -1;
+                    if (!a.lastMessageTime && b.lastMessageTime) return 1;
+                    if (!a.lastMessageTime && !b.lastMessageTime) {
+                        // For chats without messages, sort potential chats last
+                        return a.potential === b.potential ? 0 : (a.potential ? 1 : -1);
+                    }
+                    // Sort by timestamp for chats with messages
+                    return new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime();
+                });
+
+            // Update the store with the deduplicated chat list
+            activeChats.set(processedChats);
+        }
+    } catch (error) {
+        console.error('Error fetching active chats:', error);
+    }
+}
+
+export async function fetchGroupInfo(groupId: number): Promise<void> {
     try {
         const response = await fetch(`http://localhost:8080/groups/${groupId}`, {
             credentials: 'include'
@@ -797,7 +1104,7 @@ async function fetchGroupInfo(groupId: number): Promise<void> {
                 const existingChat = chats.some(chat =>
                     chat.id === groupId && chat.isGroup === true
                 );
-                
+
                 // Only add if doesn't exist
                 if (!existingChat) {
                     return [...chats, {
@@ -805,7 +1112,8 @@ async function fetchGroupInfo(groupId: number): Promise<void> {
                         name: groupData.name,
                         avatar: groupData.avatar,
                         unreadCount: 1,
-                        isGroup: true
+                        isGroup: true,
+                        potential: false
                     }];
                 }
                 return chats;
@@ -816,10 +1124,7 @@ async function fetchGroupInfo(groupId: number): Promise<void> {
     }
 }
 
-/**
- * Fetch chat information for a user
- */
-async function fetchChatInfo(userId: number): Promise<void> {
+export async function fetchChatInfo(userId: number): Promise<void> {
     try {
         const currentUserId = getCurrentUserId();
         if (!currentUserId) return;
@@ -863,7 +1168,8 @@ async function fetchChatInfo(userId: number): Promise<void> {
                             isGroup: false,
                             recipientId: userId,
                             lastMessage: "",
-                            lastMessageTime: new Date().toISOString()
+                            lastMessageTime: new Date().toISOString(),
+                            potential: false
                         }];
                     }
                     return chats;
@@ -875,162 +1181,185 @@ async function fetchChatInfo(userId: number): Promise<void> {
     }
 }
 
-/**
- * Send a ping message to keep the connection alive
- */
-function startHeartbeat(): void {
-    if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-    }
-
-    heartbeatInterval = setInterval(() => {
-        if (wsInstance?.readyState === WebSocket.OPEN) {
-            try {
-                // Add timestamp to help track latency
-                wsInstance.send(JSON.stringify({
-                    type: 'ping',
-                    timestamp: Date.now()
-                }));
-            } catch (error) {
-                console.error('Error sending heartbeat:', error);
-                cleanupConnection();
-                scheduleReconnect();
-            }
-        }
-    }, 20000); // 20 seconds interval
-}
-
-/**
- * Clean up resources
- */
-function cleanupConnection(): void {
-    if (wsInstance) {
-        // Only close if not already closing/closed
-        if (wsInstance.readyState === WebSocket.OPEN) {
-            wsInstance.close(1000, 'Normal closure');
-        }
-        wsInstance = null;
-    }
-
-    if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-        heartbeatInterval = null;
-    }
-
-    if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-    }
-}
-
-/**
- * Schedule reconnection with exponential backoff
- */
-function scheduleReconnect(): void {
-    if (reconnectTimer) {
-        clearTimeout(reconnectTimer);
-    }
-
-    // Stop reconnecting after max attempts
-    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-        console.log('Max reconnection attempts reached');
-        connectionState.set(ConnectionState.ERROR);
-        return;
-    }
-
-    reconnectTimer = setTimeout(() => {
-        console.log(`Reconnect attempt ${reconnectAttempts + 1} of ${MAX_RECONNECT_ATTEMPTS}`);
-        initializeWebSocket();
-    }, RECONNECT_DELAY);
-}
-
-export async function loadInitialNotifications(): Promise<void> {
+export async function markChatAsRead(chatId: number): Promise<void> {
     try {
-        const response = await fetch('http://localhost:8080/notifications', {
+        // Send request to mark chat as read
+        const response = await fetch(`http://localhost:8080/chats/${chatId}/read`, {
+            method: 'POST',
             credentials: 'include'
         });
 
         if (response.ok) {
-            const data = await response.json() || [];
-
-            if (Array.isArray(data)) {
-                // Convert server notifications to our format and update store
-                notifications.set(data.map((n: any) => normalizeNotification(n)));
-            } else {
-                console.error('Expected array of notifications but got:', data);
-                notifications.set([]); // Set empty array as fallback
-            }
-        } else {
-            console.error('Failed to load initial notifications:', response.status);
-        }
-    } catch (error) {
-        console.error('Error loading initial notifications:', error);
-        notifications.set([]); // Set empty array on error
-    }
-}
-
-/**
- * Fetch active chats
- */
-export async function fetchActiveChats(): Promise<void> {
-    try {
-        const response = await fetch('http://localhost:8080/chats', {
-            credentials: 'include'
-        });
-        
-        if (response.ok) {
-            const chats = await response.json();
-            
-            // Process chats and update the store
-            // Create a Set to track unique user IDs for deduplication
-            const processedUserIds = new Set<number>();
-            const processedChats = [];
-            
-            // First process all existing chats (non-potential)
-            for (const chat of chats) {
-                if (!chat.potential) {
-                    processedChats.push({
-                        id: chat.id,
-                        name: chat.name || `${chat.first_name} ${chat.last_name}`,
-                        avatar: chat.avatar,
-                        unreadCount: chat.unread_count || 0,
-                        isGroup: chat.type === 'group',
-                        lastMessage: chat.last_message,
-                        lastMessageTime: chat.last_message_time,
-                        recipientId: chat.participant_id,
-                        potential: false
-                    });
-                    
-                    // Track user IDs for direct chats to avoid duplicates
-                    if (chat.type !== 'group' && chat.participant_id) {
-                        processedUserIds.add(chat.participant_id);
+            // Update local state
+            activeChats.update(chats => {
+                return chats.map(chat => {
+                    if (chat.id === chatId) {
+                        return { ...chat, unreadCount: 0 };
                     }
-                }
-            }
-            
-            // Then process potential chats, but only if we don't already have a chat with that user
-            for (const chat of chats) {
-                if (chat.potential && !processedUserIds.has(chat.participant_id)) {
-                    processedChats.push({
-                        id: chat.id,
-                        name: chat.name || `${chat.first_name} ${chat.last_name}`,
-                        avatar: chat.avatar,
-                        unreadCount: chat.unread_count || 0,
-                        isGroup: chat.type === 'group',
-                        lastMessage: chat.last_message,
-                        lastMessageTime: chat.last_message_time,
-                        recipientId: chat.participant_id,
-                        potential: true
-                    });
-                    processedUserIds.add(chat.participant_id);
-                }
-            }
-            
-            activeChats.set(processedChats);
+                    return chat;
+                });
+            });
+
+            // Also mark any related notifications as read
+            markNotificationsReadByChatId(chatId);
         }
     } catch (error) {
-        console.error('Error fetching active chats:', error);
+        console.error('Error marking chat as read:', error);
     }
+}
+
+export function resetUnreadCount(chatId: number, isGroup: boolean): void {
+    activeChats.update(chats =>
+        chats.map(chat =>
+            chat.id === chatId && chat.isGroup === isGroup
+                ? {...chat, unreadCount: 0}
+                : chat
+        )
+    );
+}
+
+export function markNotificationsReadByChatId(chatId: number): void {
+    notifications.update(notificationsList => {
+        const updatedNotifications = notificationsList.map(notification => {
+            if (notification.chatId === chatId && !notification.isRead) {
+                // If notification has an ID, also mark it as read on the server
+                if (notification.id) {
+                    markNotificationAsRead(notification.id);
+                }
+                return { ...notification, isRead: true };
+            }
+            return notification;
+        });
+
+        updateUnreadCount();
+        return updatedNotifications;
+    });
+}
+
+export async function markNotificationAsRead(notificationId: number): Promise<void> {
+    try {
+        const response = await fetch(`http://localhost:8080/notifications/${notificationId}/read`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!response.ok) {
+            let errorMessage = 'Failed to mark notification as read';
+            if (response.headers.get('content-type')?.includes('application/json')) {
+                const errorData = await response.json();
+                errorMessage = errorData.error || `Failed to mark notification as read: ${response.status}`;
+            } else {
+                errorMessage = `Failed to mark notification as read: ${response.statusText}`;
+            }
+            throw new Error(errorMessage);
+        }
+
+        // Update the notifications store with the new state
+        notifications.update(notifications =>
+            notifications.map(notification =>
+                notification.id === notificationId
+                    ? {...notification, isRead: true}
+                    : notification
+            )
+        );
+
+    } catch (error) {
+        console.error('Error marking notification as read:', error);
+        throw error;
+    }
+}
+
+export function addNotification(notification: NotificationMessage): void {
+    // Add to notifications store
+    notifications.update(list => {
+        // Check if this notification already exists to avoid duplicates
+        const exists = list.some(n =>
+            (n.id && n.id === notification.id) ||
+            (n.content === notification.content &&
+                n.createdAt === notification.createdAt &&
+                n.userId === notification.userId)
+        );
+
+        if (!exists) {
+            return [notification, ...list];
+        }
+        return list;
+    });
+
+    // Update the unread count
+    updateUnreadCount();
+
+    // Show browser notification if enabled
+    if (!notification.isRead) {
+        showBrowserNotification(notification);
+    }
+}
+
+export function showBrowserNotification(notification: NotificationMessage): void {
+    if (Notification.permission === 'granted' && document.visibilityState !== 'visible') {
+        const notif = new Notification('Social Network', {
+            body: notification.content,
+            icon: '/favicon.ico'
+        });
+
+        notif.onclick = () => {
+            window.focus();
+            if (notification.link) {
+                window.location.href = notification.link;
+            }
+            notif.close();
+        };
+    }
+}
+
+function updateUnreadCount(): void {
+    const unreadCount = get(notifications).filter(n => !n.isRead).length;
+    unreadNotificationsCount.set(unreadCount);
+}
+
+export function getChatMessages(chatId: number, isGroup: boolean) {
+    return derived(messages, $messages => {
+        if (isGroup) {
+            // For group chats
+            return $messages.filter(
+                msg => msg.type === MessageType.GROUP_CHAT &&
+                    'groupId' in msg &&
+                    msg.groupId === chatId
+            );
+        } else {
+            // For direct chats
+            const filtered = $messages.filter(
+                msg => msg.type === MessageType.CHAT &&
+                    'chatId' in msg &&
+                    msg.chatId === chatId
+            );
+
+            // Debug log for message filtering
+            console.log(`[DEBUG] Filtered ${filtered.length} messages for chat ${chatId}`);
+
+            return filtered;
+        }
+    });
+}
+export async function requestNotificationPermission(): Promise<boolean> {
+    if (!('Notification' in window)) {
+        console.log('This browser does not support notifications');
+        return false;
+    }
+
+    if (Notification.permission === 'granted') {
+        return true;
+    }
+
+    if (Notification.permission !== 'denied') {
+        const permission = await Notification.requestPermission();
+        return permission === 'granted';
+    }
+
+    return false;
 }
 
 /**
@@ -1056,259 +1385,6 @@ export async function markAllNotificationsAsRead(): Promise<void> {
     }
 }
 
-/**
- * Mark a specific notification as read
- */
-export async function markNotificationAsRead(notificationId: number): Promise<void> {
-    try {
-        const response = await fetch(`http://localhost:8080/notifications/${notificationId}/read`, {
-            method: 'POST',
-            credentials: 'include',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-
-        let errorMessage = 'Failed to mark notification as read';
-
-        if (!response.ok) {
-            if (response.headers.get('content-type')?.includes('application/json')) {
-                const errorData = await response.json();
-                errorMessage = errorData.error || `Failed to mark notification as read: ${response.status}`;
-            } else {
-                errorMessage = `Failed to mark notification as read: ${response.statusText}`;
-            }
-            throw new Error(errorMessage);
-        }
-
-        // Update the notifications store with the new state
-        notifications.update(notifications =>
-            notifications.map(notification =>
-                notification.id === notificationId
-                    ? {...notification, isRead: true}
-                    : notification
-            )
-        );
-
-        // The unread count will be automatically updated via the derived store
-
-    } catch (error) {
-        console.error('Error marking notification as read:', error);
-        throw error;
-    }
-}
-
-/**
- * Mark a chat as read
- */
-export async function markChatAsRead(chatId: number): Promise<void> {
-    try {
-        // Send request to mark chat as read
-        const response = await fetch(`http://localhost:8080/chats/${chatId}/read`, {
-            method: 'POST',
-            credentials: 'include'
-        });
-        
-        if (response.ok) {
-            // Update local state
-            activeChats.update(chats => {
-                return chats.map(chat => {
-                    if (chat.id === chatId) {
-                        return { ...chat, unreadCount: 0 };
-                    }
-                    return chat;
-                });
-            });
-            
-            // Also mark any related notifications as read
-            markNotificationsReadByChatId(chatId);
-        }
-    } catch (error) {
-        console.error('Error marking chat as read:', error);
-    }
-}
-
-/**
- * Reset unread count for a specific chat
- */
-export function resetUnreadCount(chatId: number, isGroup: boolean): void {
-    activeChats.update(chats =>
-        chats.map(chat =>
-            chat.id === chatId && chat.isGroup === isGroup
-                ? {...chat, unreadCount: 0}
-                : chat
-        )
-    );
-}
-
-/**
- * Mark notifications for a specific chat as read
- */
-export function markNotificationsReadByChatId(chatId: number): void {
-    notifications.update(notificationsList => {
-        const updatedNotifications = notificationsList.map(notification => {
-            if (notification.chatId === chatId && !notification.isRead) {
-                // If notification has an ID, also mark it as read on the server
-                if (notification.id) {
-                    markNotificationAsRead(notification.id);
-                }
-                return { ...notification, isRead: true };
-            }
-            return notification;
-        });
-        
-        updateUnreadCount();
-        return updatedNotifications;
-    });
-}
-
-/**
- * Add a new notification to the store
- */
-export function addNotification(notification: NotificationMessage): void {
-    // Add to notifications store
-    notifications.update(list => {
-        // Check if this notification already exists to avoid duplicates
-        const exists = list.some(n => 
-            (n.id && n.id === notification.id) || 
-            (n.content === notification.content && 
-             n.createdAt === notification.createdAt &&
-             n.userId === notification.userId)
-        );
-        
-        if (!exists) {
-            return [notification, ...list];
-        }
-        return list;
-    });
-    
-    // Update the unread count
-    updateUnreadCount();
-    
-    // Show browser notification if enabled
-    if (!notification.isRead) {
-        showBrowserNotification(notification);
-    }
-}
-
-/**
- * Show browser notification
- */
-export function showBrowserNotification(notification: NotificationMessage): void {
-    if (Notification.permission === 'granted' && document.visibilityState !== 'visible') {
-        const notif = new Notification('Social Network', {
-            body: notification.content,
-            icon: '/favicon.ico'
-        });
-        
-        notif.onclick = () => {
-            window.focus();
-            if (notification.link) {
-                window.location.href = notification.link;
-            }
-            notif.close();
-        };
-    }
-}
-
-/**
- * Helper function to update unread count
- */
-function updateUnreadCount(): void {
-    const unreadCount = get(notifications).filter(n => !n.isRead).length;
-    unreadNotificationsCount.set(unreadCount);
-}
-
-/**
- * Get messages for a specific chat
- */
-export function getChatMessages(chatId: number, isGroup: boolean) {
-    return derived(messages, $messages => {
-        if (isGroup) {
-            return $messages.filter(
-                msg => msg.type === MessageType.GROUP_CHAT &&
-                    'groupId' in msg &&
-                    msg.groupId === chatId
-            );
-        } else {
-            // Only match on chatId for chat messages
-            return $messages.filter(
-                msg => msg.type === MessageType.CHAT &&
-                    'chatId' in msg &&
-                    msg.chatId === chatId
-            );
-        }
-    });
-}
-
-/**
- * Request notification permission
- */
-export async function requestNotificationPermission(): Promise<boolean> {
-    if (!('Notification' in window)) {
-        console.log('This browser does not support notifications');
-        return false;
-    }
-
-    if (Notification.permission === 'granted') {
-        return true;
-    }
-
-    if (Notification.permission !== 'denied') {
-        const permission = await Notification.requestPermission();
-        return permission === 'granted';
-    }
-
-    return false;
-}
-
-/**
- * Check if a message is a duplicate by ID or content
- */
-function isMessageDuplicate(message: WebSocketMessage): boolean {
-    // Skip duplicate check for certain message types
-    if (message.type === 'pong' || message.type === 'ping') {
-        return false;
-    }
-    
-    // If it's a message without an ID, use content hash
-    let messageKey = '';
-    
-    if (message.id) {
-        messageKey = `${message.type}_${message.id}`;
-    } else if ('content' in message) {
-        // For messages without an ID but with content
-        const content = (message as any).content;
-        const sender = (message as any).senderId || (message as any).userId || '';
-        const timestamp = message.createdAt || new Date().toISOString();
-        messageKey = `${message.type}_${sender}_${content}_${timestamp}`;
-    } else {
-        // For messages without ID or content, just make a best effort
-        messageKey = `${message.type}_${JSON.stringify(message)}_${new Date().toISOString()}`;
-    }
-    
-    // Check if we've processed this message before
-    const processed = get(processedMessageIds);
-    if (processed.has(messageKey)) {
-        console.log('Duplicate message detected, ignoring:', messageKey);
-        return true;
-    }
-    
-    // Add to processed set
-    processed.add(messageKey);
-    // Limit the size of the processed set to prevent memory leaks
-    if (processed.size > 1000) {
-        const iterator = processed.values();
-        processed.delete(iterator.next().value);
-    }
-    processedMessageIds.set(processed);
-    
-    return false;
-}
-
-/**
- * Helper function to show toast notifications
- */
 export function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
     const event = new CustomEvent('toast', {
         detail: {message, type}

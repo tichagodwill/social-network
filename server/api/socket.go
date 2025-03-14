@@ -1,6 +1,7 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -95,11 +96,6 @@ func getConnectedUserIDs() []int {
 func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 	log.Printf("New WebSocket connection attempt")
 
-	// Use a single mutex for connection management
-	var connectionMutex sync.Mutex
-	connectionMutex.Lock()
-	defer connectionMutex.Unlock()
-
 	// Get user info from session before upgrading
 	username, err := util.GetUsernameFromSession(r)
 	if err != nil {
@@ -117,21 +113,35 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if user already has an active connection
+	// First acquire lock to check for existing connection
 	socketManager.Mu.Lock()
-	if existingConn, exists := socketManager.Sockets[userID]; exists {
+
+	// Check if user already has an active connection
+	existingConn, exists := socketManager.Sockets[userID]
+	if exists {
 		log.Printf("User %d already has an active connection, closing it", userID)
-		existingConn.WriteControl(
-			websocket.CloseMessage,
-			websocket.FormatCloseMessage(websocket.CloseNormalClosure, "New connection"),
-			time.Now().Add(time.Second),
-		)
-		existingConn.Close()
+		// First remove from map to prevent race conditions
 		delete(socketManager.Sockets, userID)
-		// Add a small delay to ensure proper cleanup
-		time.Sleep(time.Millisecond * 100)
+		socketManager.Mu.Unlock()
+
+		// Then close the connection outside the lock
+		go func() {
+			// Send close message with a reason
+			existingConn.WriteControl(
+				websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, "New connection"),
+				time.Now().Add(time.Second),
+			)
+			// Wait briefly before forcefully closing
+			time.Sleep(time.Millisecond * 200)
+			existingConn.Close()
+		}()
+	} else {
+		socketManager.Mu.Unlock()
 	}
-	socketManager.Mu.Unlock()
+
+	// Wait a moment to ensure old connection is fully closed
+	time.Sleep(time.Millisecond * 100)
 
 	// Upgrade the connection
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -140,42 +150,66 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Set up connection cleanup
-	defer func() {
-		log.Printf("Cleaning up connection for user %d", userID)
-		socketManager.Mu.Lock()
-		delete(socketManager.Sockets, userID)
-		socketManager.Mu.Unlock()
-		conn.Close()
-	}()
-
-	// Store the new connection
+	// Store the new connection - acquire lock again
 	socketManager.Mu.Lock()
 	socketManager.Sockets[userID] = conn
 	socketManager.Mu.Unlock()
 
 	log.Printf("WebSocket connection established for user %d", userID)
 
-	// Setup ping/pong handlers
-	conn.SetPingHandler(func(data string) error {
-		err := conn.WriteControl(websocket.PongMessage, []byte(data), time.Now().Add(time.Second*5))
-		if err == nil {
-			conn.SetReadDeadline(time.Now().Add(time.Second * 120))
+	// Set up proper close handler
+	conn.SetCloseHandler(func(code int, text string) error {
+		log.Printf("Connection closing for user %d: %d %s", userID, code, text)
+
+		// Remove from socket manager
+		socketManager.Mu.Lock()
+		if currentConn, ok := socketManager.Sockets[userID]; ok && currentConn == conn {
+			delete(socketManager.Sockets, userID)
 		}
-		return err
+		socketManager.Mu.Unlock()
+
+		// Return nil to use default close behavior
+		return nil
+	})
+
+	// Set up ping/pong handlers for connection health checks
+	conn.SetPingHandler(func(data string) error {
+		log.Printf("Ping received from user %d", userID)
+		// Update the read deadline when we get a ping
+		conn.SetReadDeadline(time.Now().Add(time.Second * 120))
+		// Send pong response
+		return conn.WriteControl(websocket.PongMessage, []byte(data), time.Now().Add(time.Second*5))
 	})
 
 	conn.SetPongHandler(func(string) error {
+		log.Printf("Pong received from user %d", userID)
+		// Update the read deadline when we get a pong
 		conn.SetReadDeadline(time.Now().Add(time.Second * 120))
 		return nil
 	})
+
+	// Set initial read deadline
+	conn.SetReadDeadline(time.Now().Add(time.Second * 120))
+
+	// Use a defer to ensure cleanup if the handler exits
+	defer func() {
+		log.Printf("Cleaning up connection for user %d", userID)
+		socketManager.Mu.Lock()
+		if currentConn, ok := socketManager.Sockets[userID]; ok && currentConn == conn {
+			delete(socketManager.Sockets, userID)
+		}
+		socketManager.Mu.Unlock()
+		conn.Close()
+	}()
 
 	// Main message loop
 	for {
 		messageType, message, err := conn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("WebSocket error: %v", err)
+				log.Printf("WebSocket error for user %d: %v", userID, err)
+			} else {
+				log.Printf("Connection closed for user %d: %v", userID, err)
 			}
 			break
 		}
@@ -190,102 +224,256 @@ func WebSocketHandler(w http.ResponseWriter, r *http.Request) {
 
 			switch msg.Type {
 			case "chat":
-				// Extract the chat message from the data field
-				chatData, err := json.Marshal(msg.Data)
-				if err != nil {
-					log.Printf("Error marshaling chat data: %v", err)
-					break
-				}
-				var chatMessage models.ChatMessage
-				if err := json.Unmarshal(chatData, &chatMessage); err != nil {
-					log.Printf("WebSocket chat json unmarshal error: %v", err)
-					break
-				}
+				processChatMessage(userID, conn, messageType, message, msg)
 
-				if err := SaveMessage(chatMessage); err != nil {
-					log.Printf("Error saving message: %v", err)
-					
-					// Send an error response back to the sender
-					errorResponse := models.WebSocketMessage{
-						Type: "error",
-						Data: map[string]interface{}{
-							"message": err.Error(),
-							"code": "follow_required",
-						},
-					}
-					
-					if err := conn.WriteJSON(errorResponse); err != nil {
-						log.Printf("Error sending error response to client: %v", err)
-					}
-					
-					break
-				}
+			case "groupChat":
+				processGroupChatMessage(userID, conn, messageType, message, msg)
 
-				// Echo the message back to the sender
-				if err := conn.WriteMessage(messageType, message); err != nil {
-					log.Printf("WebSocket write error: %v", err)
-					break
-				}
-
-				// Create a notification for the chat message
-				if err := createChatNotification(chatMessage); err != nil {
-					log.Printf("Error creating chat notification: %v", err)
-				}
-
-				// NEW CODE: Send the message to the recipient if they're online
-				recipientID := chatMessage.RecipientID
-				socketManager.Mu.RLock()
-				recipientConn, recipientOnline := socketManager.Sockets[recipientID]
-				socketManager.Mu.RUnlock()
-
-				if recipientOnline {
-					log.Printf("Recipient %d is online, sending message", recipientID)
-					if err := recipientConn.WriteMessage(messageType, message); err != nil {
-						log.Printf("Error sending message to recipient %d: %v", recipientID, err)
-					}
-				} else {
-					log.Printf("Recipient %d is offline", recipientID)
-				}
-			case "eventRSVP":
-				var rsvpMessage models.EventRSVPMessage
-				if err := json.Unmarshal(message, &rsvpMessage); err != nil {
-					log.Printf("WebSocket event RSVP unmarshal error: %v", err)
-					break
-				}
-
-				// Broadcast the RSVP update to all connected clients
-				broadcast <- models.BroadcastMessage{
-					Data:        rsvpMessage,
-					TargetUsers: nil, // Broadcast to all users
-				}
 			case "ping":
+				// Send pong response
 				pongMessage := models.WebSocketMessage{
 					Type: "pong",
-					Data: nil,
+					Data: map[string]interface{}{
+						"timestamp": time.Now().UnixMilli(),
+					},
 				}
 
-				// Send the pong response back to the client
 				if err := conn.WriteJSON(pongMessage); err != nil {
-					log.Printf("Error sending pong: %v", err)
+					log.Printf("Error sending pong to user %d: %v", userID, err)
 				}
+
 			default:
-				log.Printf("Unknown message type: %s", msg.Type)
+				log.Printf("Unknown message type from user %d: %s", userID, msg.Type)
 			}
 
 		case websocket.BinaryMessage:
-			log.Printf("Received Binary Message: %v\n", message)
+			log.Printf("Received binary message from user %d", userID)
 
 		case websocket.CloseMessage:
-			log.Println("Received Close Message")
+			log.Printf("Received close message from user %d", userID)
 			return
 
-		case websocket.PingMessage:
-			log.Println("Received Ping Message")
-
-		case websocket.PongMessage:
-			log.Println("Received Pong Message")
+		case websocket.PingMessage, websocket.PongMessage:
+			// These are handled by the SetPingHandler and SetPongHandler
+			continue
 		}
 	}
+}
+
+// Separate function to process chat messages
+func processChatMessage(userID int, conn *websocket.Conn, messageType int, rawMessage []byte, msg models.WebSocketMessage) {
+	// Extract the chat message from the data field
+	chatData, err := json.Marshal(msg.Data)
+	if err != nil {
+		log.Printf("Error marshaling chat data from user %d: %v", userID, err)
+		return
+	}
+
+	var chatMessage models.ChatMessage
+	if err := json.Unmarshal(chatData, &chatMessage); err != nil {
+		log.Printf("Error unmarshaling chat message from user %d: %v", userID, err)
+		return
+	}
+
+	// Validate the message has required fields
+	if chatMessage.ChatID == 0 {
+		// If missing chat ID but has recipient, try to get or create a chat
+		if chatMessage.RecipientID > 0 {
+			chatID, err := getOrCreateDirectChat(userID, chatMessage.RecipientID)
+			if err != nil {
+				log.Printf("Error creating or getting chat for user %d and recipient %d: %v",
+					userID, chatMessage.RecipientID, err)
+
+				// Send error back to client
+				errorResponse := models.WebSocketMessage{
+					Type: "error",
+					Data: map[string]interface{}{
+						"message":         "Couldn't create chat: " + err.Error(),
+						"code":            "chat_creation_failed",
+						"originalMessage": msg,
+					},
+				}
+
+				if err := conn.WriteJSON(errorResponse); err != nil {
+					log.Printf("Error sending error response to user %d: %v", userID, err)
+				}
+				return
+			}
+
+			// Update the message with the actual chat ID
+			chatMessage.ChatID = chatID
+
+			// Update the original message data with the new chat ID
+			updatedMsg := msg
+			updatedMsgData := make(map[string]interface{})
+
+			// Extract original data
+			originalData, ok := msg.Data.(map[string]interface{})
+			if ok {
+				for k, v := range originalData {
+					updatedMsgData[k] = v
+				}
+			}
+
+			// Update with new chat ID
+			updatedMsgData["chatId"] = chatID
+			updatedMsg.Data = updatedMsgData
+
+			// Reserialize the updated message
+			updatedRawMessage, err := json.Marshal(updatedMsg)
+			if err != nil {
+				log.Printf("Error updating message with chat ID: %v", err)
+			} else {
+				// Replace the raw message with the updated one
+				rawMessage = updatedRawMessage
+			}
+		} else {
+			log.Printf("Error: Message from user %d missing both chatId and recipientId", userID)
+
+			// Send error back to client
+			errorResponse := models.WebSocketMessage{
+				Type: "error",
+				Data: map[string]interface{}{
+					"message": "Message must include either chatId or recipientId",
+					"code":    "invalid_message",
+				},
+			}
+
+			if err := conn.WriteJSON(errorResponse); err != nil {
+				log.Printf("Error sending error response to user %d: %v", userID, err)
+			}
+			return
+		}
+	}
+
+	// Ensure the sender ID matches the authenticated user
+	chatMessage.SenderID = userID
+
+	// Save the message to the database
+	if err := SaveMessage(chatMessage); err != nil {
+		log.Printf("Error saving message from user %d: %v", userID, err)
+
+		// Send error response back to the sender
+		errorResponse := models.WebSocketMessage{
+			Type: "error",
+			Data: map[string]interface{}{
+				"message": err.Error(),
+				"code":    "message_save_failed",
+			},
+		}
+
+		if err := conn.WriteJSON(errorResponse); err != nil {
+			log.Printf("Error sending error response to user %d: %v", userID, err)
+		}
+		return
+	}
+
+	// Echo the message back to the sender with updated fields (like ID)
+	if err := conn.WriteMessage(messageType, rawMessage); err != nil {
+		log.Printf("Error echoing message to sender (user %d): %v", userID, err)
+	}
+
+	// Create notification for the message
+	if err := createChatNotification(chatMessage); err != nil {
+		log.Printf("Error creating notification for message: %v", err)
+	}
+
+	// Send the message to the recipient if they're online
+	recipientID := chatMessage.RecipientID
+	socketManager.Mu.RLock()
+	recipientConn, recipientOnline := socketManager.Sockets[recipientID]
+	socketManager.Mu.RUnlock()
+
+	if recipientOnline {
+		log.Printf("Recipient %d is online, sending message", recipientID)
+		if err := recipientConn.WriteMessage(messageType, rawMessage); err != nil {
+			log.Printf("Error sending message to recipient %d: %v", recipientID, err)
+		}
+	} else {
+		log.Printf("Recipient %d is offline, notification will be sent", recipientID)
+	}
+}
+
+// Function to get or create a direct chat between two users
+func getOrCreateDirectChat(userID, recipientID int) (int, error) {
+	// Check if a direct chat already exists between these users
+	var chatID int
+	err := sqlite.DB.QueryRow(`
+		SELECT c.id 
+		FROM chats c
+		JOIN user_chat_status ucs1 ON c.id = ucs1.chat_id AND ucs1.user_id = ?
+		JOIN user_chat_status ucs2 ON c.id = ucs2.chat_id AND ucs2.user_id = ?
+		WHERE c.type = 'direct'`,
+		userID, recipientID,
+	).Scan(&chatID)
+
+	if err == nil {
+		// Found existing chat
+		return chatID, nil
+	}
+
+	if err != sql.ErrNoRows {
+		// Unexpected error
+		return 0, fmt.Errorf("database error: %w", err)
+	}
+
+	// No existing chat found, check if there's a follow relationship
+	var followExists bool
+	err = sqlite.DB.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1 FROM followers 
+			WHERE ((follower_id = ? AND followed_id = ?) 
+			OR (follower_id = ? AND followed_id = ?))
+			AND status = 'accepted'
+		)`,
+		userID, recipientID, recipientID, userID,
+	).Scan(&followExists)
+
+	if err != nil {
+		return 0, fmt.Errorf("database error checking follow status: %w", err)
+	}
+
+	if !followExists {
+		return 0, fmt.Errorf("cannot create chat: at least one user must follow the other")
+	}
+
+	// Create a new chat
+	tx, err := sqlite.DB.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Insert new chat
+	result, err := tx.Exec(`
+		INSERT INTO chats (type, created_at)
+		VALUES ('direct', CURRENT_TIMESTAMP)`,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to create chat: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get chat ID: %w", err)
+	}
+	chatID = int(id)
+
+	// Add both users to the chat
+	_, err = tx.Exec(`
+		INSERT INTO user_chat_status (user_id, chat_id)
+		VALUES (?, ?), (?, ?)`,
+		userID, chatID, recipientID, chatID,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("failed to add users to chat: %w", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return 0, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return chatID, nil
 }
 
 // SaveMessage saves a message to the database and returns its ID
@@ -390,4 +578,166 @@ func cleanupConnection(userID int, conn *websocket.Conn) {
 func createChatNotification(message models.ChatMessage) error {
 	// Call the notification creation function
 	return CreateChatNotification(message.RecipientID, message.SenderID, message.Content)
+}
+func processGroupChatMessage(userID int, conn *websocket.Conn, messageType int, message []byte, msg models.WebSocketMessage) {
+	// Parse the group chat message
+	groupData, err := json.Marshal(msg.Data)
+	if err != nil {
+		log.Printf("Error marshaling group chat data: %v", err)
+		return
+	}
+
+	var groupMessage models.GroupMessage
+	if err := json.Unmarshal(groupData, &groupMessage); err != nil {
+		log.Printf("Error unmarshaling group chat message: %v", err)
+		return
+	}
+
+	// Ensure the user ID matches the authenticated user
+	groupMessage.UserID = userID
+
+	// Verify user is a member of the group
+	var isMember bool
+	err = sqlite.DB.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1 FROM group_members
+			WHERE group_id = ? AND user_id = ?
+		)`, groupMessage.GroupID, userID).Scan(&isMember)
+
+	if err != nil {
+		log.Printf("Error checking group membership: %v", err)
+		return
+	}
+
+	if !isMember {
+		// Send error back to user
+		errorResponse := models.WebSocketMessage{
+			Type: "error",
+			Data: map[string]interface{}{
+				"message": "You are not a member of this group",
+				"code":    "not_group_member",
+			},
+		}
+
+		if err := conn.WriteJSON(errorResponse); err != nil {
+			log.Printf("Error sending error response: %v", err)
+		}
+		return
+	}
+
+	// Save the message
+	stmt, err := sqlite.DB.Prepare(`
+		INSERT INTO group_messages (group_id, user_id, content, created_at)
+		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+	`)
+	if err != nil {
+		log.Printf("Error preparing statement: %v", err)
+		return
+	}
+	defer stmt.Close()
+
+	result, err := stmt.Exec(
+		groupMessage.GroupID,
+		groupMessage.UserID,
+		groupMessage.Content,
+	)
+	if err != nil {
+		log.Printf("Error saving group message: %v", err)
+		return
+	}
+
+	messageID, err := result.LastInsertId()
+	if err != nil {
+		log.Printf("Error getting message ID: %v", err)
+	} else {
+		groupMessage.ID = int(messageID)
+	}
+
+	// Get user info to include in the message
+	var firstName, lastName, avatar string
+	err = sqlite.DB.QueryRow(`
+		SELECT first_name, last_name, avatar
+		FROM users WHERE id = ?
+	`, userID).Scan(&firstName, &lastName, &avatar)
+
+	if err != nil {
+		log.Printf("Error getting user info: %v", err)
+	} else {
+		groupMessage.UserName = firstName + " " + lastName
+		groupMessage.UserAvatar = avatar
+	}
+
+	// Get chat ID associated with the group
+	var chatID int
+	err = sqlite.DB.QueryRow(`
+		SELECT chat_id FROM groups WHERE id = ?
+	`, groupMessage.GroupID).Scan(&chatID)
+
+	if err != nil {
+		log.Printf("Error getting chat ID for group: %v", err)
+	}
+
+	// Update the message with the user info and send to all group members
+	msg.Data = groupMessage
+
+	// Send updated message to all group members
+	rows, err := sqlite.DB.Query(`
+		SELECT user_id FROM group_members WHERE group_id = ?
+	`, groupMessage.GroupID)
+
+	if err != nil {
+		log.Printf("Error getting group members: %v", err)
+		return
+	}
+	defer rows.Close()
+
+	// Collect all member IDs
+	var memberIDs []int
+	for rows.Next() {
+		var memberID int
+		if err := rows.Scan(&memberID); err != nil {
+			log.Printf("Error scanning member ID: %v", err)
+			continue
+		}
+		memberIDs = append(memberIDs, memberID)
+	}
+
+	// Send message to all members (including sender for consistency)
+	for _, memberID := range memberIDs {
+		socketManager.Mu.RLock()
+		memberConn, isOnline := socketManager.Sockets[memberID]
+		socketManager.Mu.RUnlock()
+
+		if isOnline {
+			if err := memberConn.WriteJSON(msg); err != nil {
+				log.Printf("Error sending group message to member %d: %v", memberID, err)
+			}
+		}
+	}
+
+	// Create notifications for offline members
+	for _, memberID := range memberIDs {
+		if memberID == userID {
+			// Skip notification for the sender
+			continue
+		}
+
+		socketManager.Mu.RLock()
+		_, isOnline := socketManager.Sockets[memberID]
+		socketManager.Mu.RUnlock()
+
+		if !isOnline {
+			// Create notification for offline member
+			content := fmt.Sprintf("%s: %s", groupMessage.UserName, truncateMessage(groupMessage.Content))
+			_, err := sqlite.DB.Exec(`
+				INSERT INTO notifications (
+					type, content, user_id, group_id, from_user_id, is_read, created_at
+				) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			`, "group_message", content, memberID, groupMessage.GroupID, userID, false)
+
+			if err != nil {
+				log.Printf("Error creating notification for member %d: %v", memberID, err)
+			}
+		}
+	}
 }

@@ -5,6 +5,7 @@
     import { Button, Card, Spinner } from 'flowbite-svelte';
     import { auth } from '$lib/stores/auth';
     import { get } from 'svelte/store';
+    import {cleanupWebSocketResources, ConnectionState, connectionState, currentChatId} from '$lib/stores/websocket';
 
     // SVG icons
     const UsersGroupIcon = `
@@ -247,8 +248,11 @@
             }
         }
 
-        // This will set up WebSocket connection
-        initializeWebSocket();
+        // Only initialize WebSocket if not already connected
+        let wsState = get(connectionState);
+        if (wsState !== ConnectionState.CONNECTING && wsState !== ConnectionState.OPEN) {
+            initializeWebSocket();
+        }
 
         // Request notification permission
         requestNotificationPermission();
@@ -263,6 +267,7 @@
 
     onDestroy(() => {
         window.removeEventListener('resize', handleResize);
+        currentChatId.set(null);
     });
 
     function handleChatIdChange({ oldId, newId }: { oldId: number, newId: number }): void {

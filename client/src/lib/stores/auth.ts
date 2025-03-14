@@ -1,7 +1,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { goto } from '$app/navigation';
 import { browser } from '$app/environment';
-import { initializeWebSocket, closeConnection } from '$lib/stores/websocket';
+import { initializeWebSocket, cleanupWebSocketResources  } from '$lib/stores/websocket';
 
 interface User {
     id: number;
@@ -81,7 +81,7 @@ function createAuthStore() {
             try {
                 // Close WebSocket connection before logging out
                 if (browser) {
-                    closeConnection();
+                    cleanupWebSocketResources();
                 }
 
                 const response = await fetch('http://localhost:8080/logout', {

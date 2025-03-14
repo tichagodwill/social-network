@@ -5,7 +5,7 @@
   import { auth } from '$lib/stores/auth';
   import {
     initializeWebSocket,
-    closeConnection,
+    cleanupWebSocketResources,
     connectionState,
     ConnectionState,
     requestNotificationPermission
@@ -108,7 +108,7 @@
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     stopReconnectTimer();
     if (currentState === ConnectionState.OPEN) {
-      closeConnection();
+      cleanupWebSocketResources();
     }
   });
 </script>

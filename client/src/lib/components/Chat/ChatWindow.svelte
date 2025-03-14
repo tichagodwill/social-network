@@ -18,7 +18,8 @@
         resetUnreadCount,
         sendMessage,
         currentChatId,
-        messages as globalMessages
+        processedChatIds,
+        messages as globalMessages, cleanupWebSocketResources
     } from '$lib/stores/websocket'
 
     const dispatch = createEventDispatcher();
@@ -189,7 +190,7 @@
         } else if (recipientId) {
             messageToSend = {
                 type: MessageType.CHAT,
-                chatId: chatId, // Use the chatId from the server
+                chatId: chatId,
                 senderId: currentUserId,
                 recipientId,
                 content: messageText.trim(),
@@ -201,15 +202,23 @@
             return;
         }
 
-        // Send message
+        // Add message to local display immediately for better UX
+        messages = [...messages, messageToSend];
+
+        // Wait for next tick to scroll
+        setTimeout(scrollToBottom, 10);
+
+        // Send message through WebSocket
         const success = sendMessage(messageToSend);
 
         if (success) {
             messageText = '';
             isTyping = false;
+        } else {
+            // Show error UI or retry logic here
+            console.error("Failed to send message via WebSocket");
         }
     }
-
     // Handle emoji selection
     function handleEmojiSelect(event: CustomEvent) {
         messageText += event.detail.native;
@@ -233,18 +242,14 @@
 
             // Clear previous messages
             loadedHistoricalMessages = [];
-            messages = [];
 
             let response;
-
             if (isGroup) {
-                // For group chats, we only need the chatId, not a recipientId
                 response = await fetch(
                     `http://localhost:8080/group-chats/${chatId}`,
                     {credentials: 'include'}
                 );
             } else {
-                // For direct chats, we need both users
                 if (!recipientId) {
                     console.error('Missing recipient ID for loading direct messages');
                     loading = false;
@@ -260,95 +265,66 @@
             if (response.ok) {
                 try {
                     const data = await response.json();
+                    console.log("[DEBUG] Loaded messages data:", data);
 
-                    // Check if we got the expected response format with messages and chatId
+                    // Clear current messages for this chat
+                    globalMessages.update(existingMsgs => {
+                        return existingMsgs.filter(msg => {
+                            if (isGroup) {
+                                return !(msg.type === MessageType.GROUP_CHAT && 'groupId' in msg && msg.groupId === chatId);
+                            } else {
+                                return !(msg.type === MessageType.CHAT && 'chatId' in msg && msg.chatId === chatId);
+                            }
+                        });
+                    });
+
+                    // Process and add new messages
                     if (data && data.chatId) {
-                        // Don't override the prop directly
+                        // Response contains chatId and messages array
                         const newChatId = data.chatId;
-                        // Only update the subscription if the ID actually changed
                         if (newChatId !== chatId) {
-                            console.log(`Chat ID changed from ${chatId} to ${newChatId}`);
-                            // Update the parent component about this change
+                            console.log(`[DEBUG] Chat ID changed from ${chatId} to ${newChatId}`);
                             dispatch('chatIdChanged', {oldId: chatId, newId: newChatId});
                             chatId = newChatId;
                         }
 
-                        // Process messages
                         if (Array.isArray(data.messages)) {
-                            data.messages.forEach((msg: any) => {
-                                // Only set default type if it's missing
+                            const processedMessages = data.messages.map((msg: any) => {
                                 if (!msg.type) {
                                     msg.type = isGroup ? MessageType.GROUP_CHAT : MessageType.CHAT;
                                 }
+                                return msg;
                             });
 
-                            // Store in historical messages
-                            loadedHistoricalMessages = data.messages;
-                            console.log(`Loaded ${data.messages.length} messages from chat ID ${chatId}`);
-                        } else {
-                            console.log('No messages found or empty array');
-                            loadedHistoricalMessages = [];
+                            loadedHistoricalMessages = processedMessages;
+
+                            // Add messages to global store
+                            globalMessages.update(msgs => [...msgs, ...processedMessages]);
+                            console.log(`[DEBUG] Added ${processedMessages.length} historical messages to global store`);
                         }
                     }
-                    // Handle backward compatibility - old format with just an array of messages
                     else if (Array.isArray(data)) {
-                        data.forEach((msg: any) => {
-                            msg.type = MessageType.CHAT;
+                        // Response is directly an array of messages
+                        const processedMessages = data.map((msg: any) => {
+                            if (!msg.type) {
+                                msg.type = MessageType.CHAT;
+                            }
+                            return msg;
                         });
 
-                        // If we have messages and chatId in the first message, update local chatId
-                        if (data.length > 0 && data[0].chatId) {
-                            chatId = data[0].chatId;
-                        }
+                        loadedHistoricalMessages = processedMessages;
 
-                        loadedHistoricalMessages = data;
-                        console.log(`Loaded ${data.length} messages`);
-                    } else {
-                        console.log('Unexpected response format', data);
-                        loadedHistoricalMessages = [];
+                        // Add messages to global store
+                        globalMessages.update(msgs => [...msgs, ...processedMessages]);
+                        console.log(`[DEBUG] Added ${processedMessages.length} historical messages to global store`);
                     }
-
-                    // Now combine with any websocket messages
-                    const wsMessages = get(chatMessages);
-                    const messageMap = new Map();
-
-                    // First add historical messages
-                    loadedHistoricalMessages.forEach(msg => {
-                        if (msg.id) {
-                            messageMap.set(msg.id, msg);
-                        } else {
-                            // Use a unique key for messages without ID
-                            const tempKey = `${msg.createdAt}-${msg.content}`;
-                            messageMap.set(tempKey, msg);
-                        }
-                    });
-
-                    // Then add new messages (they will override historical ones with same ID)
-                    wsMessages.forEach(msg => {
-                        if (msg.id) {
-                            messageMap.set(msg.id, msg);
-                        } else {
-                            // Use a unique key for messages without ID
-                            const tempKey = `${msg.createdAt}-${msg.content}`;
-                            messageMap.set(tempKey, msg);
-                        }
-                    });
-
-                    // Convert back to array and sort by timestamp
-                    messages = Array.from(messageMap.values())
-                        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-
-                } catch (parseError) {
-                    console.error('Error parsing messages:', parseError);
+                } catch (error) {
+                    console.error('[ERROR] Error parsing messages:', error);
                     loadedHistoricalMessages = [];
                 }
-            } else {
-                console.log(`Server returned ${response.status}: ${response.statusText}`);
-                loadedHistoricalMessages = [];
             }
         } catch (error) {
-            console.error('Error loading messages:', error);
-            loadedHistoricalMessages = [];
+            console.error('[ERROR] Error loading messages:', error);
         } finally {
             loading = false;
             setTimeout(scrollToBottom, 100);
@@ -462,6 +438,12 @@
             // Reset unread count
             resetUnread();
         }
+        window.addEventListener('beforeunload', (event) => {
+            // Only handle actual page unloads, not navigation within the app
+            if (document.visibilityState === 'hidden') {
+                cleanupWebSocketResources();
+            }
+        });
     });
     $: {
         if (chatId) {
