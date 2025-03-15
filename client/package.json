@@ -27,14 +27,16 @@
 	},
 	"type": "module",
 	"dependencies": {
-		"@emoji-mart/data": "^1.1.2",
+		"@emoji-mart/data": "^1.2.1",
 		"@tailwindcss/aspect-ratio": "^0.4.2",
 		"@tailwindcss/forms": "^0.5.10",
 		"@tailwindcss/typography": "^0.5.16",
-		"emoji-mart": "^5.5.2",
+		"emoji-mart": "^5.6.0",
+		"emoji-picker-element": "^1.26.1",
 		"flowbite": "^2.2.1",
 		"flowbite-svelte": "^0.44.24",
 		"flowbite-svelte-icons": "^1.4.1",
-		"lucide-svelte": "^0.474.0"
+		"lucide-svelte": "^0.474.0",
+		"svelte-emoji-picker": "^1.1.2"
 	}
 }
