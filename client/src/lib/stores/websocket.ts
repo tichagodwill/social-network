@@ -994,27 +994,40 @@ export function isGroupChatMessage(message: any): message is GroupChatMessage {
 
 export async function loadInitialNotifications(): Promise<void> {
     try {
-        const response = await fetch('http://localhost:8080/notifications', {
-            credentials: 'include'
-        });
-
-        if (response.ok) {
-            const data = await response.json() || [];
-
-            if (Array.isArray(data)) {
-                notifications.set(data.map((n: any) => normalizeNotification(n)));
-            } else {
-                console.error('Expected array of notifications but got:', data);
-                notifications.set([]);
+      const response = await fetch('http://localhost:8080/notifications', {
+        credentials: 'include'
+      });
+  
+      if (response.ok) {
+        const data = await response.json() || [];
+        
+        // Get read IDs from localStorage
+        const readIds = JSON.parse(localStorage.getItem('readNotifications') || '[]');
+        const readIdsSet = new Set(readIds);
+        
+        if (Array.isArray(data)) {
+          const normalizedNotifications = data.map((n: any) => {
+            const normalized = normalizeNotification(n);
+            // Mark as read if in our localStorage
+            if (normalized.id && readIdsSet.has(normalized.id)) {
+              normalized.isRead = true;
             }
+            return normalized;
+          });
+          
+          notifications.set(normalizedNotifications);
         } else {
-            console.error('Failed to load initial notifications:', response.status);
+          console.error('Expected array of notifications but got:', data);
+          notifications.set([]);
         }
+      } else {
+        console.error('Failed to load initial notifications:', response.status);
+      }
     } catch (error) {
-        console.error('Error loading initial notifications:', error);
-        notifications.set([]);
+      console.error('Error loading initial notifications:', error);
+      notifications.set([]);
     }
-}
+  }
 
 export async function fetchActiveChats(): Promise<void> {
     try {
@@ -1365,25 +1378,48 @@ export async function requestNotificationPermission(): Promise<boolean> {
 /**
  * Mark all notifications as read
  */
-export async function markAllNotificationsAsRead(): Promise<void> {
+export async function markAllNotificationsAsRead() {
     try {
-        const response = await fetch('http://localhost:8080/notifications/read-all', {
-            method: 'POST',
-            credentials: 'include'
+      // Get current notifications
+      const currentNotifications = get(notifications);
+      
+      // Update UI immediately
+      notifications.update(notes => notes.map(note => ({ ...note, isRead: true })));
+      unreadNotificationsCount.set(0);
+      
+      // Store read status in localStorage
+      const notificationIds = currentNotifications
+        .filter(n => n.id)
+        .map(n => n.id);
+      
+      // Get existing read notifications from localStorage
+      const existingReadIds = JSON.parse(localStorage.getItem('readNotifications') || '[]');
+      
+      // Combine with new ones and store
+      const allReadIds = [...new Set([...existingReadIds, ...notificationIds])];
+      localStorage.setItem('readNotifications', JSON.stringify(allReadIds));
+      
+      // Try server update in background
+      try {
+        const response = await fetch('http://localhost:8080/notifications/mark-all-read', {
+          method: 'POST',
+          credentials: 'include',
         });
-
-        if (response.ok) {
-            notifications.update(notes =>
-                notes.map(note => ({...note, isRead: true}))
-            );
-        } else {
-            console.error('Failed to mark all notifications as read:', response.status);
+        
+        if (!response.ok) {
+          console.warn('Batch notification update failed, using localStorage fallback');
         }
+      } catch (error) {
+        console.error('Server error while marking notifications as read:', error);
+      }
+      
+      return true;
     } catch (error) {
-        console.error('Error marking all notifications as read:', error);
-        throw error;
+      console.error('Error marking all notifications as read:', error);
+      throw error;
     }
-}
+  }
+  
 
 export function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
     const event = new CustomEvent('toast', {
