@@ -47,18 +47,31 @@
 
             if (response.ok) {
                 const chats = await response.json();
+                console.log("[DEBUG] Loaded chats:", chats);
+
+                if (!Array.isArray(chats)) {
+                    console.error("Invalid response format, expected array:", chats);
+                    loading = false;
+                    return;
+                }
 
                 // Process chats - they now have real IDs from the database
-                activeChats.set(chats.map((chat: any) => ({
-                    id: chat.id, // Use the real chat ID from database
-                    name: chat.name || `${chat.first_name} ${chat.last_name}`,
-                    avatar: chat.avatar,
-                    unreadCount: chat.unread_count || 0,
-                    isGroup: chat.type === 'group',
-                    lastMessage: chat.last_message,
-                    lastMessageTime: chat.last_message_time,
-                    potential: chat.potential || false // New flag for potential chats
-                })));
+                activeChats.set(chats.map((chat: any) => {
+                    // Ensure all required properties have default values
+                    return {
+                        id: chat.id || 0, // Use the real chat ID from database
+                        name: chat.name || `${chat.first_name || ''} ${chat.last_name || ''}`.trim() || 'Unknown',
+                        avatar: chat.avatar || null,
+                        unreadCount: Number(chat.unread_count || 0),
+                        isGroup: chat.type === 'group',
+                        lastMessage: chat.last_message || '',
+                        lastMessageTime: chat.last_message_time || null,
+                        recipientId: chat.participant_id || null,
+                        potential: Boolean(chat.potential || false) // New flag for potential chats
+                    };
+                }));
+            } else {
+                console.error('Error loading chats:', response.status, response.statusText);
             }
         } catch (error) {
             console.error('Error loading chats:', error);

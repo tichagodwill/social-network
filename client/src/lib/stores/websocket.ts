@@ -37,7 +37,7 @@ export interface ChatMessage extends BaseMessage {
 
 export interface GroupChatMessage extends BaseMessage {
     type: MessageType.GROUP_CHAT;
-    groupId: number;
+    chatId: number;
     userId: number;
     content: string;
     media?: string;
@@ -549,16 +549,21 @@ function normalizeMessage(message: any): WebSocketMessage {
     // Handle different message types based on the type field
     switch (message.type) {
         case 'groupChat':
+            // Extract data from the message - this is critical!
+            const groupMessageData = message.data || message;
+
+            console.log("[DEBUG] Normalizing group chat message:", groupMessageData);
+
             return {
                 type: MessageType.GROUP_CHAT,
-                id: message.id,
-                groupId: message.group_id || message.groupId,
-                userId: message.user_id || message.userId,
-                content: message.content,
-                media: message.media,
-                createdAt,
-                userName: message.user_name || message.userName,
-                userAvatar: message.user_avatar || message.userAvatar
+                id: groupMessageData.id || message.id,
+                chatId: groupMessageData.chatId || groupMessageData.chat_id,  // Handle both formats
+                userId: groupMessageData.userId || groupMessageData.user_id,
+                content: groupMessageData.content || "",
+                media: groupMessageData.media,
+                createdAt: groupMessageData.createdAt || groupMessageData.created_at || createdAt,
+                userName: groupMessageData.userName || groupMessageData.user_name || "Unknown User",
+                userAvatar: groupMessageData.userAvatar || groupMessageData.user_avatar
             } as GroupChatMessage;
 
         case 'notification':
@@ -776,10 +781,10 @@ function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
         ? message.userId === currentUserId
         : message.senderId === currentUserId;
 
+    ;
     activeChats.update(chats => {
-        const chatId = isGroupMsg
-            ? (message as GroupChatMessage).groupId
-            : (message as ChatMessage).chatId;
+
+        const chatId = message.chatId;
 
         if (!chatId) {
             console.error('Message is missing required chatId or groupId:', message);
@@ -855,7 +860,7 @@ function updateActiveChat(message: ChatMessage | GroupChatMessage): void {
 
         // If not found by ID or participant, fetch info to create a new chat
         if (isGroupMsg) {
-            fetchGroupInfo((message as GroupChatMessage).groupId);
+            fetchGroupInfo((message as GroupChatMessage).chatId);
         } else {
             const otherUserId = getOtherUserId(message as ChatMessage);
             if (otherUserId > 0) {
@@ -997,14 +1002,14 @@ export async function loadInitialNotifications(): Promise<void> {
       const response = await fetch('http://localhost:8080/notifications', {
         credentials: 'include'
       });
-  
+
       if (response.ok) {
         const data = await response.json() || [];
-        
+
         // Get read IDs from localStorage
         const readIds = JSON.parse(localStorage.getItem('readNotifications') || '[]');
         const readIdsSet = new Set(readIds);
-        
+
         if (Array.isArray(data)) {
           const normalizedNotifications = data.map((n: any) => {
             const normalized = normalizeNotification(n);
@@ -1014,7 +1019,7 @@ export async function loadInitialNotifications(): Promise<void> {
             }
             return normalized;
           });
-          
+
           notifications.set(normalizedNotifications);
         } else {
           console.error('Expected array of notifications but got:', data);
@@ -1105,9 +1110,9 @@ export async function fetchActiveChats(): Promise<void> {
     }
 }
 
-export async function fetchGroupInfo(groupId: number): Promise<void> {
+export async function fetchGroupInfo(chatId: number): Promise<void> {
     try {
-        const response = await fetch(`http://localhost:8080/groups/${groupId}`, {
+        const response = await fetch(`http://localhost:8080/group-chat/${chatId}`, {
             credentials: 'include'
         });
         if (response.ok) {
@@ -1115,13 +1120,13 @@ export async function fetchGroupInfo(groupId: number): Promise<void> {
             activeChats.update(chats => {
                 // Check if group already exists
                 const existingChat = chats.some(chat =>
-                    chat.id === groupId && chat.isGroup === true
+                    chat.id === chatId && chat.isGroup === true
                 );
 
                 // Only add if doesn't exist
                 if (!existingChat) {
                     return [...chats, {
-                        id: groupId,
+                        id: chatId,
                         name: groupData.name,
                         avatar: groupData.avatar,
                         unreadCount: 1,
@@ -1339,8 +1344,8 @@ export function getChatMessages(chatId: number, isGroup: boolean) {
             // For group chats
             return $messages.filter(
                 msg => msg.type === MessageType.GROUP_CHAT &&
-                    'groupId' in msg &&
-                    msg.groupId === chatId
+                    'chatId' in msg &&
+                    msg.chatId === chatId
             );
         } else {
             // For direct chats
@@ -1382,44 +1387,44 @@ export async function markAllNotificationsAsRead() {
     try {
       // Get current notifications
       const currentNotifications = get(notifications);
-      
+
       // Update UI immediately
       notifications.update(notes => notes.map(note => ({ ...note, isRead: true })));
       unreadNotificationsCount.set(0);
-      
+
       // Store read status in localStorage
       const notificationIds = currentNotifications
         .filter(n => n.id)
         .map(n => n.id);
-      
+
       // Get existing read notifications from localStorage
       const existingReadIds = JSON.parse(localStorage.getItem('readNotifications') || '[]');
-      
+
       // Combine with new ones and store
       const allReadIds = [...new Set([...existingReadIds, ...notificationIds])];
       localStorage.setItem('readNotifications', JSON.stringify(allReadIds));
-      
+
       // Try server update in background
       try {
         const response = await fetch('http://localhost:8080/notifications/mark-all-read', {
           method: 'POST',
           credentials: 'include',
         });
-        
+
         if (!response.ok) {
           console.warn('Batch notification update failed, using localStorage fallback');
         }
       } catch (error) {
         console.error('Server error while marking notifications as read:', error);
       }
-      
+
       return true;
     } catch (error) {
       console.error('Error marking all notifications as read:', error);
       throw error;
     }
   }
-  
+
 
 export function showToast(message: string, type: 'success' | 'error' | 'info' = 'info') {
     const event = new CustomEvent('toast', {

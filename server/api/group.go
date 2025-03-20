@@ -1017,7 +1017,133 @@ func GroupReject(w http.ResponseWriter, r *http.Request) {
 }
 
 func GroupLeave(w http.ResponseWriter, r *http.Request) {
-	// Implementation for leaving a group
+	w.Header().Set("Content-Type", "application/json")
+
+	groupID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		sendJSONError(w, "Invalid group ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get current user
+	username, err := util.GetUsernameFromSession(r)
+	if err != nil {
+		sendJSONError(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var userID int
+	err = sqlite.DB.QueryRow("SELECT id FROM users WHERE username = ?", username).Scan(&userID)
+	if err != nil {
+		sendJSONError(w, "Failed to get user information", http.StatusInternalServerError)
+		return
+	}
+
+	// Start transaction
+	tx, err := sqlite.DB.Begin()
+	if err != nil {
+		sendJSONError(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	// Check if user is the creator - creators cannot leave their own group
+	var isCreator bool
+	err = tx.QueryRow(`
+        SELECT EXISTS(
+            SELECT 1 FROM group_members
+            WHERE group_id = ? AND user_id = ? AND role = 'creator'
+        )
+    `, groupID, userID).Scan(&isCreator)
+
+	if err != nil {
+		sendJSONError(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+
+	if isCreator {
+		sendJSONError(w, "Group creators cannot leave their own group. Please delete the group or transfer ownership first.", http.StatusBadRequest)
+		return
+	}
+
+	// Get the chat_id for this group
+	var chatID int
+	err = tx.QueryRow(`SELECT chat_id FROM groups WHERE id = ?`, groupID).Scan(&chatID)
+	if err != nil {
+		log.Printf("Failed to get chat ID for group %d: %v", groupID, err)
+		sendJSONError(w, "Failed to get group chat information", http.StatusInternalServerError)
+		return
+	}
+
+	// Remove member from group_members
+	result, err := tx.Exec(`
+        DELETE FROM group_members 
+        WHERE group_id = ? AND user_id = ?`,
+		groupID, userID)
+	if err != nil {
+		sendJSONError(w, "Failed to leave group", http.StatusInternalServerError)
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		sendJSONError(w, "You are not a member of this group", http.StatusBadRequest)
+		return
+	}
+
+	// CRITICAL: Remove member from user_chat_status to hide chat
+	_, err = tx.Exec(`
+        DELETE FROM user_chat_status
+        WHERE chat_id = ? AND user_id = ?`,
+		chatID, userID)
+	if err != nil {
+		log.Printf("Failed to remove user from user_chat_status: %v", err)
+		// Continue even if this fails
+	}
+
+	// Get group info for notification to group admins
+	var groupName string
+	var creatorID int
+	err = tx.QueryRow(`SELECT title, creator_id FROM groups WHERE id = ?`, groupID).Scan(&groupName, &creatorID)
+	if err != nil {
+		log.Printf("Failed to get group info: %v", err)
+		groupName = "the group"
+	}
+
+	// Notify the group creator/admin about the user leaving
+	_, err = tx.Exec(`
+        INSERT INTO notifications (
+            user_id, 
+            type, 
+            content, 
+            group_id, 
+            from_user_id,
+            created_at
+        ) VALUES (
+            ?, 
+            'group_member_left', 
+            ?, 
+            ?, 
+            ?,
+            CURRENT_TIMESTAMP
+        )`,
+		creatorID,
+		fmt.Sprintf("%s has left %s", username, groupName),
+		groupID,
+		userID)
+	if err != nil {
+		log.Printf("Failed to create notification for group admin: %v", err)
+	}
+
+	// Commit the transaction
+	if err = tx.Commit(); err != nil {
+		sendJSONError(w, "Failed to complete leaving group", http.StatusInternalServerError)
+		return
+	}
+
+	sendJSONResponse(w, http.StatusOK, map[string]string{
+		"message": fmt.Sprintf("You have successfully left '%s'", groupName),
+	})
 }
 
 func GetGroupEvents(w http.ResponseWriter, r *http.Request) {
@@ -1735,20 +1861,40 @@ func RemoveMember(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	// Remove member
+	// Get the chat_id for this group
+	var chatID int
+	err = tx.QueryRow(`SELECT chat_id FROM groups WHERE id = ?`, groupID).Scan(&chatID)
+	if err != nil {
+		log.Printf("Failed to get chat ID for group %d: %v", groupID, err)
+		sendJSONError(w, "Failed to get group chat information", http.StatusInternalServerError)
+		return
+	}
+
+	// Remove member from group_members
 	_, err = tx.Exec(`
-		DELETE FROM group_members 
-		WHERE group_id = ? AND user_id = ? AND role != 'creator'`,
+        DELETE FROM group_members 
+        WHERE group_id = ? AND user_id = ? AND role != 'creator'`,
 		groupID, memberID)
 	if err != nil {
 		sendJSONError(w, "Failed to remove member", http.StatusInternalServerError)
 		return
 	}
 
+	// CRITICAL: Remove member from user_chat_status to hide chat
+	_, err = tx.Exec(`
+        DELETE FROM user_chat_status
+        WHERE chat_id = ? AND user_id = ?`,
+		chatID, memberID)
+	if err != nil {
+		log.Printf("Failed to remove user from user_chat_status: %v", err)
+		// Continue even if this fails - it's better to have the user still see the chat
+		// than to erroneously keep them as a group member
+	}
+
 	// Clear any existing invitations or requests
 	_, err = tx.Exec(`
-		DELETE FROM group_invitations 
-		WHERE group_id = ? AND invitee_id = ?`,
+        DELETE FROM group_invitations 
+        WHERE group_id = ? AND invitee_id = ?`,
 		groupID, memberID)
 	if err != nil {
 		log.Printf("Failed to clear invitations: %v", err)
@@ -1756,19 +1902,19 @@ func RemoveMember(w http.ResponseWriter, r *http.Request) {
 
 	// Create notification for removed member
 	_, err = tx.Exec(`
-		INSERT INTO notifications (
-			user_id, 
-			type, 
-			content, 
-			group_id, 
-			created_at
-		) VALUES (
-			?, 
-			'group_removal', 
-			'You have been removed from the group. You can request to join again or wait for a new invitation.', 
-			?, 
-			CURRENT_TIMESTAMP
-		)`,
+        INSERT INTO notifications (
+            user_id, 
+            type, 
+            content, 
+            group_id, 
+            created_at
+        ) VALUES (
+            ?, 
+            'group_removal', 
+            'You have been removed from the group. You can request to join again or wait for a new invitation.', 
+            ?, 
+            CURRENT_TIMESTAMP
+        )`,
 		memberID, groupID)
 	if err != nil {
 		log.Printf("Failed to create notification: %v", err)
@@ -1980,10 +2126,10 @@ func RequestJoinGroup(w http.ResponseWriter, r *http.Request) {
 	// Check if user is already a member
 	var isMember bool
 	err = tx.QueryRow(`
-		SELECT EXISTS(
-			SELECT 1 FROM group_members 
-			WHERE group_id = ? AND user_id = ?
-		)`, groupID, userID).Scan(&isMember)
+        SELECT EXISTS(
+           SELECT 1 FROM group_members 
+            WHERE group_id = ? AND user_id = ?
+        )`, groupID, userID).Scan(&isMember)
 	if err != nil {
 		sendJSONError(w, "Database error", http.StatusInternalServerError)
 		return
@@ -1996,10 +2142,10 @@ func RequestJoinGroup(w http.ResponseWriter, r *http.Request) {
 	// Check for existing request
 	var hasRequest bool
 	err = tx.QueryRow(`
-		SELECT EXISTS(
-			SELECT 1 FROM group_invitations 
-			WHERE group_id = ? AND invitee_id = ? AND type = 'request' AND status = 'pending'
-		)`, groupID, userID).Scan(&hasRequest)
+        SELECT EXISTS(
+           SELECT 1 FROM group_invitations 
+            WHERE group_id = ? AND invitee_id = ? AND type = 'request' AND status = 'pending'
+        )`, groupID, userID).Scan(&hasRequest)
 	if err != nil {
 		sendJSONError(w, "Database error", http.StatusInternalServerError)
 		return
@@ -2022,14 +2168,14 @@ func RequestJoinGroup(w http.ResponseWriter, r *http.Request) {
 
 	// Create join request
 	result, err := tx.Exec(`
-		INSERT INTO group_invitations (
-			group_id, 
-			inviter_id, 
-			invitee_id, 
-			type,
-			status, 
-			created_at
-		) VALUES (?, ?, ?, 'request', 'pending', CURRENT_TIMESTAMP)`,
+        INSERT INTO group_invitations (
+           group_id, 
+            inviter_id, 
+            invitee_id, 
+            type,
+           status, 
+            created_at
+        ) VALUES (?, ?, ?, 'request', 'pending', CURRENT_TIMESTAMP)`,
 		groupID, userID, userID)
 	if err != nil {
 		sendJSONError(w, "Failed to create join request", http.StatusInternalServerError)
@@ -2042,17 +2188,17 @@ func RequestJoinGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Create notification for group creator
+	// Fix syntax errors in notification creation
 	_, err = tx.Exec(`
-		INSERT INTO notifications (
-			user_id,
-			type,
-			content,
-			group_id,
-			from_user_id,
-			is_read,
-			created_at
-		) VALUES (?, ?, ?, ?, ?, false, CURRENT_TIMESTAMP)`,
+        INSERT INTO notifications (
+           user_id,
+           type,
+           content,
+           group_id,
+           from_user_id,
+           is_read,
+           created_at
+        ) VALUES (?, ?, ?, ?, ?, false, CURRENT_TIMESTAMP)`,
 		group.CreatorID,
 		"group_join_request",
 		fmt.Sprintf("%s has requested to join %s", username, group.Title),
@@ -2073,6 +2219,7 @@ func RequestJoinGroup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// HandleInvitation handles accepting or rejecting an invitation
 // HandleInvitation handles accepting or rejecting an invitation
 func HandleInvitation(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -2106,11 +2253,11 @@ func HandleInvitation(w http.ResponseWriter, r *http.Request) {
 	// Verify the invitation exists first
 	var exists bool
 	err = sqlite.DB.QueryRow(`
-		SELECT EXISTS(
-			SELECT 1 
-			FROM group_invitations 
-			WHERE id = ? AND group_id = ?
-		)`, invitationID, groupID).Scan(&exists)
+        SELECT EXISTS(
+            SELECT 1 
+            FROM group_invitations 
+            WHERE id = ? AND group_id = ?
+        )`, invitationID, groupID).Scan(&exists)
 
 	if err != nil {
 		log.Printf("Error checking invitation existence: %v", err)
@@ -2155,9 +2302,9 @@ func HandleInvitation(w http.ResponseWriter, r *http.Request) {
 		Type   string
 	}
 	err = tx.QueryRow(`
-		SELECT status, type 
-		FROM group_invitations 
-		WHERE id = ? AND group_id = ? AND invitee_id = ? AND status = 'pending'`,
+        SELECT status, type 
+        FROM group_invitations 
+        WHERE id = ? AND group_id = ? AND invitee_id = ? AND status = 'pending'`,
 		invitationID, groupID, userID).Scan(&invitation.Status, &invitation.Type)
 
 	// Debug log the invitation check
@@ -2176,22 +2323,46 @@ func HandleInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if action == "accept" {
+		// Get the chat_id for this group
+		var chatID int
+		err = tx.QueryRow(`SELECT chat_id FROM groups WHERE id = ?`, groupID).Scan(&chatID)
+		if err != nil {
+			log.Printf("Failed to get chat ID for group %d: %v", groupID, err)
+			sendJSONError(w, "Failed to get group chat information", http.StatusInternalServerError)
+			return
+		}
+
 		// Add user as group member
 		_, err = tx.Exec(`
-			INSERT INTO group_members (group_id, user_id, role, joined_at)
-			VALUES (?, ?, 'member', CURRENT_TIMESTAMP)`,
+            INSERT INTO group_members (group_id, user_id, role, joined_at)
+            VALUES (?, ?, 'member', CURRENT_TIMESTAMP)`,
 			groupID, userID)
 		if err != nil {
+			log.Printf("Failed to add user to group_members: %v", err)
 			sendJSONError(w, "Failed to add member to group", http.StatusInternalServerError)
 			return
 		}
+
+		// CRITICAL: Add user to user_chat_status to ensure chat visibility
+		_, err = tx.Exec(`
+            INSERT INTO user_chat_status (user_id, chat_id)
+            VALUES (?, ?)
+            ON CONFLICT(user_id, chat_id) DO NOTHING`,
+			userID, chatID)
+		if err != nil {
+			log.Printf("Failed to add user to user_chat_status: %v", err)
+			sendJSONError(w, "Failed to add member to group chat", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("Successfully added user %d to group %d with chat_id %d", userID, groupID, chatID)
 	}
 
 	// Update invitation status
 	_, err = tx.Exec(`
-		UPDATE group_invitations 
-		SET status = ? 
-		WHERE id = ?`,
+        UPDATE group_invitations 
+        SET status = ? 
+        WHERE id = ?`,
 		action+"ed", invitationID)
 	if err != nil {
 		sendJSONError(w, "Failed to update invitation status", http.StatusInternalServerError)
@@ -2200,10 +2371,10 @@ func HandleInvitation(w http.ResponseWriter, r *http.Request) {
 
 	// Delete the notification
 	_, err = tx.Exec(`
-		DELETE FROM notifications 
-		WHERE type = 'group_invitation' 
-		AND group_id = ? 
-		AND invitation_id = ?`,
+        DELETE FROM notifications 
+        WHERE type = 'group_invitation' 
+        AND group_id = ? 
+        AND invitation_id = ?`,
 		groupID, invitationID)
 	if err != nil {
 		log.Printf("Failed to delete notification: %v", err)
@@ -2213,10 +2384,10 @@ func HandleInvitation(w http.ResponseWriter, r *http.Request) {
 	var inviterID int
 	var groupTitle string
 	err = tx.QueryRow(`
-		SELECT i.inviter_id, g.title 
-		FROM group_invitations i 
-		JOIN groups g ON i.group_id = g.id 
-		WHERE i.id = ?`, invitationID).Scan(&inviterID, &groupTitle)
+        SELECT i.inviter_id, g.title 
+        FROM group_invitations i 
+        JOIN groups g ON i.group_id = g.id 
+        WHERE i.id = ?`, invitationID).Scan(&inviterID, &groupTitle)
 	if err != nil {
 		log.Printf("Failed to get invitation details: %v", err)
 		sendJSONError(w, "Failed to get invitation details", http.StatusInternalServerError)
@@ -2225,14 +2396,14 @@ func HandleInvitation(w http.ResponseWriter, r *http.Request) {
 
 	// Create a notification for the inviter about the action
 	_, err = tx.Exec(`
-		INSERT INTO notifications (
-			user_id,
-			type,
-			content,
-			group_id,
-			from_user_id,
-			created_at
-		) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+        INSERT INTO notifications (
+            user_id,
+            type,
+            content,
+            group_id,
+            from_user_id,
+            created_at
+        ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
 		inviterID,
 		"invitation_response",
 		fmt.Sprintf("%s has %sed your invitation to join %s", username, action, groupTitle),
@@ -2460,9 +2631,9 @@ func HandleJoinRequest(w http.ResponseWriter, r *http.Request) {
 		CreatedAt string
 	}
 	err = tx.QueryRow(`
-		SELECT id, invitee_id, group_id, status, created_at 
-		FROM group_invitations 
-		WHERE id = ? AND group_id = ? AND status = 'pending'`,
+        SELECT id, invitee_id, group_id, status, created_at 
+        FROM group_invitations 
+        WHERE id = ? AND group_id = ? AND status = 'pending'`,
 		request.RequestID, groupID).Scan(
 		&joinRequest.ID,
 		&joinRequest.UserID, // invitee_id maps to UserID
@@ -2484,10 +2655,10 @@ func HandleJoinRequest(w http.ResponseWriter, r *http.Request) {
 		// Check if user is already a member
 		var isMember bool
 		err = tx.QueryRow(`
-			SELECT EXISTS(
-				SELECT 1 FROM group_members 
-				WHERE group_id = ? AND user_id = ?
-			)`, joinRequest.GroupID, joinRequest.UserID).Scan(&isMember)
+            SELECT EXISTS(
+                SELECT 1 FROM group_members 
+                WHERE group_id = ? AND user_id = ?
+            )`, joinRequest.GroupID, joinRequest.UserID).Scan(&isMember)
 		if err != nil {
 			http.Error(w, "Database error", http.StatusInternalServerError)
 			return
@@ -2497,22 +2668,46 @@ func HandleJoinRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Get the chat_id for this group
+		var chatID int
+		err = tx.QueryRow(`SELECT chat_id FROM groups WHERE id = ?`, joinRequest.GroupID).Scan(&chatID)
+		if err != nil {
+			log.Printf("Failed to get chat ID for group %d: %v", joinRequest.GroupID, err)
+			http.Error(w, "Failed to get group chat information", http.StatusInternalServerError)
+			return
+		}
+
 		// Add user as group member
 		_, err = tx.Exec(`
-			INSERT INTO group_members (group_id, user_id, role, joined_at)
-			VALUES (?, ?, 'member', CURRENT_TIMESTAMP)`,
+            INSERT INTO group_members (group_id, user_id, role, joined_at)
+            VALUES (?, ?, 'member', CURRENT_TIMESTAMP)`,
 			joinRequest.GroupID, joinRequest.UserID)
 		if err != nil {
 			http.Error(w, "Failed to add member to group", http.StatusInternalServerError)
 			return
 		}
+
+		// CRITICAL: Add user to user_chat_status to ensure chat visibility
+		_, err = tx.Exec(`
+            INSERT INTO user_chat_status (user_id, chat_id)
+            VALUES (?, ?)
+            ON CONFLICT(user_id, chat_id) DO NOTHING`,
+			joinRequest.UserID, chatID)
+		if err != nil {
+			log.Printf("Failed to add user to user_chat_status: %v", err)
+			http.Error(w, "Failed to add member to group chat", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("Successfully added user %d to group %d with chat_id %d",
+			joinRequest.UserID, joinRequest.GroupID, chatID)
 	}
 
 	// Update request status
 	_, err = tx.Exec(`
-		UPDATE group_invitations 
-		SET status = ? 
-		WHERE id = ?`,
+        UPDATE group_invitations 
+        SET status = ? 
+        WHERE id = ?`,
 		action+"ed", request.RequestID)
 	if err != nil {
 		http.Error(w, "Failed to update request status", http.StatusInternalServerError)
@@ -2521,10 +2716,10 @@ func HandleJoinRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Delete related notifications
 	_, err = tx.Exec(`
-		DELETE FROM notifications 
-		WHERE type = 'group_join_request' 
-		AND group_id = ? 
-		AND user_id = ?`,
+        DELETE FROM notifications 
+        WHERE type = 'group_join_request' 
+        AND group_id = ? 
+        AND user_id = ?`,
 		joinRequest.GroupID, joinRequest.UserID)
 	if err != nil {
 		log.Printf("Failed to delete notifications: %v", err)
@@ -2533,8 +2728,8 @@ func HandleJoinRequest(w http.ResponseWriter, r *http.Request) {
 	// Create notification for the requester
 	if action == "accept" {
 		_, err = tx.Exec(`
-			INSERT INTO notifications (user_id, type, content, group_id, created_at)
-			VALUES (?, 'group_join_accepted', 'Your request to join the group has been accepted', ?, CURRENT_TIMESTAMP)`,
+            INSERT INTO notifications (user_id, type, content, group_id, created_at)
+            VALUES (?, 'group_join_accepted', 'Your request to join the group has been accepted', ?, CURRENT_TIMESTAMP)`,
 			joinRequest.UserID, joinRequest.GroupID)
 		if err != nil {
 			log.Printf("Failed to create acceptance notification: %v", err)

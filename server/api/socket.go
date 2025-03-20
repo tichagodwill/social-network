@@ -596,13 +596,23 @@ func processGroupChatMessage(userID int, conn *websocket.Conn, messageType int, 
 	// Ensure the user ID matches the authenticated user
 	groupMessage.UserID = userID
 
+	//find the group id from chatid
+	var groupID int
+	err = sqlite.DB.QueryRow(`
+		SELECT id FROM groups WHERE chat_id = ?
+	`, groupMessage.ChatId).Scan(&groupID)
+	if err != nil {
+		log.Printf("Error getting group id from chat id: %v", err)
+		return
+	}
+
 	// Verify user is a member of the group
 	var isMember bool
 	err = sqlite.DB.QueryRow(`
 		SELECT EXISTS (
 			SELECT 1 FROM group_members
 			WHERE group_id = ? AND user_id = ?
-		)`, groupMessage.GroupID, userID).Scan(&isMember)
+		)`, groupID, userID).Scan(&isMember)
 
 	if err != nil {
 		log.Printf("Error checking group membership: %v", err)
@@ -627,7 +637,7 @@ func processGroupChatMessage(userID int, conn *websocket.Conn, messageType int, 
 
 	// Save the message
 	stmt, err := sqlite.DB.Prepare(`
-		INSERT INTO group_messages (group_id, user_id, content, created_at)
+		INSERT INTO chat_messages (chat_id, sender_id, content, created_at)
 		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
 	`)
 	if err != nil {
@@ -637,7 +647,7 @@ func processGroupChatMessage(userID int, conn *websocket.Conn, messageType int, 
 	defer stmt.Close()
 
 	result, err := stmt.Exec(
-		groupMessage.GroupID,
+		groupMessage.ChatId,
 		groupMessage.UserID,
 		groupMessage.Content,
 	)
@@ -667,23 +677,13 @@ func processGroupChatMessage(userID int, conn *websocket.Conn, messageType int, 
 		groupMessage.UserAvatar = avatar
 	}
 
-	// Get chat ID associated with the group
-	var chatID int
-	err = sqlite.DB.QueryRow(`
-		SELECT chat_id FROM groups WHERE id = ?
-	`, groupMessage.GroupID).Scan(&chatID)
-
-	if err != nil {
-		log.Printf("Error getting chat ID for group: %v", err)
-	}
-
 	// Update the message with the user info and send to all group members
 	msg.Data = groupMessage
 
 	// Send updated message to all group members
 	rows, err := sqlite.DB.Query(`
 		SELECT user_id FROM group_members WHERE group_id = ?
-	`, groupMessage.GroupID)
+	`, groupID)
 
 	if err != nil {
 		log.Printf("Error getting group members: %v", err)
@@ -702,8 +702,18 @@ func processGroupChatMessage(userID int, conn *websocket.Conn, messageType int, 
 		memberIDs = append(memberIDs, memberID)
 	}
 
-	// Send message to all members (including sender for consistency)
+	// First, return the created message to the sender with server-generated ID
+	if err := conn.WriteJSON(msg); err != nil {
+		log.Printf("Error returning created message to sender %d: %v", userID, err)
+	}
+
+	// Send message to all members EXCEPT the sender (to prevent duplication)
 	for _, memberID := range memberIDs {
+		// Skip sending to the sender as they already have the message in their local state
+		if memberID == userID {
+			continue
+		}
+
 		socketManager.Mu.RLock()
 		memberConn, isOnline := socketManager.Sockets[memberID]
 		socketManager.Mu.RUnlock()
@@ -714,7 +724,6 @@ func processGroupChatMessage(userID int, conn *websocket.Conn, messageType int, 
 			}
 		}
 	}
-
 	// Create notifications for offline members
 	for _, memberID := range memberIDs {
 		if memberID == userID {
@@ -733,7 +742,7 @@ func processGroupChatMessage(userID int, conn *websocket.Conn, messageType int, 
 				INSERT INTO notifications (
 					type, content, user_id, group_id, from_user_id, is_read, created_at
 				) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-			`, "group_message", content, memberID, groupMessage.GroupID, userID, false)
+			`, "group_message", content, memberID, groupID, userID, false)
 
 			if err != nil {
 				log.Printf("Error creating notification for member %d: %v", memberID, err)

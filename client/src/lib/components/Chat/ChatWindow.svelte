@@ -168,7 +168,7 @@
         if (isGroup) {
             messageToSend = {
                 type: MessageType.GROUP_CHAT,
-                groupId: chatId,
+                chatId: chatId,
                 userId: currentUserId,
                 content: messageText.trim(),
                 createdAt: now,
@@ -244,10 +244,11 @@
                 const data = await response.json();
                 console.log('[DEBUG] Loaded messages data:', data);
 
+                // Clear previous messages for this chat from global store
                 globalMessages.update(existingMsgs =>
                     existingMsgs.filter(msg =>
                         isGroup
-                            ? !(msg.type === MessageType.GROUP_CHAT && 'groupId' in msg && msg.groupId === chatId)
+                            ? !(msg.type === MessageType.GROUP_CHAT && 'chatId' in msg && msg.chatId === chatId)
                             : !(msg.type === MessageType.CHAT && 'chatId' in msg && msg.chatId === chatId)
                     )
                 );
@@ -256,13 +257,21 @@
                     const newChatId = data.chatId;
                     if (newChatId !== chatId) {
                         console.log(`[DEBUG] Chat ID changed from ${chatId} to ${newChatId}`);
+
+                        // Notify parent component about the ID change
                         dispatch('chatIdChanged', {oldId: chatId, newId: newChatId});
+
+                        // Update the local variable
                         chatId = newChatId;
+
+                        // Update the global store with the new chat ID
+                        currentChatId.set(newChatId);
                     }
 
                     if (Array.isArray(data.messages)) {
                         const processedMessages = data.messages.map((msg: any) => ({
                             ...msg,
+                            chatId: newChatId || chatId, // Ensure chatId is always set
                             type: msg.type || (isGroup ? MessageType.GROUP_CHAT : MessageType.CHAT)
                         }));
                         loadedHistoricalMessages = processedMessages;
@@ -272,6 +281,7 @@
                 } else if (Array.isArray(data)) {
                     const processedMessages = data.map((msg: any) => ({
                         ...msg,
+                        chatId: chatId, // Always include chatId
                         type: msg.type || MessageType.CHAT
                     }));
                     loadedHistoricalMessages = processedMessages;

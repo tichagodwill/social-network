@@ -22,7 +22,7 @@ type ChatMessage struct {
 // GroupMessage represents a message in a group chat
 type GroupMessage struct {
 	ID        int       `json:"id"`
-	GroupID   int       `json:"groupId"`
+	ChatId    int       `json:"chatId"`
 	UserID    int       `json:"userId"`
 	Content   string    `json:"content"`
 	Media     string    `json:"media,omitempty"`

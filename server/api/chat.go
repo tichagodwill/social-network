@@ -151,7 +151,7 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get all chats for the user where at least one user follows the other
+	// Get all chats for the user - direct chats where users follow each other, and group chats where user is a member
 	rows, err := sqlite.DB.Query(`
         SELECT
             c.id,
@@ -171,29 +171,36 @@ func GetUserChats(w http.ResponseWriter, r *http.Request) {
              ORDER BY created_at DESC LIMIT 1) as last_message_time
         FROM chats c
         JOIN user_chat_status ucs ON c.id = ucs.chat_id AND ucs.user_id = ?
-        WHERE c.type = 'direct' AND EXISTS (
-            -- Only show chats where at least one user follows the other
-            SELECT 1 
-            FROM user_chat_status ucs2
-            WHERE ucs2.chat_id = c.id AND ucs2.user_id != ?
-            AND (
-                -- Either current user follows the other user
-                EXISTS (
-                    SELECT 1 FROM followers 
-                    WHERE follower_id = ? AND followed_id = ucs2.user_id AND status = 'accepted'
+        WHERE 
+            -- For direct chats: Only show where users follow each other
+            (c.type = 'direct' AND EXISTS (
+                SELECT 1 
+                FROM user_chat_status ucs2
+                WHERE ucs2.chat_id = c.id AND ucs2.user_id != ?
+                AND (
+                    -- Either current user follows the other user
+                    EXISTS (
+                        SELECT 1 FROM followers 
+                        WHERE follower_id = ? AND followed_id = ucs2.user_id AND status = 'accepted'
+                    )
+                    OR 
+                    -- Or the other user follows the current user
+                    EXISTS (
+                        SELECT 1 FROM followers 
+                        WHERE follower_id = ucs2.user_id AND followed_id = ? AND status = 'accepted'
+                    )
                 )
-                OR 
-                -- Or the other user follows the current user
-                EXISTS (
-                    SELECT 1 FROM followers 
-                    WHERE follower_id = ucs2.user_id AND followed_id = ? AND status = 'accepted'
-                )
-            )
-        )
-        -- Include group chats as they operate under different visibility rules
-        OR c.type != 'direct'
+            ))
+            OR 
+            -- For group chats: Only show if user is a member of the group
+            (c.type != 'direct' AND EXISTS (
+                SELECT 1
+                FROM groups g
+                JOIN group_members gm ON g.id = gm.group_id
+                WHERE g.chat_id = c.id AND gm.user_id = ?
+            ))
         ORDER BY last_message_time DESC NULLS LAST
-    `, userId, userId, userId, userId, userId)
+    `, userId, userId, userId, userId, userId, userId)
 
 	if err != nil {
 		http.Error(w, "Database error", http.StatusInternalServerError)
