@@ -152,8 +152,8 @@ func CreateGroup(w http.ResponseWriter, r *http.Request) {
 
 	// Step 4: Add creator to the group chat
 	_, err = tx.Exec(`
-       INSERT INTO user_chat_status (user_id, chat_id, joined_at)
-       VALUES (?, ?, CURRENT_TIMESTAMP)`,
+       INSERT INTO user_chat_status (user_id, chat_id)
+       VALUES (?, ?)`,
 		creatorID, chatID)
 	if err != nil {
 		http.Error(w, "Failed to add creator to chat", http.StatusInternalServerError)

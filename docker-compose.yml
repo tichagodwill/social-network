@@ -1,0 +1,40 @@
+services:
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=sqlite:///data/database.db
+    volumes:
+      - ./server/:/app/src 
+      - backend_data:/app/data
+    networks:
+      - my-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    ports:
+      # Map the external port 3000 to Vite's internal port 5173
+      - "5173:5173"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8080
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - my-network
+    restart: unless-stopped
+
+networks:
+  my-network:
+    driver: bridge
+
+volumes:
+  backend_data:
