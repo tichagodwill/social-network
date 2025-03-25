@@ -27,6 +27,14 @@
     let activeTab = 'posts';
     let previousTab = 'posts';
 
+    // Initialize the followers store with the requests data
+    $: if (data.Requests && data.Requests.length > 0) {
+        followers.update(state => ({
+            ...state,
+            requests: data.Requests
+        }));
+    }
+
     // Settings state management
     let originalProfilePhoto: string = data.user?.avatar ?? "";
     let newProfilePhoto: string = originalProfilePhoto;
@@ -557,7 +565,7 @@
                             <div class="absolute bottom-0 left-0 w-full h-0.5 bg-blue-600 dark:bg-blue-500" transition:slide></div>
                         {/if}
                     </button>
-                    {#if isOwnProfile && data.Requests && data.Requests.length > 0}
+                    {#if isOwnProfile && $followers.requests && $followers.requests.length > 0}
                         <button
                             class="py-4 px-1 relative {activeTab === 'requests' ? 'text-blue-600 dark:text-blue-500' : 'text-gray-500 dark:text-gray-400'} hover:text-blue-600 dark:hover:text-blue-500 transition-colors duration-200"
                             on:click={() => handleTabChange('requests')}
@@ -691,9 +699,9 @@
                                     </div>
                                 {/if}
                             </div>
-                        {:else if activeTab === 'requests' && isOwnProfile && data.Requests && data.Requests.length > 0}
+                        {:else if activeTab === 'requests' && isOwnProfile && $followers.requests && $followers.requests.length > 0}
                             <div class="space-y-4">
-                                {#each data.Requests as request, index}
+                                {#each $followers.requests as request, index}
                                     <div
                                         class="bg-white dark:bg-gray-800 rounded-xl p-4 shadow-lg flex items-center justify-between transform transition-all duration-300 hover:scale-[1.02] hover:shadow-xl"
                                         in:fly|local={{
