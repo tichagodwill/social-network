@@ -153,7 +153,7 @@ func main() {
 
 	mux.Handle("GET /user/{userID}", authMiddleware(http.HandlerFunc(api.UserProfile)))
 	mux.Handle("POST /updateProfile", authMiddleware(http.HandlerFunc(api.UpdateProfile)))
-	mux.Handle("GET /getMyPosts", authMiddleware(http.HandlerFunc(api.GetMyPosts)))
+	mux.Handle("POST /user/getPosts", authMiddleware(http.HandlerFunc(api.GetMyPosts)))
 
 	mux.Handle("/ws", authMiddleware(http.HandlerFunc(api.WebSocketHandler)))
 

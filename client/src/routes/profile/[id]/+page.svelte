@@ -369,11 +369,15 @@
     // Function to fetch user posts
     async function loadUserPosts() {
         try {
-            const response = await fetch(`http://localhost:8080/getMyPosts`, {
-                credentials: 'include'
+            debugger
+            const response = await fetch(`http://localhost:8080/user/getPosts`, {
+                credentials: 'include',
+                method: 'POST',
+                body: JSON.stringify({
+                    userId: userId // Send the userId from the URL params
+                }),
             });
             if (response.ok) {
-                debugger
                 userPosts = await response.json();
             } else {
                 //send to 404 page

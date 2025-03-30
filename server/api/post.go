@@ -33,13 +33,65 @@ func GetMyPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	//get the user ID from the Body
+	var userIdBody int
+	var requestData struct {
+		UserID int `json:"userId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&requestData); err != nil {
+		http.Error(w, "Invalid JSON data", http.StatusBadRequest)
+		return
+	}
+	if requestData.UserID != 0 {
+		userIdBody = requestData.UserID
+	}
+
+	canViewPosts := false
+	if userID == userIdBody {
+		canViewPosts = true
+	}
+
+	//check if the userIdBody is public
+	var isPrivate bool
+	err = sqlite.DB.QueryRow(`
+	select is_private 
+	FROM users WHERE id = ?`, userIdBody).Scan(&isPrivate)
+
+	if err != nil {
+		log.Printf("Error checking user privacy: %v", err)
+		http.Error(w, "Failed to check user privacy", http.StatusInternalServerError)
+		return
+	}
+
+	if !isPrivate {
+		canViewPosts = true
+	}
+
+	//check if the user is a follower of the user whose posts are being fetched
+	if !canViewPosts {
+		err = sqlite.DB.QueryRow(`
+			SELECT EXISTS(
+				SELECT 1 FROM followers 
+				WHERE follower_id = ? AND followed_id = ?
+			)`, userID, userIdBody).Scan(&canViewPosts)
+		if err != nil {
+			log.Printf("Error checking follower status: %v", err)
+			http.Error(w, "Failed to check follower status", http.StatusInternalServerError)
+			return
+		}
+	}
+
 	// Fetch posts from the database
+	if !canViewPosts {
+		return
+	}
+
 	rows, err := sqlite.DB.Query(`
 		SELECT p.id, p.title, p.content, p.media, p.privacy, p.author, p.created_at, p.group_id
 		FROM posts p
 		WHERE p.author = ?
 		ORDER BY p.created_at DESC`,
-		userID)
+		userIdBody)
 	if err != nil {
 		http.Error(w, "Failed to fetch posts", http.StatusInternalServerError)
 		log.Printf("Error fetching posts: %v", err)
