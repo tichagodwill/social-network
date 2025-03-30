@@ -9,6 +9,7 @@
     import { quintOut } from 'svelte/easing';
     import type { PageData } from './$types';
     import { error } from '@sveltejs/kit';
+    import { getFormattedDate } from '$lib/dateFormater'
 
     export let data: PageData;
     
@@ -372,6 +373,7 @@
                 credentials: 'include'
             });
             if (response.ok) {
+                debugger
                 userPosts = await response.json();
             } else {
                 //send to 404 page
@@ -607,9 +609,66 @@
                                                 easing: quintOut
                                             }}
                                         >
-                                            <div class="p-4">
-                                                <p class="text-gray-800 dark:text-gray-200">{post.content}</p>
+                                            <div class="p-6">
+                                                <!-- Author Section -->
+                                                <div class="flex items-center gap-4 mb-4">
+                                                    {#if post?.authorAvatar}
+                                                        <img
+                                                          src={post.authorAvatar}
+                                                          alt={post?.authorName || 'Author'}
+                                                          class="w-12 h-12 rounded-full object-cover ring-2 ring-gray-100"
+                                                        />
+                                                    {:else}
+                                                        <div
+                                                          class="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-lg">
+                                                            {post?.authorName?.charAt(0) || 'A'}
+                                                        </div>
+                                                    {/if}
+                                                    <div class="flex-1 min-w-0">
+                                                        <h3 class="text-lg font-semibold text-gray-900 truncate">{post?.authorName || 'Author Name'}</h3>
+                                                        <div class="flex items-center gap-2 text-sm text-gray-500">
+                                                            <span>{post?.created_at ? getFormattedDate(new Date(post.created_at)).diff : 'Just now'}</span>
+                                                            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100">
+                                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20"
+                                                 fill="currentColor">
+                                                {#if post?.privacy === 0}
+                                                    <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
+                                                    <path fill-rule="evenodd"
+                                                          d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z"
+                                                          clip-rule="evenodd" />
+                                                {:else}
+                                                    <path fill-rule="evenodd"
+                                                          d="M3.707 2.293a1 1 0 00-1.414 1.414l14 14a1 1 0 001.414-1.414l-1.473-1.473A10.014 10.014 0 0019.542 10C18.268 5.943 14.478 3 10 3a9.958 9.958 0 00-4.512 1.074l-1.78-1.781zm4.261 4.26l1.514 1.515a2.003 2.003 0 012.45 2.45l1.514 1.514a4 4 0 00-5.478-5.478z"
+                                                          clip-rule="evenodd" />
+                                                {/if}
+                                            </svg>
+                                                                {post?.privacy === 0 ? 'Public' : 'Private'}
+                                        </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Post Content -->
+                                                <div class="space-y-4">
+                                                    <h2 class="text-xl font-semibold text-gray-900">{post?.title || 'Untitled'}</h2>
+                                                    <p class="text-gray-700 leading-relaxed whitespace-pre-line">{post?.content || ''}</p>
+
+                                                    {#if post?.media}
+                                                        <div class="relative w-full overflow-hidden bg-gray-50">
+                                                            <img
+                                                              src={post.media}
+                                                              alt="Post media"
+                                                              class="w-full h-auto max-h-[512px] object-contain rounded-lg cursor-zoom-in hover:opacity-95 transition-opacity mx-auto"
+                                                              on:click={() => {
+                                                expandedImageSrc = post.media || '';
+                                                showExpandedImage = true;
+                                            }}
+                                                            />
+                                                        </div>
+                                                    {/if}
+                                                </div>
                                             </div>
+
                                         </div>
                                     {/each}
                                 {:else}
