@@ -7,7 +7,19 @@
     import { groups } from '$lib/stores/groups';
 
     export let groupId: number;
-    let events: any[] = [];
+    interface Event {
+        id: number;
+        title: string;
+        description: string;
+        eventDate: Date;
+        responses?: {
+            going: number;
+            notGoing: number;
+        };
+        userResponse?: string;
+    }
+
+    let events: Event[] = [];
     let showCreateModal = false;
     let error = '';
     let loading = true;
@@ -41,7 +53,7 @@
 
         socket.onclose = () => {
             // Implement reconnection logic if needed
-            setTimeout(connectWebSocket, 1000);
+            console.warn('WebSocket connection closed.');
         };
     }
 
@@ -53,7 +65,7 @@
             });
             if (response.ok) {
                 const data = await response.json();
-                events = data.map(event => ({
+                events = data.map((event: Event) => ({
                     ...event,
                     eventDate: new Date(event.eventDate) // Parse the ISO date string
                 }));
@@ -83,25 +95,6 @@
         }
     }
 
-    async function createEvent() {
-        try {
-            if (!$auth?.user) return;
-            
-            await groups.createEvent(groupId, {
-                title: newEvent.title,
-                description: newEvent.description,
-                eventDate: newEvent.eventDate,
-                creatorId: $auth.user.id
-            });
-
-            await loadEvents();
-            showCreateModal = false;
-            newEvent = { title: '', description: '', eventDate: '' };
-        } catch (err) {
-            error = err instanceof Error ? err.message : 'Failed to create event';
-        }
-    }
-
     async function handleSubmit(event: SubmitEvent) {
         event.preventDefault();
         try {
@@ -110,7 +103,15 @@
                 return;
             }
 
-            const eventDate = new Date(newEvent.eventDate).toISOString();
+            // Validate that the event date is in the future
+            const selectedDate = new Date(newEvent.eventDate);
+            const now = new Date();
+            
+            // Add 1 minute buffer to account for the time it takes to submit
+            if (selectedDate <= new Date(now.getTime() + 60000)) {
+                error = 'Event date and time must be at least 1 minute in the future';
+                return;
+            }
 
             const response = await fetch(`http://localhost:8080/groups/${groupId}/events`, {
                 method: 'POST',
@@ -121,7 +122,7 @@
                 body: JSON.stringify({
                     title: newEvent.title,
                     description: newEvent.description,
-                    eventDate: eventDate,
+                    eventDate: selectedDate.toISOString(),
                     creatorId: $auth.user?.id
                 })
             });
@@ -433,6 +434,7 @@
                     type="datetime-local"
                     bind:value={newEvent.eventDate}
                     required
+                    min={new Date().toISOString().slice(0, 16)}
                     class="transition-all duration-300 focus:ring-2 focus:ring-blue-500"
                 />
             </div>
@@ -458,4 +460,4 @@
             </div>
         </form>
     </div>
-</Modal> 
+</Modal>
